@@ -1,0 +1,22 @@
+# Dart / Flutter
+.dart_tool/
+.packages
+build/
+coverage/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+!app/pubspec.lock
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Android
+app/android/.gradle/
+app/android/local.properties
+app/android/key.properties
+
+# Local-only notes
+/docs/RELEASE_PLAN.md
