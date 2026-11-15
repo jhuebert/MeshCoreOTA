@@ -1,0 +1,40 @@
+name: meshcore_ota
+description: >-
+  OTA firmware updates for MeshCore repeaters, over LoRa, from your phone.
+publish_to: none
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  provider: ^6.1.5
+  flutter_blue_plus: ^1.35.3
+  flutter_foreground_task: ^11.0.3
+  flutter_file_dialog: ^3.3.3
+  path_provider: ^2.1.5
+  path: ^1.9.0
+  archive: ^4.0.2
+  http: ^1.2.2
+  crypto: ^3.0.3
+
+  mesh_protocol:
+    path: ../packages/mesh_protocol
+  device_link:
+    path: ../packages/device_link
+  companion_client:
+    path: ../packages/companion_client
+  ota_core:
+    path: ../packages/ota_core
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

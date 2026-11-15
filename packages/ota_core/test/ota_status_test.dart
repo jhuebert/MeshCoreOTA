@@ -40,8 +40,12 @@ void main() {
       expect(OtaStatus.parse(''), isNull);
       expect(OtaStatus.parse('Err - OTA unsupported on this platform'), isNull);
       expect(OtaStatus.parse('usage: ota ...'), isNull);
-      expect(OtaStatus.parse('running=v sha=zz state=idle size=0 off=0 err=0'), isNull);
-      expect(OtaStatus.parse('running=v sha=0000000000000000 state=staging size=1 off=0 err=0 extra'), isNull);
+      expect(OtaStatus.parse('running=v sha=zz state=idle size=0 off=0 err=0'),
+          isNull);
+      expect(
+          OtaStatus.parse(
+              'running=v sha=0000000000000000 state=staging size=1 off=0 err=0 extra'),
+          isNull);
     });
   });
 
@@ -56,14 +60,16 @@ void main() {
 
   group('parseStageReply', () {
     test('parses the frozen success line', () {
-      final reply = parseStageReply('OK - staging armed (size=1194441) token=deadbeef');
+      final reply =
+          parseStageReply('OK - staging armed (size=1194441) token=deadbeef');
       expect(reply, isNotNull);
       expect(reply!.size, 1194441);
       expect(reply.token, 0xDEADBEEF);
     });
 
     test('failure replies do not parse as success', () {
-      expect(parseStageReply('Err - battery gate active; staging refused'), isNull);
+      expect(parseStageReply('Err - battery gate active; staging refused'),
+          isNull);
       expect(parseStageReply('Err - size must be 1..2147483647'), isNull);
     });
   });
@@ -75,7 +81,8 @@ void main() {
     });
 
     test('rejects failure replies', () {
-      expect(isApplyReply('Err - no verified staging (see ota status)'), isFalse);
+      expect(
+          isApplyReply('Err - no verified staging (see ota status)'), isFalse);
       expect(isRollbackReply('Err - could not set boot partition'), isFalse);
       expect(isCliErrorReply('Err - whatever'), isTrue);
       expect(isCliErrorReply('OK - applied; rebooting'), isFalse);

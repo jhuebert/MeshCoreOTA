@@ -71,7 +71,8 @@ DeltaResult computeDelta(Uint8List base, Uint8List target) {
     var cursor = start;
     while (cursor < end) {
       final length = (end - cursor).clamp(1, 0xFFFF);
-      ops.add(LiteralOp(Uint8List.sublistView(target, cursor, cursor + length)));
+      ops.add(
+          LiteralOp(Uint8List.sublistView(target, cursor, cursor + length)));
       literalBytes += length;
       cursor += length;
     }
@@ -91,7 +92,8 @@ DeltaResult computeDelta(Uint8List base, Uint8List target) {
 
   if (target.length < block || base.length < block) {
     emitLiteral(0, target.length);
-    return DeltaResult(ops: ops, literalBytes: literalBytes, copyBytes: copyBytes);
+    return DeltaResult(
+        ops: ops, literalBytes: literalBytes, copyBytes: copyBytes);
   }
 
   final nB = base.length - block + 1;
@@ -131,7 +133,8 @@ DeltaResult computeDelta(Uint8List base, Uint8List target) {
   var i = 0;
   final lastScan = nT - block;
   while (i <= lastScan) {
-    final matchBase = _findMatch(hashes, offsets, targetHash, base, target, i, block);
+    final matchBase =
+        _findMatch(hashes, offsets, targetHash, base, target, i, block);
     if (matchBase == null) {
       // Advance one byte, rolling the hash forward.
       if (i < lastScan) {
@@ -162,12 +165,14 @@ DeltaResult computeDelta(Uint8List base, Uint8List target) {
   }
   if (literalStart < nT) emitLiteral(literalStart, nT);
 
-  return DeltaResult(ops: ops, literalBytes: literalBytes, copyBytes: copyBytes);
+  return DeltaResult(
+      ops: ops, literalBytes: literalBytes, copyBytes: copyBytes);
 }
 
 /// Apply [ops] to [base] and return the reassembled image. Used by tests and
 /// by the planner to double-check an op stream before it goes on air.
-Uint8List applyDelta(Uint8List base, List<DeltaOp> ops, {required int expectedLength}) {
+Uint8List applyDelta(Uint8List base, List<DeltaOp> ops,
+    {required int expectedLength}) {
   final out = BytesBuilder(copy: false);
   for (final op in ops) {
     switch (op) {
@@ -179,12 +184,14 @@ Uint8List applyDelta(Uint8List base, List<DeltaOp> ops, {required int expectedLe
   }
   final bytes = out.toBytes();
   if (bytes.length != expectedLength) {
-    throw StateError('delta produced ${bytes.length} bytes, expected $expectedLength');
+    throw StateError(
+        'delta produced ${bytes.length} bytes, expected $expectedLength');
   }
   return bytes;
 }
 
-bool _bytesEqual(Uint8List base, int baseOff, Uint8List target, int targetOff, int length) {
+bool _bytesEqual(
+    Uint8List base, int baseOff, Uint8List target, int targetOff, int length) {
   if (baseOff < 0 || baseOff + length > base.length) return false;
   if (targetOff < 0 || targetOff + length > target.length) return false;
   for (int i = 0; i < length; i++) {

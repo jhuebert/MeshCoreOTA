@@ -109,9 +109,9 @@ ContactMessage? parseContactMessage(Uint8List frame) {
     reader.skipBytes(4); // signed-message signature
   }
   // The text is a NUL-terminated cstring running to the end of the frame.
-    var remaining = frame.length - reader.position;
-    if (remaining < 0) return null;
-    final textBytes = frame.sublist(reader.position);
+  var remaining = frame.length - reader.position;
+  if (remaining < 0) return null;
+  final textBytes = frame.sublist(reader.position);
   final nul = textBytes.indexOf(0);
   final payload = nul >= 0 ? textBytes.sublist(0, nul) : textBytes;
   return ContactMessage(
@@ -159,7 +159,8 @@ class CompanionClient {
         return;
       }
       if (code == respCodeErr) {
-        done.completeError(CompanionDeviceError(frame.length > 1 ? frame[1] : 0));
+        done.completeError(
+            CompanionDeviceError(frame.length > 1 ? frame[1] : 0));
       }
     });
     try {

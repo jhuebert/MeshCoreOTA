@@ -32,7 +32,9 @@ int crc16CcittFalse(Iterable<int> data) {
   for (final byte in data) {
     crc ^= (byte & 0xFF) << 8;
     for (int bit = 0; bit < 8; bit++) {
-      crc = (crc & 0x8000) != 0 ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+      crc = (crc & 0x8000) != 0
+          ? ((crc << 1) ^ 0x1021) & 0xFFFF
+          : (crc << 1) & 0xFFFF;
     }
   }
   return crc;
@@ -83,7 +85,8 @@ Uint8List buildStart({
 }
 
 /// `OP_COPY body: base_off:u32 len:u16` (6 bytes).
-Uint8List buildCopy({required int seq, required int baseOffset, required int length}) {
+Uint8List buildCopy(
+    {required int seq, required int baseOffset, required int length}) {
   assert(length >= 1 && length <= 0xFFFF);
   final body = Uint8List(6);
   final bd = ByteData.sublistView(body);

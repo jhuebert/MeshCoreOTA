@@ -1,0 +1,82 @@
+# Security
+
+## Threat model
+
+MeshCoreOTA moves firmware images over LoRa to a repeater, from a phone that
+already has a trusted relationship with the companion it is connected to.
+The design goal: **an attacker who can transmit on the same radio can never
+make the node boot a different image**, and **a broken image can never stay
+booted**. Availability attacks (jamming) are out of scope — that is physics,
+not policy.
+
+Layered controls, in order:
+
+1. **Arming requires an operator.** A repeater-side `ota stage <size> <sha256>
+   <ver>` registers a pending arm `{size, sha256, token}` with a 120-second
+   single-use TTL. Only an authenticated admin session (the same ECDH-encrypted
+   TXT_MSG path as every other repeater command) can do this.
+2. **OP_START is bound to the arm.** It carries `size:u32 sha256[32]
+   target:u32 token:u32`; the node accepts it only while an unexpired pending
+   arm exists whose token AND `{size, sha256}` match — and the arm is consumed
+   on acceptance. An overheard OP_START arms nothing but the operator-approved
+   image. Anything else is dropped before `esp_ota_begin()` runs, so a flood of
+   forged packets cannot wear out the inactive slot.
+3. **`target:u32 = sha256(pio_env)[0..3]`** binds the stream to the board this
+   image was built for. Flashing a different board's image is refused at
+   OP_START with `err=1`.
+4. **SHA-256 gate at `OP_END`.** The staged slot is hashed; mismatch → staged
+   slot scrapped, `state=error`, `err=4`. This is the only integrity decision
+   in the design; the op stream itself is trustless once armed.
+5. **Commit requires an admin.** `ota apply` refuses unless staging is
+   `state=ready`, then flips the boot partition and reboots.
+6. **Boot health check + auto rollback.** The freshly applied image runs a
+   boot health check (LoRa init + one zero-hop packet TX). Failure flips the
+   boot partition back to the previous slot and reboots — with no app at all.
+   The app *additionally* re-logs in and checks `version` after the reboot.
+
+What an on-air attacker **can** do: observe that an update is happening
+(public release metadata: board, size, SHA-256), re-deliver the genuine
+release to a node whose operator armed it (zero gain), jam or corrupt the
+transfer (denial of availability; recoverable with `ota abort` + re-stage),
+and fuzz the op interpreter (bounded — every frame is CRC-checked and size-
+capped; errors reach `state=error`, never panic).
+
+What they **cannot** do: install a modified image (4), boot it without an
+admin (5) and a passing SHA gate (4), target the wrong board (3), arm the
+node at all (1), or learn anything secret in transit — firmware images are
+public releases, and the arm token never travels in the clear *inside the
+authenticated CLI channel except inside `ota stage`'s encrypted reply* (the
+OP_START frame itself is cleartext by design; its safety is (2), not secrecy).
+
+Deliberately **not** encrypted: the LoRa op stream. Wire confidentiality of
+public firmware buys nothing, and E2E encryption per hop would add cost and
+code with no new guarantee at the arm/SHA/apply gates.
+
+## Secrets the app holds
+
+- **Repeater admin password** — per session only, in memory, never logged,
+  never persisted (no `flutter_secure_storage` use). Closing the app forgets
+  it. Anyone with the unlocked phone during a session has the same admin
+  session as the user — same as any logged-in repeater app.
+- **Companion connection** — BLE pairing is handled by the OS; the app never
+  sees or stores pairing keys.
+
+## What the app never does
+
+- No telemetry, no analytics, no crash reporting, no network access except
+  the firmware catalog/download endpoints (`api.github.com`,
+  `objects.githubusercontent.com` for the fork's releases).
+- No persistent copy of uploaded images beyond the local **library** (explicit
+  user action), which holds only public release images and their SHA-256.
+- No store listing dependency — releases are GitHub Releases APKs.
+
+## Reporting
+
+This is a personal project for a self-hosted mesh fork. Report issues by
+opening a private security advisory on
+[jhuebert/MeshCoreOTA](https://github.com/jhuebert/MeshCoreOTA/security/advisories/new)
+(or on the fork, for firmware-side issues:
+[jhuebert/MeshCore](https://github.com/jhuebert/MeshCore/security/advisories/new)).
+Administration session hygiene is your responsibility: change the repeater
+admin password if a session may have leaked, exactly as you would for any
+remote administration.

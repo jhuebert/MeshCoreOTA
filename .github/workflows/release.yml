@@ -1,0 +1,372 @@
+name: Release
+
+# Manual, signed release: bump, verify, fast-forward main, tag, publish.
+# Prerequisites: an app signing keystore, plus the `release` environment secrets:
+#   APP_SIGNING_KEYSTORE_BASE64, APP_SIGNING_KEYSTORE_PASSWORD,
+#   APP_SIGNING_KEY_ALIAS, APP_SIGNING_KEY_PASSWORD
+# The universal and per-ABI APKs are signed with the app signing key.
+# Play upload stays out of scope — installs are sideload from GitHub Releases.
+# The build number is reserved from the shared BUILD_NUMBER repository variable
+# before the release starts.
+#
+# `main` should be protected by a ruleset requiring the CI `check` status;
+# the push step uses `REPO_AUTOMATION_TOKEN`, so that token must belong to an
+# admin and have Contents: write access.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without the v prefix (for example 1.0.0)'
+        required: true
+        type: string
+      release_notes:
+        description: 'Markdown notes for CHANGELOG.md and the GitHub Release'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark the GitHub Release as a pre-release'
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Build and verify without committing, tagging, or publishing'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: 3.47.9
+
+jobs:
+  reserve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    concurrency:
+      group: build-number
+      cancel-in-progress: false
+    outputs:
+      build_number: ${{ steps.reserve.outputs.build_number }}
+    steps:
+      - name: Check workflow ref
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::Run the release workflow from main."
+            exit 1
+          fi
+
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Reserve build number
+        id: reserve
+        env:
+          GH_TOKEN: ${{ secrets.REPO_AUTOMATION_TOKEN }}
+        run: ./scripts/reserve_build_number.sh
+
+  release:
+    needs: reserve
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: release
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate inputs
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must be X.Y.Z"
+            exit 1
+          fi
+          if git rev-parse --verify --quiet "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::tag v$VERSION already exists"
+            exit 1
+          fi
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "::error::working tree is not clean"
+            exit 1
+          fi
+          echo "BASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Set up Java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Cache Gradle
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('app/android/gradle/wrapper/gradle-wrapper.properties', 'app/android/**/*.gradle.kts', 'app/android/gradle.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Configure signing
+        env:
+          APP_SIGNING_KEYSTORE_BASE64: ${{ secrets.APP_SIGNING_KEYSTORE_BASE64 }}
+          APP_SIGNING_KEYSTORE_PASSWORD: ${{ secrets.APP_SIGNING_KEYSTORE_PASSWORD }}
+          APP_SIGNING_KEY_ALIAS: ${{ secrets.APP_SIGNING_KEY_ALIAS }}
+          APP_SIGNING_KEY_PASSWORD: ${{ secrets.APP_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in APP_SIGNING_KEYSTORE_BASE64 APP_SIGNING_KEYSTORE_PASSWORD \
+            APP_SIGNING_KEY_ALIAS APP_SIGNING_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::missing secret $name; configure the release environment"
+              exit 1
+            fi
+          done
+          keystore="$RUNNER_TEMP/app-signing-keystore.p12"
+          printf '%s' "$APP_SIGNING_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          chmod 600 "$keystore"
+
+      - name: Bump version and changelog
+        env:
+          VERSION: ${{ inputs.version }}
+          BUILD_NUMBER: ${{ needs.reserve.outputs.build_number }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "release/v$VERSION"
+          printf '%s\n' "$RELEASE_NOTES" > "$RUNNER_TEMP/release-notes.md"
+          ./scripts/bump_version.sh \
+            "$VERSION" "$BUILD_NUMBER" "$RUNNER_TEMP/release-notes.md"
+          git add -A
+          git commit -m "release: v$VERSION (build $BUILD_NUMBER)"
+
+      - name: Analyze and test
+        run: ./scripts/check.sh
+
+      - name: Build signed artifacts
+        env:
+          BUILD_NUMBER: ${{ needs.reserve.outputs.build_number }}
+        run: |
+          set -euo pipefail
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+          export MESHCOREOTA_GIT_DIRTY=0
+          ./scripts/build.sh apk --release --build-number "$BUILD_NUMBER"
+          ./scripts/build.sh apk --release --build-number "$BUILD_NUMBER" --split-per-abi
+
+      - name: Re-sign APKs with the app signing key
+        env:
+          APP_SIGNING_KEYSTORE_PASSWORD: ${{ secrets.APP_SIGNING_KEYSTORE_PASSWORD }}
+          APP_SIGNING_KEY_ALIAS: ${{ secrets.APP_SIGNING_KEY_ALIAS }}
+          APP_SIGNING_KEY_PASSWORD: ${{ secrets.APP_SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          apkdir=app/build/app/outputs/flutter-apk
+          ./scripts/sign_apks.sh \
+            --keystore "$RUNNER_TEMP/app-signing-keystore.p12" \
+            --alias "$APP_SIGNING_KEY_ALIAS" \
+            "$apkdir/app-release.apk" \
+            "$apkdir/app-arm64-v8a-release.apk" \
+            "$apkdir/app-armeabi-v7a-release.apk" \
+            "$apkdir/app-x86_64-release.apk"
+          echo "APKs re-signed with the app signing key"
+
+      - name: Verify signatures and versions
+        env:
+          VERSION: ${{ inputs.version }}
+          BUILD_NUMBER: ${{ needs.reserve.outputs.build_number }}
+          APP_SIGNING_KEYSTORE_PASSWORD: ${{ secrets.APP_SIGNING_KEYSTORE_PASSWORD }}
+          APP_SIGNING_KEY_ALIAS: ${{ secrets.APP_SIGNING_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          build_tools="$(ls -d "$sdk"/build-tools/* | sort -V | tail -1)"
+          aapt="$build_tools/aapt"
+          apksigner="$build_tools/apksigner"
+          zipalign="$build_tools/zipalign"
+          keystore="$RUNNER_TEMP/app-signing-keystore.p12"
+          out=app/build/app/outputs
+          apk="$out/flutter-apk/app-release.apk"
+          splits=(
+            "$out/flutter-apk/app-arm64-v8a-release.apk"
+            "$out/flutter-apk/app-armeabi-v7a-release.apk"
+            "$out/flutter-apk/app-x86_64-release.apk"
+          )
+
+          keystore_sha() {
+            keytool -list -v -keystore "$1" -alias "$2" -storepass:env "$3" \
+              | awk -F': ' '/SHA256:/ {gsub(/:/, "", $2); print tolower($2); exit}'
+          }
+          app_sha="$(keystore_sha "$keystore" "$APP_SIGNING_KEY_ALIAS" \
+            APP_SIGNING_KEYSTORE_PASSWORD)"
+          [[ -n "$app_sha" ]] || { echo "::error::could not read the signing certificate"; exit 1; }
+          echo "app signing certificate: $app_sha"
+
+          check_signature() {
+            local artifact="$1" label="$2"
+            local actual
+            actual="$("$apksigner" verify --print-certs "$artifact" \
+              | sed -n 's/.*certificate SHA-256 digest: \([0-9a-fA-F]*\).*/\1/p' \
+              | head -n1 | tr 'A-F' 'a-f')"
+            echo "$artifact signature: ${actual:-<none>} (expected $app_sha)"
+            if [[ "$actual" != "$app_sha" ]]; then
+              echo "::error::$artifact is not signed with the $label key"
+              exit 1
+            fi
+            "$zipalign" -c -P 16 4 "$artifact"
+          }
+
+          check_signature "$apk" "app signing"
+          for artifact in "${splits[@]}"; do
+            check_signature "$artifact" "app signing"
+          done
+
+          badging="$("$aapt" dump badging "$apk" | sed -n '1p')"
+          apk_code="$(sed -E "s/.*versionCode='([0-9]+)'.*/\1/" <<<"$badging")"
+          apk_name="$(sed -E "s/.*versionName='([^']*)'.*/\1/" <<<"$badging")"
+          if [[ "$apk_code" != "$BUILD_NUMBER" || "$apk_name" != "$VERSION" ]]; then
+            echo "::error::universal APK is $apk_name ($apk_code), expected $VERSION ($BUILD_NUMBER)"
+            exit 1
+          fi
+          for split in "${splits[@]}"; do
+            split_name="$("$aapt" dump badging "$split" | sed -n '1p' \
+              | sed -E "s/.*versionName='([^']*)'.*/\1/")"
+            if [[ "$split_name" != "$VERSION" ]]; then
+              echo "::error::$split has versionName $split_name, expected $VERSION"
+              exit 1
+            fi
+          done
+          echo "signature and version checks passed"
+
+      - name: Collect release files
+        env:
+          VERSION: ${{ inputs.version }}
+          BUILD_NUMBER: ${{ needs.reserve.outputs.build_number }}
+          APP_SIGNING_KEYSTORE_PASSWORD: ${{ secrets.APP_SIGNING_KEYSTORE_PASSWORD }}
+          APP_SIGNING_KEY_ALIAS: ${{ secrets.APP_SIGNING_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          out=app/build/app/outputs
+          mkdir -p dist
+          cp "$out/flutter-apk/app-release.apk" \
+            "dist/MeshCoreOTA-$VERSION-universal.apk"
+          cp "$out/flutter-apk/app-arm64-v8a-release.apk" \
+            "dist/MeshCoreOTA-$VERSION-arm64-v8a.apk"
+          cp "$out/flutter-apk/app-armeabi-v7a-release.apk" \
+            "dist/MeshCoreOTA-$VERSION-armeabi-v7a.apk"
+          cp "$out/flutter-apk/app-x86_64-release.apk" \
+            "dist/MeshCoreOTA-$VERSION-x86_64.apk"
+          cp "$RUNNER_TEMP/release-notes.md" dist/release-notes.md
+          keystore_sha() {
+            keytool -list -v -keystore "$1" -alias "$2" -storepass:env "$3" \
+              | awk -F': ' '/SHA256:/ {gsub(/:/, "", $2); print tolower($2); exit}'
+          }
+          app_sha="$(keystore_sha "$RUNNER_TEMP/app-signing-keystore.p12" \
+            "$APP_SIGNING_KEY_ALIAS" APP_SIGNING_KEYSTORE_PASSWORD)"
+          cat > dist/build-metadata.txt <<EOF
+          version=$VERSION
+          build_number=$BUILD_NUMBER
+          commit=$(git rev-parse HEAD)
+          tag=v$VERSION
+          built_at=$(date -u -d "@$(git show -s --format=%ct HEAD)" +%Y-%m-%dT%H:%M:%SZ)
+          flutter=$(flutter --version | sed -n '1p')
+          app_signing_sha256=$app_sha
+          EOF
+          (
+            cd dist
+            sha256sum MeshCoreOTA-*.apk > SHA256SUMS.txt
+          )
+
+      - name: Upload dry-run artifacts
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-v${{ inputs.version }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Push main and tag
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ inputs.version }}
+          PUSH_TOKEN: ${{ secrets.REPO_AUTOMATION_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${PUSH_TOKEN:-}" ]]; then
+            echo "::error::REPO_AUTOMATION_TOKEN is required to push main"
+            exit 1
+          fi
+          git fetch origin main
+          if [[ "$(git rev-parse origin/main)" != "$BASE_SHA" ]]; then
+            echo "::error::main moved during the release; rerun the workflow"
+            exit 1
+          fi
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          git config --local --unset-all credential.helper || true
+          askpass="$RUNNER_TEMP/git-askpass.sh"
+          cat > "$askpass" <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "$PUSH_TOKEN" ;;
+          esac
+          EOF
+          chmod +x "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_TERMINAL_PROMPT=0
+          git push origin HEAD:main
+          git tag -a "v$VERSION" -m "MeshCoreOTA $VERSION"
+          git push origin "v$VERSION"
+
+      - name: Create GitHub Release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          args=(--title "MeshCoreOTA $VERSION" --notes-file dist/release-notes.md)
+          if [[ "$PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "v$VERSION" "${args[@]}" \
+            "dist/MeshCoreOTA-$VERSION-universal.apk" \
+            "dist/MeshCoreOTA-$VERSION-arm64-v8a.apk" \
+            "dist/MeshCoreOTA-$VERSION-armeabi-v7a.apk" \
+            "dist/MeshCoreOTA-$VERSION-x86_64.apk" \
+            dist/SHA256SUMS.txt \
+            dist/build-metadata.txt \
+            dist/release-notes.md
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/app-signing-keystore.p12"

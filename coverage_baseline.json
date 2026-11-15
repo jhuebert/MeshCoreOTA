@@ -1,0 +1,193 @@
+{
+  "format": 1,
+  "files": {
+    "app/lib/app_state.dart": {
+      "covered": 1,
+      "total": 307
+    },
+    "app/lib/main.dart": {
+      "covered": 4,
+      "total": 14
+    },
+    "app/lib/screens/connect_screen.dart": {
+      "covered": 40,
+      "total": 111
+    },
+    "app/lib/screens/firmware_screen.dart": {
+      "covered": 1,
+      "total": 131
+    },
+    "app/lib/screens/library_screen.dart": {
+      "covered": 1,
+      "total": 93
+    },
+    "app/lib/screens/review_screen.dart": {
+      "covered": 1,
+      "total": 55
+    },
+    "app/lib/screens/target_screen.dart": {
+      "covered": 1,
+      "total": 93
+    },
+    "app/lib/screens/transfer_screen.dart": {
+      "covered": 1,
+      "total": 108
+    },
+    "app/lib/screens/verify_screen.dart": {
+      "covered": 1,
+      "total": 56
+    },
+    "app/lib/services/ble_device_link.dart": {
+      "covered": 0,
+      "total": 317
+    },
+    "app/lib/services/firmware_library.dart": {
+      "covered": 102,
+      "total": 118
+    },
+    "app/lib/services/foreground.dart": {
+      "covered": 0,
+      "total": 7
+    },
+    "app/lib/services/github_source.dart": {
+      "covered": 127,
+      "total": 145
+    },
+    "app/lib/services/update_flow.dart": {
+      "covered": 34,
+      "total": 56
+    },
+    "app/lib/theme.dart": {
+      "covered": 6,
+      "total": 6
+    },
+    "app/lib/widgets/common.dart": {
+      "covered": 5,
+      "total": 40
+    },
+    "packages/companion_client/lib/src/companion_client.dart": {
+      "covered": 125,
+      "total": 137
+    },
+    "packages/device_link/lib/src/backoff.dart": {
+      "covered": 15,
+      "total": 15
+    },
+    "packages/device_link/lib/src/errors.dart": {
+      "covered": 27,
+      "total": 27
+    },
+    "packages/device_link/lib/src/fake_device_link.dart": {
+      "covered": 149,
+      "total": 160
+    },
+    "packages/device_link/lib/src/link_metrics.dart": {
+      "covered": 104,
+      "total": 109
+    },
+    "packages/device_link/lib/src/radio_link.dart": {
+      "covered": 69,
+      "total": 70
+    },
+    "packages/device_link/lib/src/shared_radio_link.dart": {
+      "covered": 101,
+      "total": 121
+    },
+    "packages/device_link/lib/src/tcp_device_link.dart": {
+      "covered": 210,
+      "total": 234
+    },
+    "packages/mesh_protocol/lib/src/airtime.dart": {
+      "covered": 14,
+      "total": 14
+    },
+    "packages/mesh_protocol/lib/src/buffer.dart": {
+      "covered": 81,
+      "total": 81
+    },
+    "packages/mesh_protocol/lib/src/channel_codec.dart": {
+      "covered": 8,
+      "total": 8
+    },
+    "packages/mesh_protocol/lib/src/constants.dart": {
+      "covered": 10,
+      "total": 11
+    },
+    "packages/mesh_protocol/lib/src/contact_codec.dart": {
+      "covered": 36,
+      "total": 36
+    },
+    "packages/mesh_protocol/lib/src/crypto.dart": {
+      "covered": 150,
+      "total": 151
+    },
+    "packages/mesh_protocol/lib/src/frame_codec.dart": {
+      "covered": 56,
+      "total": 56
+    },
+    "packages/mesh_protocol/lib/src/identity.dart": {
+      "covered": 69,
+      "total": 73
+    },
+    "packages/mesh_protocol/lib/src/models.dart": {
+      "covered": 170,
+      "total": 173
+    },
+    "packages/mesh_protocol/lib/src/packet.dart": {
+      "covered": 62,
+      "total": 62
+    },
+    "packages/mesh_protocol/lib/src/packet_builder.dart": {
+      "covered": 233,
+      "total": 235
+    },
+    "packages/mesh_protocol/lib/src/path_hash_mode.dart": {
+      "covered": 2,
+      "total": 2
+    },
+    "packages/mesh_protocol/lib/src/path_return_codec.dart": {
+      "covered": 19,
+      "total": 19
+    },
+    "packages/mesh_protocol/lib/src/paths.dart": {
+      "covered": 11,
+      "total": 13
+    },
+    "packages/mesh_protocol/lib/src/telemetry_codec.dart": {
+      "covered": 29,
+      "total": 29
+    },
+    "packages/mesh_protocol/lib/src/text.dart": {
+      "covered": 40,
+      "total": 40
+    },
+    "packages/mesh_protocol/lib/src/trace_codec.dart": {
+      "covered": 20,
+      "total": 20
+    },
+    "packages/ota_core/lib/src/delta.dart": {
+      "covered": 118,
+      "total": 126
+    },
+    "packages/ota_core/lib/src/ota_status.dart": {
+      "covered": 42,
+      "total": 42
+    },
+    "packages/ota_core/lib/src/transfer.dart": {
+      "covered": 135,
+      "total": 140
+    },
+    "packages/ota_core/lib/src/wire.dart": {
+      "covered": 57,
+      "total": 57
+    },
+    "packages/test_support/lib/fake_scheduler.dart": {
+      "covered": 29,
+      "total": 30
+    },
+    "packages/test_support/lib/framed_client.dart": {
+      "covered": 40,
+      "total": 41
+    }
+  }
+}

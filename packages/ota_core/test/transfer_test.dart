@@ -36,7 +36,8 @@ class FakeOtaNode {
   int pendingToken = -1;
   int lastAskRetPathLen = 0;
 
-  bool get stagingArmed => state == FakeNodeState.staging || state == FakeNodeState.ready;
+  bool get stagingArmed =>
+      state == FakeNodeState.staging || state == FakeNodeState.ready;
   int get nextExpected => _expect & 0xFFFF;
   Uint8List get stagedImage => Uint8List.sublistView(_slot, 0, _written);
 
@@ -101,7 +102,8 @@ class FakeOtaNode {
     }
 
     if (!stagingArmed) return const [];
-    if (seq != _expect) return const []; // strictly in order; everything else is dropped
+    if (seq != _expect)
+      return const []; // strictly in order; everything else is dropped
 
     if (op == otaOpCopy) {
       final bd = ByteData.sublistView(body, 5);
@@ -112,7 +114,8 @@ class FakeOtaNode {
         state = FakeNodeState.error;
         return const [];
       }
-      _slot.setRange(_written, _written + len, running.sublist(baseOffset, baseOffset + len));
+      _slot.setRange(_written, _written + len,
+          running.sublist(baseOffset, baseOffset + len));
       _written += len;
       _expect++;
       return const [];
@@ -188,7 +191,8 @@ class _Harness {
     int dropEveryNth = 0,
     int slotSize = 262144,
   }) {
-    node = FakeOtaNode(running: base, slotSize: slotSize, targetId: _testTargetId);
+    node =
+        FakeOtaNode(running: base, slotSize: slotSize, targetId: _testTargetId);
     link = FakeDeviceLink(snr: 6.0, rssi: -70);
     if (dropEveryNth > 0) link.dropEveryNthTx = dropEveryNth;
   }
@@ -261,7 +265,8 @@ void main() {
         List<int>.generate(8192, (i) => (i * 13 + 5) & 0xFF));
     final target = _mutate(base, random);
     harness.wire(base: base, target: target, dropEveryNth: 7);
-    final transfer = harness.makeTransfer(target: target, base: base, windowSize: 4);
+    final transfer =
+        harness.makeTransfer(target: target, base: base, windowSize: 4);
     final result = await transfer.run();
     expect(harness.node.state, FakeNodeState.ready);
     expect(harness.node.stagedImage, target);
@@ -335,10 +340,12 @@ void main() {
 
   test('cancellation stops the transfer between windows', () async {
     final harness = _Harness();
-    final base = Uint8List.fromList(List<int>.generate(16384, (i) => (i * 7 + 1) & 0xFF));
+    final base = Uint8List.fromList(
+        List<int>.generate(16384, (i) => (i * 7 + 1) & 0xFF));
     final target = _mutate(base, random, edits: 200);
     harness.wire(base: base, target: target);
-    final transfer = harness.makeTransfer(target: target, base: base, windowSize: 2);
+    final transfer =
+        harness.makeTransfer(target: target, base: base, windowSize: 2);
     var progressCalls = 0;
     await expectLater(
       transfer.run(onProgress: (_) {

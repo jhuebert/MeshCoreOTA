@@ -10,7 +10,9 @@ void main() {
     test('matches the reference vectors', () {
       expect(crc16CcittFalse(const []), 0xFFFF);
       expect(crc16CcittFalse(const [0x4F, 0x54, 0x01, 0x00, 0x00]), 0xED67);
-      expect(crc16CcittFalse(const [0x4F, 0x54, 0x03, 0x01, 0x00, 0x05, 0x41, 0x00]),
+      expect(
+          crc16CcittFalse(
+              const [0x4F, 0x54, 0x03, 0x01, 0x00, 0x05, 0x41, 0x00]),
           0x84C1);
       expect(
         crc16CcittFalse(Uint8List.fromList(List<int>.generate(256, (i) => i))),
@@ -32,14 +34,17 @@ void main() {
     test('unwrapFrame rejects bad magic and bad CRC', () {
       final frame = buildEnd(seq: 1);
       expect(unwrapFrame(Uint8List.fromList([...frame])..[0] = 0x58), isNull);
-      expect(unwrapFrame(Uint8List.fromList([...frame])..[frame.length - 1] ^= 0x55),
+      expect(
+          unwrapFrame(
+              Uint8List.fromList([...frame])..[frame.length - 1] ^= 0x55),
           isNull);
       expect(unwrapFrame(Uint8List.fromList([0x4F, 0x54])), isNull);
     });
 
     test('buildStart emits the frozen 44-byte body', () {
       final sha = Uint8List.fromList(List<int>.generate(32, (i) => i + 1));
-      final frame = buildStart(size: 1000, sha256: sha, targetId: 0xDEADBEEF, token: 0x12345678);
+      final frame = buildStart(
+          size: 1000, sha256: sha, targetId: 0xDEADBEEF, token: 0x12345678);
       final body = frame.sublist(5, frame.length - 2);
       expect(body.length, 44);
       final bd = ByteData.sublistView(body);
@@ -49,9 +54,11 @@ void main() {
       expect(bd.getUint32(40, Endian.little), 0x12345678);
     });
 
-    test('buildCopy/buildLiteralChunk round trip via the node-side seq rules', () {
+    test('buildCopy/buildLiteralChunk round trip via the node-side seq rules',
+        () {
       final copy = buildCopy(seq: 3, baseOffset: 0x01020304, length: 0x0203);
-      final literal = buildLiteralChunk(seq: 4, data: Uint8List.fromList([9, 8, 7]));
+      final literal =
+          buildLiteralChunk(seq: 4, data: Uint8List.fromList([9, 8, 7]));
       expect(copy[2], otaOpCopy);
       expect(copy[3] | (copy[4] << 8), 3);
       final copyBody = ByteData.sublistView(copy.sublist(5, copy.length - 2));
@@ -74,7 +81,8 @@ void main() {
 
     test('parseReport reads next_expected', () {
       // 'O' 'T' 0x06 next_lo next_hi crc16
-      final report = Uint8List.fromList(appendCrc16(const [0x4F, 0x54, 0x06, 0x34, 0x12]));
+      final report =
+          Uint8List.fromList(appendCrc16(const [0x4F, 0x54, 0x06, 0x34, 0x12]));
       expect(parseReport(report)!.nextExpected, 0x1234);
       expect(parseReport(buildEnd(seq: 1)), isNull);
       expect(parseReport(Uint8List.fromList([0x4F, 0x54, 0x06, 0x00])), isNull);
@@ -83,7 +91,8 @@ void main() {
     test('targetIdForEnvironment matches the frozen rule', () {
       // sha256(pio_env)[0..3] little endian; verified independently with
       // Python hashlib (see wire.dart).
-      expect(targetIdForEnvironment('Xiao_S3_WIO_repeater'), 2669264081); // 0x9f19bcd1
+      expect(targetIdForEnvironment('Xiao_S3_WIO_repeater'),
+          2669264081); // 0x9f19bcd1
       expect(targetIdForEnvironment('RAK_4631_repeater'), 81007613);
       expect(targetIdForEnvironment('PicoW_repeater'), 1413693056);
     });

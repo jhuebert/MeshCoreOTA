@@ -118,7 +118,8 @@ class OtaRoute {
     required Uint8List outPath,
   }) {
     if (outPathLen == 0xFF || outPathLen < 0) {
-      throw OtaTransferException('contact has no direct route — set the route first');
+      throw OtaTransferException(
+          'contact has no direct route — set the route first');
     }
     final hashSize = PathUtils.getHashSize(outPathLen);
     final count = PathUtils.getHashCount(outPathLen);
@@ -181,7 +182,8 @@ WireOps wireOpsFor(List<DeltaOp> ops) {
           final end = offset + otaLiteralChunk;
           frames.add(buildLiteralChunk(
             seq: seq,
-            data: Uint8List.sublistView(data, offset, end > data.length ? data.length : end),
+            data: Uint8List.sublistView(
+                data, offset, end > data.length ? data.length : end),
           ));
           seq++;
           offset += otaLiteralChunk;
@@ -208,6 +210,7 @@ class OtaTransfer {
     this.askTimeout = const Duration(seconds: 10),
     this.maxRetriesPerWindow = 12,
     this.opSpacing = const Duration(milliseconds: 25),
+    this.shouldCancel,
   })  : assert(windowSize >= 1),
         wireOps = wireOpsFor(ops);
 
@@ -228,6 +231,10 @@ class OtaTransfer {
   /// Small spacing between queued writes to spare the companion's TX pool.
   final Duration opSpacing;
 
+  /// Checked alongside [cancel] at every op boundary — lets a UI bind a
+  /// cancel flag without holding a reference to this engine.
+  final bool Function()? shouldCancel;
+
   int packetsSent = 0;
   int literalBytesSent = 0;
   int retries = 0;
@@ -247,7 +254,8 @@ class OtaTransfer {
 
   /// Run the transfer to completion. Throws [OtaTransferException] on failure
   /// (including cancellation — check [cancelRequested] to distinguish).
-  Future<TransferResult> run({void Function(TransferProgress)? onProgress}) async {
+  Future<TransferResult> run(
+      {void Function(TransferProgress)? onProgress}) async {
     this.onProgress = onProgress;
     _sw
       ..reset()
@@ -377,7 +385,7 @@ class OtaTransfer {
   }
 
   void _throwIfCancelled() {
-    if (_cancelRequested) {
+    if (_cancelRequested || (shouldCancel?.call() ?? false)) {
       throw OtaTransferException('cancelled');
     }
   }

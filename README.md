@@ -1,49 +1,105 @@
 # MeshCoreOTA
 
-Over-the-air firmware updater for **MeshCore repeaters** — from your phone,
+Over-the-air firmware updates for **MeshCore repeaters** — from your phone,
 over LoRa, with no laptop at the tower and no mesh flood traffic.
 
 The app talks to a stock MeshCore companion device over BLE (Nordic UART
 Service) or TCP, and uses it purely as a raw radio. It sends DIRECT-routed
-`PAYLOAD_TYPE_RAW_CUSTOM` packets carrying a tiny op protocol to the repeater:
-the app picks the board, the version and the transfer parameters; the repeater
-only applies ops and verifies SHA-256. Everything else is app-side.
+`PAYLOAD_TYPE_RAW_CUSTOM` packets carrying a small op protocol to the
+repeater: the app picks the board, the version and the transfer parameters;
+the repeater only applies ops and verifies SHA-256. Everything else is
+app-side.
 
-Status: **field-bench milestone** — not yet validated against hardware. Android
-only; iOS unsupported. There is deliberately no companion-firmware change: the
-companion is used exactly as it ships.
+**Status: pre-bench.** The fork firmware implementing the repeater side lives
+in `lora-ota` at [jhuebert/MeshCore](https://github.com/jhuebert/MeshCore);
+the protocol is frozen but has **not yet been exercised on hardware**. The
+Android UI has not been run on a phone. Treat every path as unproven until
+then — the whole flow is designed so mistakes cannot brick a node (see
+"Safety model" below), but nothing firmware-level here has flown yet.
 
-For the design see the fork plan documents in
-[jhuebert/MeshCore](https://github.com/jhuebert/MeshCore) (`docs` / `plans`).
+Android only. iOS is not supported and is not planned until there is hardware
+to test on. Desktop is not supported.
 
-## How it works
+## What it does
 
-1. Connect to a companion (BLE or TCP). 2. Pick a repeater from the companion's
-   contacts (or enter a pubkey). 3. Pick a firmware (GitHub release, or the
-   offline library — verified end-to-end by SHA-256). 4. Review. 5. Transfer —
-   a delta against the running image is the default; full image is the
-   fallback. 6. The app triggers `ota apply` and verifies the new firmware
-   after reboot. A broken image flips back automatically in the companion
-   firmware (fork `lora-ota` branch).
+1. Connect to a companion (BLE scan, or TCP for the bench/127.0.0.1).
+2. Pick a repeater from the companion's contacts, or enter its public key.
+3. Sign in as repeater admin (password entered per session, never stored).
+4. Pick a firmware:
+   - **GitHub** — releases from the fork (`filter-vX.Y.Z` stable,
+     `filter-vX.Y.Z-dev.N` dev builds). App-slot `.bin` images only —
+     `-merged.bin` is never offered; OTA cannot carry a bootloader.
+   - **Library** — images cached on-device, imported from a `.bin`, or from a
+     "field pack" (`.zip`) exported earlier. Works with no bars.
+5. Review: board, version, delta-vs-full transfer estimate with an airtime
+   estimate at the companion's current radio config.
+6. Transfer: windowed DIRECT packets with `OP_ASK`/`OP_REPORT` recovery —
+   the node re-asks for exactly what it missed. No flood, ever.
+7. Commit: `ota apply` flips the boot partition and reboots. The app re-logs
+   in and checks `version`. A bad image flips itself back automatically in
+   the fork firmware (boot health check).
+8. Undo: one button sends `ota rollback`.
+
+Delta updates are the default: unchanged regions become `OP_COPY` ops against
+the running image (matched by full version stamp — the `running=` string from
+`ota status`; no base in the library → full image). The device-side SHA-256
+gate decides what may boot; a wrong base fails staging at `OP_END` and the
+node keeps the old image.
+
+## Safety model (why this cannot brick a node)
+
+- **Staged bytes are untrusted until proven.** `OP_END` does SHA-256 over the
+  staged slot; mismatch → staging scrapped, `state=error`, nothing boots.
+- **Nothing boots without an admin.** `ota apply` requires the same admin
+  session every other repeater CLI command does.
+- **New image boots, fails health check → flips back.** The fork firmware
+  re-verifies LoRa init + one packet TX on the fresh boot; failure flips the
+  boot partition back to the previous slot and reboots. No human intervention.
+- **DIRECT packets only.** No flood, no stray RF on the mesh.
+- **The companion is stock.** No companion-firmware change; it is used exactly
+  as it ships (its raw-TX path, used exactly like meshcore-open uses it).
+
+See also `SECURITY.md` for the threat model and the fork plan documents
+(`plans/2026-11-15-lora-ota-master-plan.md` in the MeshCore fork) for the
+firmware side.
 
 ## Building
 
-Flutter stable (CI uses the pinned version in
+Flutter stable (CI pins the exact version — see
 [.github/workflows/ci.yml](.github/workflows/ci.yml)). From the repo root:
 
 ```sh
-./scripts/check.sh     # analyze + test all packages and the app
+./scripts/check.sh      # analyze + format + test everything
+./scripts/build.sh apk --release
 ```
 
-Release artifacts are built by CI on GitHub (see
-[docs/releasing.md](docs/releasing.md)); Debug/release APKs can be built locally
-with the Flutter Android toolchain once the Android SDK is configured.
+Releases are built and signed by CI — see
+[docs/releasing.md](docs/releasing.md). Sideload note: installs from GitHub
+Releases are signed with the app signing key, so replacing an install keeps
+your data.
 
-## Scope
+## Layout
 
-- Android only. Android-sideloaded APKs published as GitHub Releases.
-- `PAYLOAD_TYPE_RAW_CUSTOM` DIRECT packets only; no flood, ever.
-- Desktop is not supported. No iOS. No F-Droid/Play requirement.
+```text
+app/                     the Flutter app (screens, services, theme)
+packages/mesh_protocol/  subtree from MeshChameleon — wire codec, crypto (MIT)
+packages/device_link/    subtree from MeshChameleon — RadioLink SPI, TCP link (MIT)
+packages/test_support/   subtree from MeshChameleon — test plumbing (MIT)
+packages/companion_client/  companion-protocol client (contacts, login, remote CLI)
+packages/ota_core/       wire format, `ota status` contract, delta engine,
+                         transfer engine (windowed, OP_ASK/OP_REPORT)
+```
+
+The `mesh_protocol`/`device_link`/`test_support` packages are reused from
+[MeshChameleon](https://github.com/jhuebert/MeshChameleon) via `git subtree`
+(history preserved). See [ATTRIBUTION.md](ATTRIBUTION.md).
+
+## Contributing
+
+Small, focused PRs against `main`. `./scripts/check.sh` must stay green
+(format, analyze, all package tests, app tests). The `mesh_protocol`,
+`device_link`, and `test_support` trees are shared with MeshChameleon —
+prefer upstreaming shared fixes there via the subtree rather than diverging.
 
 ## License
 

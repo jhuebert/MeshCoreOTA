@@ -31,8 +31,8 @@ class OtaStatus {
 
   bool get ok => err == 0;
 
-  static final _line =
-      RegExp(r'^running=(\S+) sha=([0-9a-fA-F]{16}) state=(\w+) size=(\d+) off=(\d+) err=(\d+)$');
+  static final _line = RegExp(
+      r'^running=(\S+) sha=([0-9a-fA-F]{16}) state=(\w+) size=(\d+) off=(\d+) err=(\d+)$');
 
   /// Parse the frozen line. Returns null when the reply is not the frozen
   /// `ota status` contract (e.g. a pre-OTA firmware's usage text).
@@ -94,7 +94,8 @@ class OtaStageReply {
   final int token;
 }
 
-final _stageLine = RegExp(r'^OK - staging armed \(size=(\d+)\) token=([0-9a-fA-F]{8})$');
+final _stageLine =
+    RegExp(r'^OK - staging armed \(size=(\d+)\) token=([0-9a-fA-F]{8})$');
 
 /// Parse the `ota stage` success reply. Returns null when the reply is not
 /// the success line (the device reports failures as `Err - ...`).

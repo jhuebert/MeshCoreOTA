@@ -233,6 +233,9 @@ class FakeDeviceLink
   Future<void> sendFrame(Uint8List frame) async {
     calls.add('sendFrame');
     sentFrames.add(Uint8List.fromList(frame));
+    // The in-band fake peer sees every companion command frame, not just
+    // raw TX.
+    frameHandler?.call(Uint8List.fromList(frame));
   }
 
   /// Inject an inbound frame as the device would emit it (e.g. a login push).
@@ -269,7 +272,16 @@ class FakeDeviceLink
   /// Optional in-band handler invoked for every transmitted packet. Return
   /// false to drop the packet before it reaches any listener. Useful for
   /// wiring a synchronous fake peer into the link.
+  ///
+  /// Only raw on-air packets (from `sendRawPacket`) hit this hook, carrying
+  /// the raw packet bytes. Companion command frames (from `sendFrame`) go
+  /// to [frameHandler].
   Future<bool> Function(Uint8List packet, int priority)? txHandler;
+
+  /// Optional in-band handler invoked for every companion command frame
+  /// written with `sendFrame` (e.g. `CMD_GET_CONTACTS`, `CMD_SEND_LOGIN`).
+  /// The frame is the raw command frame (`frame[0]` = command code).
+  void Function(Uint8List frame)? frameHandler;
 
   int _txCount = 0;
 

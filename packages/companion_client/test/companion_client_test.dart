@@ -33,7 +33,8 @@ ContactMessage _v3Frame({
 }
 
 Contact _repeater({int advType = advTypeRepeater, String? name}) => Contact(
-      publicKey: Uint8List.fromList(List<int>.generate(32, (i) => (i * 7 + 3) & 0xFF)),
+      publicKey:
+          Uint8List.fromList(List<int>.generate(32, (i) => (i * 7 + 3) & 0xFF)),
       name: name ?? 'tower-1',
       advType: advType,
     );
@@ -45,8 +46,7 @@ Contact _stranger() => Contact(
       advType: advTypeChat,
     );
 
-Future<void> _pump() =>
-    Future<void>.delayed(Duration.zero);
+Future<void> _pump() => Future<void>.delayed(Duration.zero);
 
 void main() {
   late FakeDeviceLink link;
@@ -70,11 +70,13 @@ void main() {
 
     test('cli frame is txt_type CLI_DATA with the target prefix', () {
       final target = _repeater();
-      final frame = buildCliFrame(target.publicKey, 'ota status', timestamp: 42);
+      final frame =
+          buildCliFrame(target.publicKey, 'ota status', timestamp: 42);
       expect(frame[0], cmdSendTxtMsg);
       expect(frame[1], txtTypeCliData);
       expect(frame[2], 0); // attempt
-      expect(frame[3] | (frame[4] << 8) | (frame[5] << 16) | (frame[6] << 24), 42);
+      expect(
+          frame[3] | (frame[4] << 8) | (frame[5] << 16) | (frame[6] << 24), 42);
       expect(frame.sublist(7, 13), target.publicKey.sublist(0, 6));
       expect(String.fromCharCodes(frame.sublist(13, frame.length - 1)),
           'ota status');
@@ -134,7 +136,8 @@ void main() {
     });
 
     test('channel messages are not contact messages', () {
-      expect(parseContactMessage(Uint8List.fromList([respCodeChannelMsgRecv, 7])),
+      expect(
+          parseContactMessage(Uint8List.fromList([respCodeChannelMsgRecv, 7])),
           isNull);
     });
 
@@ -161,18 +164,19 @@ void main() {
     test('collects contact records until END_OF_CONTACTS', () async {
       final first = _repeater();
       final second = Contact(
-        publicKey:
-            Uint8List.fromList(List<int>.generate(32, (i) => 0x55 + i)),
+        publicKey: Uint8List.fromList(List<int>.generate(32, (i) => 0x55 + i)),
         name: 'tower-2',
         advType: advTypeRepeater,
       );
       final listFuture = client.listContacts();
       await _pump();
       expect(link.sentFrames.last, [cmdGetContacts]);
-      link.simulatePush(Uint8List.fromList([respCodeContactsStart, 2, 0, 0, 0]));
+      link.simulatePush(
+          Uint8List.fromList([respCodeContactsStart, 2, 0, 0, 0]));
       link.simulatePush(_contactFrameFor(first));
       link.simulatePush(_contactFrameFor(second));
-      link.simulatePush(Uint8List.fromList([respCodeEndOfContacts, 0, 0, 0, 0]));
+      link.simulatePush(
+          Uint8List.fromList([respCodeEndOfContacts, 0, 0, 0, 0]));
       final contacts = await listFuture;
       expect(contacts, hasLength(2));
       expect(contacts[0].name, 'tower-1');
@@ -197,8 +201,17 @@ void main() {
       final target = _repeater();
       final loginFuture = client.login(target, 'hunter2');
       await _pump();
-      link.simulatePush(Uint8List.fromList(
-          [pushCodeLoginSuccess, 1, ...target.publicKey.sublist(0, 6), 0, 0, 0, 0, 7, 14]));
+      link.simulatePush(Uint8List.fromList([
+        pushCodeLoginSuccess,
+        1,
+        ...target.publicKey.sublist(0, 6),
+        0,
+        0,
+        0,
+        0,
+        7,
+        14
+      ]));
       final result = await loginFuture;
       expect(result.ok, isTrue);
       expect(result.isAdmin, isTrue);
