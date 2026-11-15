@@ -157,6 +157,12 @@ class MeteredRadioLink implements RadioLink {
   }
 
   @override
+  Stream<Uint8List> get pushes => _inner.pushes;
+
+  @override
+  Future<void> sendFrame(Uint8List frame) => _inner.sendFrame(frame);
+
+  @override
   Future<void> sendRawPacket(Uint8List packet, [int priority = 0]) async {
     metrics.deviceRequest();
     try {

@@ -1,0 +1,20 @@
+name: companion_client
+description: >-
+  Companion-protocol client for the phone app's use: contacts enumeration,
+  repeater remote login, and the remote admin CLI over TXT_MSG. Built on a
+  RadioLink transport; pure Dart.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  mesh_protocol:
+    path: ../mesh_protocol
+  device_link:
+    path: ../device_link
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^6.0.0

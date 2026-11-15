@@ -22,6 +22,24 @@ abstract class RadioLink {
   /// Register the callback for received raw frames.
   void setRawRxListener(RawRxListener? listener);
 
+  /// Fire-and-forget write of a companion frame (no reply correlation).
+  ///
+  /// Used for commands whose results arrive as pushes rather than as request
+  /// replies (e.g. `CMD_SEND_LOGIN`, `CMD_SEND_TXT_MSG`). Writes are serialized
+  /// against in-flight requests; nothing is returned, so the caller watches
+  /// [pushes] for the outcome.
+  Future<void> sendFrame(Uint8List frame);
+
+  /// Broadcast of every inbound frame the link accepts, before request
+  /// matching.
+  ///
+  /// Requests issued through this link still deliver their replies via the
+  /// request machinery; this stream additionally exposes frames that carry no
+  /// request life of their own (`PUSH_CODE_*`). Consumers must filter by
+  /// response code themselves — a fire-and-forget command's correlated reply
+  /// (e.g. `RESP_CODE_SENT`) appears here too, indistinguishable by channel.
+  Stream<Uint8List> get pushes;
+
   Future<DeviceInfo> deviceInfo();
   Future<ParsedSelfInfo> selfInfo();
   Future<RadioParams> radioParams();

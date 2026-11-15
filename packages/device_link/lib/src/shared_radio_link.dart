@@ -46,6 +46,7 @@ class SharedRadioHub {
     if (_disposed) throw StateError('SharedRadioHub has been disposed');
     _attached = true;
     base.setRawRxListener(_dispatch);
+    _pushSub = base.pushes.listen(_dispatchPush);
   }
 
   /// Clear the base listener. Views and their subscriptions are retained so a
@@ -53,6 +54,8 @@ class SharedRadioHub {
   Future<void> detach() async {
     _attached = false;
     base.setRawRxListener(null);
+    await _pushSub?.cancel();
+    _pushSub = null;
     _batteryGeneration++;
     _batteryCache = null;
     _batteryCachedAt = null;
@@ -64,17 +67,31 @@ class SharedRadioHub {
     if (_disposed) return;
     _disposed = true;
     _attached = false;
+    _pushSub?.cancel();
+    _pushSub = null;
     _batteryGeneration++;
     _subscribed.clear();
+    for (final view in _views.values) {
+      view._disposePushes();
+    }
     _views.clear();
     base.setRawRxListener(null);
   }
+
+  StreamSubscription<Uint8List>? _pushSub;
 
   void _subscribe(_SharedRadioLinkView view) {
     if (!_subscribed.contains(view)) _subscribed.add(view);
   }
 
   void _unsubscribe(_SharedRadioLinkView view) => _subscribed.remove(view);
+
+  void _dispatchPush(Uint8List frame) {
+    if (!_attached || _disposed) return;
+    for (final view in List<_SharedRadioLinkView>.of(_subscribed)) {
+      view._emitPush(frame);
+    }
+  }
 
   void _dispatch(double snr, int rssi, Uint8List raw) {
     if (!_attached || _disposed) return;
@@ -89,6 +106,19 @@ class SharedRadioHub {
         // Listener isolation is intentional; the node owns its diagnostics.
       }
     }
+  }
+
+  Future<void> _sendFrame(Uint8List frame) {
+    final completer = Completer<void>();
+    _txTail = _txTail.then((_) async {
+      try {
+        await base.sendFrame(frame);
+        completer.complete();
+      } catch (e, s) {
+        completer.completeError(e, s);
+      }
+    });
+    return completer.future;
   }
 
   Future<void> _send(Uint8List packet, int priority) {
@@ -137,6 +167,16 @@ class _SharedRadioLinkView implements RadioLink {
 
   final SharedRadioHub _hub;
   RawRxListener? _listener;
+  final _pushesController = StreamController<Uint8List>.broadcast();
+
+  /// Fan out a frame to this view's [pushes] stream.
+  void _emitPush(Uint8List frame) {
+    if (!_pushesController.isClosed) {
+      _pushesController.add(Uint8List.fromList(frame));
+    }
+  }
+
+  void _disposePushes() => _pushesController.close();
 
   @override
   void setRawRxListener(RawRxListener? listener) {
@@ -165,6 +205,12 @@ class _SharedRadioLinkView implements RadioLink {
   @override
   Future<void> sendRawPacket(Uint8List packet, [int priority = 0]) =>
       _hub._send(packet, priority);
+
+  @override
+  Stream<Uint8List> get pushes => _pushesController.stream;
+
+  @override
+  Future<void> sendFrame(Uint8List frame) => _hub._sendFrame(frame);
 
   @override
   Future<DeviceInfo> deviceInfo() => _hub.base.deviceInfo();

@@ -104,6 +104,7 @@ class FakeDeviceLink
   Object? shutdownError;
 
   final _stateController = StreamController<LinkState>.broadcast();
+  final _pushesController = StreamController<Uint8List>.broadcast();
   LinkState _state = LinkState.disconnected;
   RawRxListener? _rawRxListener;
   // Both initialize lazily from the constructed parameter set, so reading
@@ -223,14 +224,54 @@ class FakeDeviceLink
   }
 
   @override
+  Stream<Uint8List> get pushes => _pushesController.stream;
+
+  /// Fire-and-forget frame writes, in arrival order (for test assertions).
+  final List<Uint8List> sentFrames = [];
+
+  @override
+  Future<void> sendFrame(Uint8List frame) async {
+    calls.add('sendFrame');
+    sentFrames.add(Uint8List.fromList(frame));
+  }
+
+  /// Inject an inbound frame as the device would emit it (e.g. a login push).
+  void simulatePush(Uint8List frame) {
+    if (!_pushesController.isClosed) {
+      _pushesController.add(Uint8List.fromList(frame));
+    }
+  }
+
+  @override
   Future<void> sendRawPacket(Uint8List packet, [int priority = 0]) async {
     calls.add('sendRawPacket');
     if (rawTxError != null) throw rawTxError!;
+    _txCount++;
+    final lost = dropEveryNthTx != null && _txCount % dropEveryNthTx! == 0;
+    if (lost) {
+      calls.add('sendRawPacket-dropped');
+      return;
+    }
+    if (txHandler != null && !await txHandler!(packet, priority)) {
+      calls.add('sendRawPacket-dropped');
+      return;
+    }
     transmitted.add(Uint8List.fromList(packet));
     transmitPriorities.add(priority);
     bus?.transmit(this, packet, snr, rssi);
     await _wait(rawTxAck);
   }
+
+  /// When set, every Nth `sendRawPacket` is silently dropped (models link
+  /// loss). The drop counter increments for every attempted send.
+  int? dropEveryNthTx;
+
+  /// Optional in-band handler invoked for every transmitted packet. Return
+  /// false to drop the packet before it reaches any listener. Useful for
+  /// wiring a synchronous fake peer into the link.
+  Future<bool> Function(Uint8List packet, int priority)? txHandler;
+
+  int _txCount = 0;
 
   /// Deliver an over-air frame to this link as `LOG_RX_DATA`.
   void deliver(double frameSnr, int frameRssi, Uint8List packet) {

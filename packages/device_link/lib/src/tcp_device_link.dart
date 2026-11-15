@@ -55,6 +55,7 @@ class TcpDeviceLink implements RadioLink {
   final SerialFrameCodec _codec =
       SerialFrameCodec(direction: FrameDirection.outbound);
   final _stateController = StreamController<LinkState>.broadcast();
+  final _pushesController = StreamController<Uint8List>.broadcast();
   LinkState _state = LinkState.disconnected;
   Socket? _socket;
   RawRxListener? _rawRxListener;
@@ -151,9 +152,30 @@ class TcpDeviceLink implements RadioLink {
   @override
   void setRawRxListener(RawRxListener? listener) => _rawRxListener = listener;
 
+  @override
+  Stream<Uint8List> get pushes => _pushesController.stream;
+
+  @override
+  Future<void> sendFrame(Uint8List frame) {
+    return _runExclusive(() async {
+      await _drainStaleReplies();
+      final socket = _requireSocket();
+      try {
+        socket.add(_codec.encodeFrame(frame, prefix: frameInboundPrefix));
+      } on SocketException catch (e) {
+        throw DeviceCommandError.disconnected(
+          message: 'device write failed: ${e.message}',
+        );
+      }
+    });
+  }
+
   void _onData(Uint8List data) {
     for (final frame in _codec.ingest(data)) {
       if (frame.isEmpty) continue;
+      if (!_pushesController.isClosed) {
+        _pushesController.add(Uint8List.fromList(frame));
+      }
       if (frame[0] == pushCodeLogRxData) {
         final raw = RawRxFrame.parse(frame);
         if (raw != null) _rawRxListener?.call(raw.snr, raw.rssi, raw.raw);
