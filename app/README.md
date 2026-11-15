@@ -1,17 +1,13 @@
-# meshcore_ota
+# MeshCoreOTA — the app
 
-A new Flutter project.
+Flutter app that performs OTA firmware updates on MeshCore repeaters from a
+phone (or, as a testing target, a Linux desktop). This directory is the
+Flutter project; the repo root has the packages, docs and release tooling.
 
-## Getting Started
+See the root [README](../README.md) for the design, and
+[docs/releasing.md](../docs/releasing.md) for builds and signing.
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- Targets: Android (releases), Linux (testing only, TCP companion).
+- BLE is Android/iOS; desktop is TCP-only.
+- `flutter pub get`, then `flutter analyze && flutter test`, or use the
+  repo-root `./scripts/check.sh`.
