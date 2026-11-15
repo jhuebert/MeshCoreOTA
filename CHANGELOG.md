@@ -9,6 +9,10 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 ### Added
 
 - Initial pre-bench release. BLE (NUS) and TCP transports to a stock companion.
+- Linux desktop build (testing target): the full OTA flow over TCP against a
+  WiFi/Ethernet companion or simulator; BLE stays mobile-only, field-pack
+  import/export is mobile-only (library browse/delete work everywhere), no
+  foreground service on desktop.
 - Repeater picker: companion contacts (repeater-filtered, manual pubkey
   entry), admin login, `ota status` probe.
 - Firmware sources: fork GitHub releases (stable + dev track) with optional

@@ -11,7 +11,7 @@
     },
     "app/lib/screens/connect_screen.dart": {
       "covered": 40,
-      "total": 111
+      "total": 113
     },
     "app/lib/screens/firmware_screen.dart": {
       "covered": 1,
@@ -19,7 +19,7 @@
     },
     "app/lib/screens/library_screen.dart": {
       "covered": 1,
-      "total": 93
+      "total": 95
     },
     "app/lib/screens/review_screen.dart": {
       "covered": 1,
@@ -47,7 +47,7 @@
     },
     "app/lib/services/foreground.dart": {
       "covered": 0,
-      "total": 7
+      "total": 9
     },
     "app/lib/services/github_source.dart": {
       "covered": 127,

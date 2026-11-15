@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -20,18 +21,24 @@ class ConnectScreen extends StatefulWidget {
 }
 
 class _ConnectScreenState extends State<ConnectScreen> {
+  static final _supportsBle = Platform.isAndroid || Platform.isIOS;
+
   bool _scanning = false;
   String? _scanError;
   List<ScanResult> _results = const [];
   StreamSubscription<List<ScanResult>>? _scanSub;
   final _hostController = TextEditingController(text: '127.0.0.1');
   final _portController = TextEditingController(text: '5000');
-  bool _tcpMode = false;
+  // BLE on desktop is not supported by this app (BlueZ reliability); the
+  // TCP companion is the Linux testing path.
+  bool _tcpMode = !Platform.isAndroid && !Platform.isIOS;
 
   @override
   void dispose() {
     _scanSub?.cancel();
-    FlutterBluePlus.stopScan();
+    if (_supportsBle) {
+      unawaited(FlutterBluePlus.stopScan());
+    }
     _hostController.dispose();
     _portController.dispose();
     super.dispose();

@@ -23,6 +23,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
   bool _busy = false;
   String? _message;
 
+  static final _supportsImport = Platform.isAndroid || Platform.isIOS;
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -81,33 +83,38 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
           ),
-          const SectionHeader('Import / export'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _importBin,
-                  icon: const Icon(Icons.file_open_outlined),
-                  label: const Text('Import a .bin firmware file'),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _importPack,
-                  icon: const Icon(Icons.unarchive_outlined),
-                  label: const Text('Import field pack (.zip)'),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  onPressed:
-                      _busy || app.libraryEntries.isEmpty ? null : _exportPack,
-                  icon: const Icon(Icons.archive_outlined),
-                  label: const Text('Export field pack (.zip)'),
-                ),
-              ],
+          // Field-pack file dialogs are Android/iOS only; the library
+          // itself (list/delete) works everywhere.
+          if (_supportsImport) ...[
+            const SectionHeader('Import / export'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _importBin,
+                    icon: const Icon(Icons.file_open_outlined),
+                    label: const Text('Import a .bin firmware file'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _importPack,
+                    icon: const Icon(Icons.unarchive_outlined),
+                    label: const Text('Import field pack (.zip)'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _busy || app.libraryEntries.isEmpty
+                        ? null
+                        : _exportPack,
+                    icon: const Icon(Icons.archive_outlined),
+                    label: const Text('Export field pack (.zip)'),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
           const SectionHeader('Prepare for the field'),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),

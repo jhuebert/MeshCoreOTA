@@ -71,7 +71,30 @@ Flutter stable (CI pins the exact version — see
 ```sh
 ./scripts/check.sh      # analyze + format + test everything
 ./scripts/build.sh apk --release
+./scripts/build.sh linux --release
 ```
+
+### Linux (testing target)
+
+The desktop Linux build is a first-class **testing target**, not a release
+artifact. It exists so the whole OTA flow can be exercised on a laptop
+without installing an APK on a phone: pair it with a WiFi/Ethernet companion
+(or a `127.0.0.1:5000` simulator) and drive an update over TCP.
+
+Notes:
+
+- **BLE companion support is Android/iOS only** in this app. On Linux the
+  connect screen offers TCP only (a WiFi/Ethernet companion or a local
+  simulator); the BLE transport stays mobile. The `flutter_blue_plus` plugin
+  does have a Linux binding, but BLE on desktop via BlueZ is not validated —
+  treat it as future work, not a supported path.
+- **File import/export** (field packs) is Android/iOS only; the library
+  itself (list/delete) is fully usable on Linux.
+- **No foreground service** on Linux — the transfer runs in-process, so keep
+  the window open during an update. (On Android/iOS the transfer keeps its
+  foreground service.)
+- The Linux build is not signed, versioned, or shipped — APKs remain the
+  release artifact. CI builds it on every push to keep it honest.
 
 Releases are built and signed by CI — see
 [docs/releasing.md](docs/releasing.md). Sideload note: installs from GitHub
