@@ -1,0 +1,598 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'buffer.dart';
+import 'channel_codec.dart';
+import 'constants.dart';
+import 'crypto.dart';
+import 'identity.dart';
+import 'models.dart';
+import 'packet.dart';
+import 'path_return_codec.dart';
+import 'paths.dart';
+import 'trace_codec.dart';
+
+/// A decoded advert packet: public key, timestamp, signature, and appdata.
+class AdvertPacket {
+  const AdvertPacket({
+    required this.publicKey,
+    required this.timestamp,
+    required this.signature,
+    required this.appData,
+  });
+
+  final Uint8List publicKey;
+  final int timestamp;
+  final Uint8List signature;
+  final Uint8List appData;
+
+  /// Verify the signature over `pubkey | timestamp | appdata`.
+  Future<bool> verify() => LocalIdentity.verify(
+        Uint8List.fromList([
+          ...publicKey,
+          ...(BufferWriter()..writeUInt32Le(timestamp)).toBytes(),
+          ...appData,
+        ]),
+        signature,
+        publicKey,
+      );
+}
+
+/// Builds MeshCore on-air packets. Ported from `openhop_core` `PacketBuilder`.
+class PacketBuilder {
+  const PacketBuilder._();
+
+  static int _routeTypeValue(bool hasPath) =>
+      hasPath ? routeTypeDirect : routeTypeFlood;
+
+  static Packet _packet(int header, List<int> payload) {
+    final p = Packet()
+      ..header = header
+      ..payload = Uint8List.fromList(payload);
+    return p;
+  }
+
+  static ({Uint8List secret, int hash}) _channelKey(Channel channel) =>
+      channelKey(channel.secret);
+
+  static const int _maxAdvertDataSize = 96;
+
+  /// Encode advert application data (`flags | [lat/lon] | name`).
+  static Uint8List encodeAdvertData({
+    required String name,
+    double lat = 0.0,
+    double lon = 0.0,
+    int flags = advTypeChat,
+  }) {
+    final buf = BufferWriter();
+    var finalFlags = flags;
+    final hasLocation = lat != 0.0 || lon != 0.0;
+    if (hasLocation) finalFlags |= advertFlagHasLocation;
+    if (name.isNotEmpty) finalFlags |= advertFlagHasName;
+    buf.writeByte(finalFlags);
+    if (hasLocation) {
+      buf.writeInt32Le((lat * 1e6).round());
+      buf.writeInt32Le((lon * 1e6).round());
+    }
+    if (name.isNotEmpty) {
+      final remaining = _maxAdvertDataSize - buf.length;
+      final nameBytes = BufferWriter()..writeString(name);
+      buf.writeBytes(nameBytes.toBytes().take(remaining).toList());
+    }
+    return buf.toBytes();
+  }
+
+  /// Create a signed self-advert packet.
+  static Future<Packet> createAdvert({
+    required LocalIdentity identity,
+    required String name,
+    double lat = 0.0,
+    double lon = 0.0,
+    int flags = advTypeChat,
+    bool flood = true,
+    required int timestamp,
+  }) async {
+    final ts = timestamp;
+    final pubkey = identity.publicKey;
+    final appdata =
+        encodeAdvertData(name: name, lat: lat, lon: lon, flags: flags);
+    final body = Uint8List.fromList([
+      ...pubkey,
+      ...(BufferWriter()..writeUInt32Le(ts)).toBytes(),
+      ...appdata,
+    ]);
+    final signature = await identity.sign(body);
+    final payload = Uint8List.fromList([
+      ...pubkey,
+      ...(BufferWriter()..writeUInt32Le(ts)).toBytes(),
+      ...signature,
+      ...appdata,
+    ]);
+    return _packet(
+      Packet.createHeader(
+          payloadTypeAdvert, flood ? routeTypeFlood : routeTypeDirect),
+      payload,
+    );
+  }
+
+  /// Truncated 4-byte ACK hash for a message sent by [senderPubkey].
+  ///
+  /// Matches the firmware: `sha256(timestamp | flags | text | sender_pubkey)`.
+  static Uint8List ackHash({
+    required int timestamp,
+    required int flagsByte,
+    required List<int> text,
+    required Uint8List senderPubkey,
+  }) {
+    final input = BufferWriter()
+      ..writeUInt32Le(timestamp)
+      ..writeByte(flagsByte & 0xFF)
+      ..writeBytes(text.where((b) => b != 0).toList());
+    return CryptoUtils.sha256([...input.toBytes(), ...senderPubkey])
+        .sublist(0, keyPrefix4);
+  }
+
+  /// Create a discrete ACK packet from a precomputed ACK payload.
+  ///
+  /// Plain-text ACKs carry the four-byte hash plus extended-attempt and random
+  /// bytes; all provided bytes are preserved.
+  static Packet createAckPacket(List<int> ackBytes) => _packet(
+      Packet.createHeader(payloadTypeAck, routeTypeDirect),
+      Uint8List.fromList(ackBytes));
+
+  /// Create a multipart ACK packet (`PAYLOAD_TYPE_MULTIPART` whose first byte is
+  /// `remaining << 4 | PAYLOAD_TYPE_ACK`). Used to send a redundant ACK on
+  /// direct routes when `multi_acks` is enabled.
+  static Packet createMultiAck(List<int> ackBytes, int remaining) => _packet(
+      Packet.createHeader(payloadTypeMultipart, routeTypeDirect),
+      Uint8List.fromList([
+        ((remaining & 0x0F) << 4) | payloadTypeAck,
+        ...ackBytes,
+      ]));
+
+  /// Create an encrypted return-path packet carrying [extra] (e.g. an ACK
+  /// hash), matching the firmware's `Mesh::createPathReturn`. Used to
+  /// acknowledge a *flooded* direct message so the sender learns the path back
+  /// and receives the ACK.
+  static Packet createPathReturn({
+    required int destHashByte,
+    required int srcHashByte,
+    required Uint8List secret,
+    required List<int> path,
+    required int pathLenEncoded,
+    required int extraType,
+    required List<int> extra,
+  }) {
+    final inner = encodePathReturnPayload(
+      pathLenEncoded: pathLenEncoded,
+      path: path,
+      extraType: extraType,
+      extra: extra,
+    );
+    final aesKey = secret.sublist(0, 16);
+    final cipher = CryptoUtils.encryptThenMac(aesKey, secret, inner);
+    final payload = Uint8List.fromList([destHashByte, srcHashByte, ...cipher]);
+    return _packet(
+        Packet.createHeader(payloadTypePath, routeTypeFlood), payload);
+  }
+
+  /// Compute the ACK CRC for an outgoing direct message.
+  static int computeAckCrc({
+    required int timestamp,
+    required int flagsByte,
+    required String message,
+    required Uint8List selfPubkey,
+  }) {
+    final h = ackHash(
+      timestamp: timestamp,
+      flagsByte: flagsByte,
+      text: utf8.encode(message),
+      senderPubkey: selfPubkey,
+    );
+    return h[0] | (h[1] << 8) | (h[2] << 16) | (h[3] << 24);
+  }
+
+  /// Build an encrypted direct text message for [contact].
+  ///
+  /// Returns the packet and the ACK CRC expected from the recipient.
+  static Future<(Packet, int)> createTextMessage({
+    required Contact contact,
+    required LocalIdentity identity,
+    required String message,
+    int attempt = 0,
+    int txtType = txtTypePlain,
+    required int timestamp,
+  }) async {
+    final ts = timestamp;
+    final flagsByte = ((txtType & 0x3F) << 2) | (attempt & 0x03);
+    final plaintext = BufferWriter()
+      ..writeUInt32Le(ts)
+      ..writeByte(flagsByte)
+      ..writeString(message)
+      ..writeByte(0);
+    if (attempt > 3) {
+      // Stock appends a zero byte after the text NUL, then the full attempt
+      // number, so retries beyond 3 keep a unique packet hash.
+      plaintext.writeByte(attempt & 0xFF);
+    }
+
+    final secret = await identity.sharedSecret(contact.publicKey);
+    final aesKey = secret.sublist(0, 16);
+    final cipher =
+        CryptoUtils.encryptThenMac(aesKey, secret, plaintext.toBytes());
+
+    final destHash = contact.publicKey[0];
+    final srcHash = identity.publicKey[0];
+    final payload = Uint8List.fromList([destHash, srcHash, ...cipher]);
+
+    final ackCrc = computeAckCrc(
+      timestamp: ts,
+      flagsByte: flagsByte,
+      message: message,
+      selfPubkey: identity.publicKey,
+    );
+
+    final hasPath = contact.hasDirectRoute;
+    final pkt = _packet(
+      Packet.createHeader(payloadTypeTxtMsg, _routeTypeValue(hasPath)),
+      payload,
+    );
+    if (hasPath) {
+      pkt.setPath(contact.outPath, contact.outPathLen);
+    }
+    return (pkt, ackCrc);
+  }
+
+  /// Build an encrypted group/channel text message.
+  ///
+  /// [maxContentLength] caps the `"<sender>: <message>"` content. The default
+  /// matches the firmware's `MAX_TEXT_LEN`; a stock companion raw frame needs
+  /// [maxGroupTextContentOverCompanion].
+  static Packet createGroupText({
+    required Channel channel,
+    required String message,
+    required String senderName,
+    required int timestamp,
+    int maxContentLength = maxTextLength,
+  }) {
+    final (:secret, :hash) = _channelKey(channel);
+    final ts = timestamp;
+    final prefix = utf8.encode('$senderName: ');
+    final available =
+        (maxContentLength - prefix.length).clamp(0, maxContentLength);
+    final messageBytes = utf8.encode(message);
+    final content = [
+      ...prefix,
+      ...(messageBytes.length <= available
+          ? messageBytes
+          : messageBytes.sublist(0, available)),
+    ];
+    final plaintext = BufferWriter()
+      ..writeUInt32Le(ts)
+      ..writeByte(0x00)
+      ..writeBytes(content);
+    final cipher = CryptoUtils.encryptThenMac(
+      secret.sublist(0, 16),
+      secret,
+      plaintext.toBytes(),
+    );
+    final payload = Uint8List.fromList([hash, ...cipher]);
+    return _packet(
+      Packet.createHeader(payloadTypeGrpTxt, routeTypeFlood),
+      payload,
+    );
+  }
+
+  /// Build a group *data* packet (`PAYLOAD_TYPE_GRP_DATA`) for [channel].
+  ///
+  /// When [pathLenEncoded] is `0xFF` (unknown) the packet is flooded; otherwise
+  /// it is routed directly via [path]. A zero-length path is a valid zero-hop
+  /// direct route and is distinct from flood (`0xFF`). The application payload
+  /// is capped at [maxGroupDataLength] (165); the caller is responsible for
+  /// the additional whole-command frame limit.
+  static Packet createGroupData({
+    required Channel channel,
+    required int dataType,
+    required List<int> data,
+    List<int> path = const [],
+    int pathLenEncoded = 0xFF,
+  }) {
+    if (dataType == dataTypeReserved) {
+      throw ArgumentError.value(dataType, 'dataType', 'reserved data type');
+    }
+    if (data.length > maxGroupDataLength) {
+      throw ArgumentError.value(
+        data.length,
+        'data.length',
+        'group data exceeds $maxGroupDataLength bytes',
+      );
+    }
+    final flood = pathLenEncoded == 0xFF;
+    if (flood) {
+      if (path.isNotEmpty) {
+        throw ArgumentError.value(
+            path.length, 'path', 'a flooded packet must not carry a path');
+      }
+    } else {
+      if (!PathUtils.isValidPathLen(pathLenEncoded)) {
+        throw ArgumentError.value(
+            pathLenEncoded, 'pathLenEncoded', 'invalid encoded path length');
+      }
+      final expected = PathUtils.getByteLength(pathLenEncoded);
+      if (path.length != expected) {
+        throw ArgumentError.value(
+            path.length, 'path.length', 'expected $expected path bytes');
+      }
+    }
+    final (:secret, :hash) = _channelKey(channel);
+    final plaintext = BufferWriter()
+      ..writeUInt16Le(dataType)
+      ..writeByte(data.length)
+      ..writeBytes(data);
+    final cipher = CryptoUtils.encryptThenMac(
+      secret.sublist(0, 16),
+      secret,
+      plaintext.toBytes(),
+    );
+    final payload = Uint8List.fromList([hash, ...cipher]);
+    final pkt = _packet(
+      Packet.createHeader(
+          payloadTypeGrpData, flood ? routeTypeFlood : routeTypeDirect),
+      payload,
+    );
+    if (!flood) pkt.setPath(path, pathLenEncoded);
+    return pkt;
+  }
+
+  /// Build a raw control-data packet (`PAYLOAD_TYPE_CONTROL`). These are sent
+  /// zero-hop (direct route, empty path) and are not encrypted.
+  static Packet createControlData(List<int> data) => Packet()
+    ..header = Packet.createHeader(payloadTypeControl, routeTypeDirect)
+    ..pathLenByte = 0
+    ..payload = Uint8List.fromList(data);
+
+  /// Build a trace packet (`PAYLOAD_TYPE_TRACE`, route direct). The payload is
+  /// `tag(4) + auth_code(4) + flags(1) + path bytes`; the path is *appended to
+  /// the payload* (the routing path field stays empty), matching the firmware's
+  /// `Mesh::sendDirect` trace special-case and openhop's `create_trace`.
+  static Packet createTrace({
+    required int tag,
+    required int authCode,
+    required int flags,
+    List<int> path = const [],
+  }) =>
+      Packet()
+        ..header = Packet.createHeader(payloadTypeTrace, routeTypeDirect)
+        ..pathLenByte = 0
+        ..payload = encodeTracePayload(
+          tag: tag,
+          authCode: authCode,
+          flags: flags,
+          path: path,
+        );
+
+  /// Build a raw custom packet (`PAYLOAD_TYPE_RAW_CUSTOM`) sent directly along
+  /// [path]. Backs `CMD_SEND_RAW_DATA`.
+  static Packet createRawCustom(
+    List<int> payload, {
+    List<int> path = const [],
+    int? encodedPathLen,
+  }) {
+    final pkt = Packet()
+      ..header = Packet.createHeader(payloadTypeRawCustom, routeTypeDirect)
+      ..payload = Uint8List.fromList(payload);
+    pkt.setPath(path, encodedPathLen);
+    return pkt;
+  }
+
+  /// Build a protocol request (repeater status/telemetry/etc.).
+  static Future<Packet> createProtocolRequest({
+    required Contact contact,
+    required LocalIdentity identity,
+    required int protocolCode,
+    List<int> data = const [],
+    required int timestamp,
+    bool? flood,
+  }) async {
+    final ts = timestamp;
+    final plaintext = BufferWriter()
+      ..writeUInt32Le(ts)
+      ..writeByte(protocolCode)
+      ..writeBytes(data);
+    final secret = await identity.sharedSecret(contact.publicKey);
+    final aesKey = secret.sublist(0, 16);
+    final cipher =
+        CryptoUtils.encryptThenMac(aesKey, secret, plaintext.toBytes());
+    final payload = Uint8List.fromList([
+      contact.publicKey[0],
+      identity.publicKey[0],
+      ...cipher,
+    ]);
+    final useFlood = flood ?? !contact.hasDirectRoute;
+    final pkt = _packet(
+      Packet.createHeader(
+          payloadTypeReq, useFlood ? routeTypeFlood : routeTypeDirect),
+      payload,
+    );
+    if (!useFlood) pkt.setPath(contact.outPath, contact.outPathLen);
+    return pkt;
+  }
+
+  /// Build an encrypted `PAYLOAD_TYPE_RESPONSE` datagram for [contact].
+  ///
+  /// [data] is the already-tagged response body (for telemetry this is
+  /// `tag u32 + LPP`). Direct responses use the contact's known outbound route;
+  /// when that route is unknown the response is flooded.
+  static Future<Packet> createProtocolResponse({
+    required Contact contact,
+    required LocalIdentity identity,
+    required List<int> data,
+    bool? flood,
+  }) async {
+    final secret = await identity.sharedSecret(contact.publicKey);
+    final aesKey = secret.sublist(0, 16);
+    final cipher =
+        CryptoUtils.encryptThenMac(aesKey, secret, Uint8List.fromList(data));
+    final payload = Uint8List.fromList([
+      contact.publicKey[0],
+      identity.publicKey[0],
+      ...cipher,
+    ]);
+    final useFlood = flood ?? !contact.hasDirectRoute;
+    final pkt = _packet(
+      Packet.createHeader(
+          payloadTypeResponse, useFlood ? routeTypeFlood : routeTypeDirect),
+      payload,
+    );
+    if (!useFlood) pkt.setPath(contact.outPath, contact.outPathLen);
+    return pkt;
+  }
+
+  /// Build a `PAYLOAD_TYPE_ANON_REQ` datagram (used for repeater login). The
+  /// sender's full public key is embedded so the recipient can reply without
+  /// knowing the sender as a contact.
+  static Future<Packet> createAnonRequest({
+    required Contact contact,
+    required LocalIdentity identity,
+    List<int> data = const [],
+    required int timestamp,
+    bool? flood,
+  }) async {
+    final ts = timestamp;
+    final plaintext = BufferWriter()
+      ..writeUInt32Le(ts)
+      ..writeBytes(data);
+    final secret = await identity.sharedSecret(contact.publicKey);
+    final aesKey = secret.sublist(0, 16);
+    final cipher =
+        CryptoUtils.encryptThenMac(aesKey, secret, plaintext.toBytes());
+    final payload = Uint8List.fromList([
+      contact.publicKey[0],
+      ...identity.publicKey,
+      ...cipher,
+    ]);
+    final useFlood = flood ?? !contact.hasDirectRoute;
+    final pkt = _packet(
+      Packet.createHeader(
+          payloadTypeAnonReq, useFlood ? routeTypeFlood : routeTypeDirect),
+      payload,
+    );
+    if (!useFlood) pkt.setPath(contact.outPath, contact.outPathLen);
+    return pkt;
+  }
+
+  /// Decode the fixed advert envelope.
+  ///
+  /// Returns null when the payload is too short for a public key, timestamp,
+  /// and signature.
+  static AdvertPacket? decodeAdvertPacket(Uint8List payload) {
+    if (payload.length < pubKeySize + timestampSize + signatureSize) {
+      return null;
+    }
+    return AdvertPacket(
+      publicKey: payload.sublist(0, pubKeySize),
+      timestamp: BufferReader(payload.sublist(pubKeySize)).readUInt32Le(),
+      signature: payload.sublist(
+        pubKeySize + timestampSize,
+        pubKeySize + timestampSize + signatureSize,
+      ),
+      appData: payload.sublist(pubKeySize + timestampSize + signatureSize),
+    );
+  }
+
+  /// Verify an advert packet and extract its encoded appdata.
+  static Future<bool> verifyAdvert(Uint8List payload) async {
+    final advert = decodeAdvertPacket(payload);
+    return advert != null && await advert.verify();
+  }
+
+  /// Decode advert appdata into flag/location/name.
+  ///
+  /// Unlike the upstream parser this never reads past [appdata]; malformed or
+  /// truncated fields return an invalid result instead.
+  static AdvertData decodeAdvertData(List<int> appdata) {
+    if (appdata.isEmpty) return const AdvertData();
+    final reader = BufferReader(Uint8List.fromList(appdata));
+    final flags = reader.readByte();
+    var lat = 0.0;
+    var lon = 0.0;
+    final hasLocation = flags & advertFlagHasLocation != 0;
+    if (hasLocation) {
+      if (reader.remaining < 8) {
+        return AdvertData(flags: flags, valid: false);
+      }
+      lat = reader.readInt32Le() / 1e6;
+      lon = reader.readInt32Le() / 1e6;
+    }
+    if (flags & advertFlagFeature1 != 0) {
+      if (reader.remaining < 2) {
+        return AdvertData(flags: flags, valid: false);
+      }
+      reader.skipBytes(2);
+    }
+    if (flags & advertFlagFeature2 != 0) {
+      if (reader.remaining < 2) {
+        return AdvertData(flags: flags, valid: false);
+      }
+      reader.skipBytes(2);
+    }
+
+    var name = '';
+    var hasName = false;
+    if (flags & advertFlagHasName != 0) {
+      if (reader.remaining <= 0) {
+        return AdvertData(flags: flags, lat: lat, lon: lon, valid: false);
+      }
+      final raw = reader.readRemainingBytes();
+      final nul = raw.indexOf(0);
+      final nameBytes = nul >= 0 ? raw.sublist(0, nul) : raw;
+      if (nameBytes.isEmpty) {
+        return AdvertData(
+          flags: flags,
+          lat: lat,
+          lon: lon,
+          valid: true,
+          hasLocation: hasLocation,
+        );
+      }
+      try {
+        name = utf8.decode(nameBytes);
+      } on FormatException {
+        return AdvertData(flags: flags, lat: lat, lon: lon, valid: false);
+      }
+      hasName = true;
+    }
+    return AdvertData(
+      flags: flags,
+      lat: lat,
+      lon: lon,
+      name: name,
+      valid: true,
+      hasLocation: hasLocation,
+      hasName: hasName,
+    );
+  }
+}
+
+/// Decoded advert application data.
+class AdvertData {
+  const AdvertData({
+    this.flags = 0,
+    this.lat = 0.0,
+    this.lon = 0.0,
+    this.name = '',
+    this.valid = false,
+    this.hasLocation = false,
+    this.hasName = false,
+  });
+
+  final int flags;
+  final double lat;
+  final double lon;
+  final String name;
+
+  /// Whether all declared fields were present and the name decoded as UTF-8.
+  final bool valid;
+  final bool hasLocation;
+  final bool hasName;
+}

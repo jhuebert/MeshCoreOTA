@@ -1,0 +1,383 @@
+/// MeshCore companion + on-air protocol constants.
+///
+/// Command/response/push codes are ported from the MeshCore firmware
+/// (`examples/companion_radio/MyMesh.cpp`) and cross-checked against
+/// `meshcore-open` and `openhop_core`.
+library;
+
+// ---------------------------------------------------------------------------
+// Frame delimiters (USB serial / TCP: '<' inbound, '>' outbound)
+// ---------------------------------------------------------------------------
+const int frameInboundPrefix = 0x3C; // '<'
+const int frameOutboundPrefix = 0x3E; // '>'
+
+/// Firmware `MAX_FRAME_SIZE`: the companion payload excludes the serial frame
+/// header (`prefix + uint16 LE length`).
+const int maxCompanionPayloadSize = 176;
+
+/// The serial/TCP framing header: direction prefix plus the 2-byte length.
+const int serialHeaderSize = 3;
+
+/// Maximum framed TCP total: 176-byte payload plus the 3-byte header.
+const int maxSerialFrameSize = maxCompanionPayloadSize + serialHeaderSize;
+
+// ---------------------------------------------------------------------------
+// Commands (app -> radio)
+// ---------------------------------------------------------------------------
+const int cmdAppStart = 1;
+const int cmdSendTxtMsg = 2;
+const int cmdSendChannelTxtMsg = 3;
+const int cmdGetContacts = 4;
+const int cmdGetDeviceTime = 5;
+const int cmdSetDeviceTime = 6;
+const int cmdSendSelfAdvert = 7;
+const int cmdSetAdvertName = 8;
+const int cmdAddUpdateContact = 9;
+const int cmdSyncNextMessage = 10;
+const int cmdSetRadioParams = 11;
+const int cmdSetRadioTxPower = 12;
+const int cmdResetPath = 13;
+const int cmdSetAdvertLatLon = 14;
+const int cmdRemoveContact = 15;
+const int cmdShareContact = 16;
+const int cmdExportContact = 17;
+const int cmdImportContact = 18;
+const int cmdReboot = 19;
+const int cmdGetBattAndStorage = 20;
+const int cmdSetTuningParams = 21;
+const int cmdDeviceQuery = 22;
+const int cmdExportPrivateKey = 23;
+const int cmdImportPrivateKey = 24;
+const int cmdSendRawData = 25;
+const int cmdSendLogin = 26;
+const int cmdSendStatusReq = 27;
+const int cmdHasConnection = 28;
+const int cmdLogout = 29;
+const int cmdGetContactByKey = 30;
+const int cmdGetChannel = 31;
+const int cmdSetChannel = 32;
+const int cmdSignStart = 33;
+const int cmdSignData = 34;
+const int cmdSignFinish = 35;
+const int cmdSendTracePath = 36;
+const int cmdSetDevicePin = 37;
+const int cmdSetOtherParams = 38;
+const int cmdSendTelemetryReq = 39;
+const int cmdGetCustomVars = 40;
+const int cmdSetCustomVar = 41;
+const int cmdGetAdvertPath = 42;
+const int cmdGetTuningParams = 43;
+const int cmdSendBinaryReq = 50;
+const int cmdFactoryReset = 51;
+const int cmdSendPathDiscoveryReq = 52;
+const int cmdSendRawPacket = 65;
+const int cmdSetFloodScope = 54;
+const int cmdSendControlData = 55;
+const int cmdGetStats = 56;
+const int cmdSendAnonReq = 57;
+const int cmdSetAutoAddConfig = 58;
+const int cmdGetAutoAddConfig = 59;
+const int cmdGetAllowedRepeatFreq = 60;
+const int cmdSetPathHashMode = 61;
+const int cmdSendChannelData = 62;
+const int cmdSetDefaultFloodScope = 63;
+const int cmdGetDefaultFloodScope = 64;
+const int cmdRunCliCommand = 66;
+
+// ---------------------------------------------------------------------------
+// Response codes (radio -> app)
+// ---------------------------------------------------------------------------
+const int respCodeOk = 0;
+const int respCodeErr = 1;
+const int respCodeContactsStart = 2;
+const int respCodeContact = 3;
+const int respCodeEndOfContacts = 4;
+const int respCodeSelfInfo = 5;
+const int respCodeSent = 6;
+const int respCodeContactMsgRecv = 7;
+const int respCodeChannelMsgRecv = 8;
+const int respCodeCurrTime = 9;
+const int respCodeNoMoreMessages = 10;
+const int respCodeExportContact = 11;
+const int respCodeBattAndStorage = 12;
+const int respCodeDeviceInfo = 13;
+const int respCodePrivateKey = 14;
+const int respCodeDisabled = 15;
+const int respCodeContactMsgRecvV3 = 16;
+const int respCodeChannelMsgRecvV3 = 17;
+const int respCodeChannelInfo = 18;
+const int respCodeSignStart = 19;
+const int respCodeSignature = 20;
+const int respCodeCustomVars = 21;
+const int respCodeAdvertPath = 22;
+const int respCodeTuningParams = 23;
+const int respCodeStats = 24;
+const int respCodeAutoAddConfig = 25;
+const int respCodeAllowedRepeatFreq = 26;
+const int respCodeChannelDataRecv = 27;
+const int respCodeDefaultFloodScope = 28;
+const int respCodeCliReply = 29; // v14+, reply to CMD_RUN_CLI_COMMAND
+
+// ---------------------------------------------------------------------------
+// Push codes (radio -> app, unsolicited)
+// ---------------------------------------------------------------------------
+const int pushCodeAdvert = 0x80;
+const int pushCodePathUpdated = 0x81;
+const int pushCodeSendConfirmed = 0x82;
+const int pushCodeMsgWaiting = 0x83;
+const int pushCodeRawData = 0x84;
+const int pushCodeLoginSuccess = 0x85;
+const int pushCodeLoginFail = 0x86;
+const int pushCodeStatusResponse = 0x87;
+const int pushCodeLogRxData = 0x88;
+const int pushCodeTraceData = 0x89;
+const int pushCodeNewAdvert = 0x8A;
+const int pushCodeTelemetryResponse = 0x8B;
+const int pushCodeBinaryResponse = 0x8C;
+const int pushCodePathDiscoveryResponse = 0x8D;
+const int pushCodeControlData = 0x8E;
+const int pushCodeContactDeleted = 0x8F;
+const int pushCodeContactsFull = 0x90;
+
+// ---------------------------------------------------------------------------
+// Error codes
+// ---------------------------------------------------------------------------
+const int errCodeUnsupportedCmd = 1;
+const int errCodeNotFound = 2;
+const int errCodeTableFull = 3;
+const int errCodeBadState = 4;
+const int errCodeFileIoError = 5;
+const int errCodeIllegalArg = 6;
+
+// ---------------------------------------------------------------------------
+// Stats / telemetry / advert constants
+// ---------------------------------------------------------------------------
+const int statsTypeCore = 0;
+const int statsTypeRadio = 1;
+const int statsTypePackets = 2;
+
+const int advTypeNone = 0;
+const int advTypeChat = 1;
+const int advTypeRepeater = 2;
+const int advTypeRoom = 3;
+const int advTypeSensor = 4;
+
+// On-air request/response types (carried inside PAYLOAD_TYPE_REQ / _RESPONSE).
+const int reqTypeGetStatus = 0x01;
+const int reqTypeKeepAlive = 0x02;
+const int reqTypeGetTelemetryData = 0x03;
+
+// Server login response codes (`RESP_SERVER_*` in the firmware).
+const int respServerLoginOk = 0x00;
+
+// Telemetry permission bits (`TELEM_PERM_*` in the firmware).
+const int telemPermBase = 0x01;
+
+/// CayenneLPP channel the firmware uses for the local node's own telemetry.
+const int telemChannelSelf = 1;
+const int telemPermLocation = 0x02;
+const int telemPermEnvironment = 0x04;
+
+const int txtTypePlain = 0;
+const int txtTypeCliData = 1;
+const int txtTypeSigned = 2;
+const int txtTypeCliCommand = 3;
+
+const int teleModeDeny = 0;
+const int teleModeAllowFlags = 1;
+const int teleModeAllowAll = 2;
+
+const int advertLocNone = 0;
+const int advertLocShare = 1;
+
+const int autoAddOverwriteOldest = 0x01;
+const int autoAddChat = 0x02;
+const int autoAddRepeater = 0x04;
+const int autoAddRoom = 0x08;
+const int autoAddSensor = 0x10;
+
+// Advert flags. The low nibble carries an `advType*` value, not a bit field.
+const int advertFlagHasLocation = 0x10;
+const int advertFlagFeature1 = 0x20;
+const int advertFlagFeature2 = 0x40;
+const int advertFlagHasName = 0x80;
+
+// ---------------------------------------------------------------------------
+// On-air payload types
+// ---------------------------------------------------------------------------
+const int payloadTypeReq = 0x00;
+const int payloadTypeResponse = 0x01;
+const int payloadTypeTxtMsg = 0x02;
+const int payloadTypeAck = 0x03;
+const int payloadTypeAdvert = 0x04;
+const int payloadTypeGrpTxt = 0x05;
+const int payloadTypeGrpData = 0x06;
+const int payloadTypeAnonReq = 0x07;
+const int payloadTypePath = 0x08;
+const int payloadTypeTrace = 0x09;
+const int payloadTypeMultipart = 0x0A;
+const int payloadTypeControl = 0x0B;
+const int payloadTypeRawCustom = 0x0F;
+
+// Route types
+const int routeTypeTransportFlood = 0x00;
+const int routeTypeFlood = 0x01;
+const int routeTypeDirect = 0x02;
+const int routeTypeTransportDirect = 0x03;
+
+// Header bit layout
+const int phRouteMask = 0x03;
+const int phTypeShift = 2;
+const int phTypeMask = 0x0F;
+const int phVerShift = 6;
+const int phVerMask = 0x03;
+
+// ---------------------------------------------------------------------------
+// Sizes
+// ---------------------------------------------------------------------------
+const int pubKeySize = 32;
+
+/// Public-key prefix lengths used by companion request/response routing.
+const int keyPrefix4 = 4;
+const int keyPrefix6 = 6;
+
+/// Public-key prefix length used as the advert-path cache key.
+const int advertPathPrefix7 = 7;
+
+/// The MeshCore expanded private key `[scalar(32)][prefix(32)]`.
+const int privateKeySize = 64;
+const int signatureSize = 64;
+const int maxPathSize = 64;
+const int pathHashSize = 1;
+const int maxNameSize = 32;
+const int cipherMacSize = 2;
+const int cipherBlockSize = 16;
+const int timestampSize = 4;
+
+/// Firmware `MAX_PACKET_PAYLOAD`: the on-air packet payload maximum.
+const int maxPacketPayloadSize = 184;
+
+/// Maximum text bytes in a direct or group message (`MAX_TEXT_LEN`).
+///
+/// The firmware caps the `timestamp | flags | text` plaintext (or the
+/// `"<sender>: " + message` group content) at this many bytes. Oversized direct
+/// text is rejected; oversized group text is truncated.
+const int maxTextLength = 160;
+
+/// Maximum group-text content (`"<sender>: " + message`) that fits a stock
+/// companion `SEND_RAW_PACKET` frame.
+///
+/// The frame adds command + priority (2), header (1), transport codes (4),
+/// path length (1), channel hash (1), MAC (2), and AES block padding. The
+/// largest cipher block is 160 bytes, leaving 155 content bytes; the message
+/// text budget is therefore `153 - UTF-8(sender)`.
+const int maxGroupTextContentOverCompanion = 155;
+
+/// Maximum CLI reply text bytes (`reply_buf[166]` in stock firmware, including
+/// the NUL terminator).
+const int maxCliReplyLength = 165;
+
+/// On-air group-data application limit (`MAX_GROUP_DATA_LENGTH` =
+/// 184-byte packet payload - 16-byte cipher block - 3 plaintext bytes).
+const int maxGroupDataLength = maxPacketPayloadSize - cipherBlockSize - 3;
+
+/// Practical group-data limit when a packet is carried over a stock
+/// companion's `CMD_SEND_RAW_PACKET` frame.
+///
+/// The companion payload is capped at [maxCompanionPayloadSize] (176). A raw
+/// packet frame adds the command + priority (2), header (1), path length (1),
+/// channel hash (1) and MAC (2), plus AES block padding. For an empty/flood
+/// path the largest plaintext that fits is 160 bytes, i.e. 157 application
+/// bytes. 158+ data bytes pad to 176-byte ciphertext and need a 186-byte
+/// companion frame, which the Xiao 1.18 firmware silently drops; the radio
+/// remains alive but never transmits.
+const int maxGroupDataLengthOverCompanion = 157;
+
+/// Largest group-data payload that fits [pathBytes] route bytes through a
+/// stock companion raw-packet frame.
+int maxGroupDataLengthForCompanionPath(int pathBytes) {
+  final available = maxCompanionPayloadSize -
+      2 - // command + priority
+      1 - // packet header
+      1 - // encoded path length
+      pathBytes -
+      1 - // channel hash
+      2; // MAC
+  final padded = (available ~/ cipherBlockSize) * cipherBlockSize;
+  final data = padded - 3; // data type (2) + length (1)
+  return data < maxGroupDataLength ? data : maxGroupDataLength;
+}
+
+/// Fixed bytes in a `RESP_CODE_CHANNEL_DATA_RECV` push before the payload:
+/// code, SNR, RSSI, reserved, channel index, path length, data type (u16),
+/// data length.
+const int channelDataRxHeaderSize = 9;
+
+/// App-facing channel-data receive limit (`MAX_CHANNEL_DATA_LENGTH` =
+/// 176-byte companion payload - 9-byte `CHANNEL_DATA_RECV` header). This is
+/// distinct from the 165-byte group-data TX limit.
+const int maxChannelDataLength =
+    maxCompanionPayloadSize - channelDataRxHeaderSize;
+
+/// Channel-data type 0 is reserved/invalid (`DATA_TYPE_RESERVED`).
+const int dataTypeReserved = 0x0000;
+
+/// Generic/default firmware code for test and physical-device models. The
+/// virtual companion advertises [targetFirmwareVerCode] through
+/// [buildVirtualDeviceInfo].
+const int defaultFirmwareVerCode = 11;
+
+/// MeshCore 1.18 compatibility firmware code advertised by the virtual
+/// companion.
+const int targetFirmwareVerCode = 14;
+
+/// Virtual product version. Must match the app `pubspec.yaml` version.
+const String productVersion = '0.2.0';
+
+/// Virtual board/manufacturer string for the 40-byte DEVICE_INFO slot.
+const String virtualBoardName = 'MeshChameleon Virtual Companion';
+
+/// Historical pre-1.18 DEVICE_INFO version string retained for comparison
+/// tests. The virtual companion advertises [targetCompatibilityVersion].
+const String activeDeviceVersion = 'meshchameleon $productVersion';
+
+/// MeshCore 1.18 compatibility version for the 20-byte DEVICE_INFO slot.
+const String targetCompatibilityVersion = 'v1.18.0';
+
+/// Virtual CLI version string (product version follows the app release).
+const String virtualCliVersion =
+    'MeshChameleon $productVersion (MeshCore 1.18.0)';
+
+/// Persistent virtual contact capacity (SPEC S2, owner-updated to match the
+/// Xiao WIO companion's reported 350). DEVICE_INFO reports /2 (=175).
+const int virtualMaxContacts = 350;
+
+/// Virtual channel capacity; valid indices are 0-39.
+const int virtualMaxChannels = 40;
+
+/// Separate anonymous-request contact slots; never part of the persistent list.
+const int maxTransientContacts = 8;
+
+/// Deterministic virtual storage partition quota (4 MiB).
+const int virtualStorageQuotaBytes = 4 * 1024 * 1024;
+
+/// Wire-reported total virtual storage in KiB.
+const int virtualStorageTotalKb = 4096;
+
+/// Advert-path cache capacity, evicting the oldest receive timestamp first.
+const int maxAdvertPathCacheEntries = 64;
+
+/// Round a virtual storage byte count up to the wire's KiB unit.
+int storageKibForBytes(int bytes) => (bytes + 1023) ~/ 1024;
+
+/// Default maximum TX power before the physical SELF_INFO is adopted.
+const int defaultMaxTxPowerDbm = 22;
+
+/// Companion protocol version the client advertises in `CMD_DEVICE_QUERY`.
+const int appProtocolVersion = 4;
+
+/// Default companion TCP port (matches firmware and CLI default).
+const int defaultCompanionPort = 5000;
+
+/// Default public channel PSK (from the MeshCore companion_radio example).
+const String publicGroupPsk = 'izOH6cXN6mrJ5e26oRXNcg==';
