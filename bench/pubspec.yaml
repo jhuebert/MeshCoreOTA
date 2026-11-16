@@ -1,0 +1,24 @@
+name: bench
+description: >-
+  Hardware bench harness for LoRa OTA: drives a real companion over TCP and
+  measures/stresses the fork firmware's OTA path end to end. Not part of the
+  app or the test suites — it needs two radios on a desk.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  companion_client:
+    path: ../packages/companion_client
+  crypto: ^3.0.3
+  device_link:
+    path: ../packages/device_link
+  mesh_protocol:
+    path: ../packages/mesh_protocol
+  ota_core:
+    path: ../packages/ota_core
+
+dev_dependencies:
+  lints: ^6.0.0
