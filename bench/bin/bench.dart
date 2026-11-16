@@ -146,8 +146,21 @@ class Bench {
   }
 
   Future<void> login() async {
-    final r = await client.login(target, password);
-    if (!r.ok) throw StateError('login rejected');
+    // A stock companion drops an occasional exchange; a login lost in flight
+    // says nothing about the node, so retry before failing the run.
+    LoginResult? r;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        r = await client.login(target, password);
+        if (r.ok) break;
+      } catch (e) {
+        if (attempt == 2) rethrow;
+        info('  login retry (${e.runtimeType})');
+        await Future<void>.delayed(const Duration(seconds: 3));
+        r = null;
+      }
+    }
+    if (r == null || !r.ok) throw StateError('login rejected');
     if (!r.isAdmin) throw StateError('logged in but not as admin');
     info('logged in as admin');
   }
