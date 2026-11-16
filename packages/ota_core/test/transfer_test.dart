@@ -75,7 +75,7 @@ class FakeOtaNode {
       final size = bd.getUint32(0, Endian.little);
       final sha = body.sublist(9, 41);
       final target = bd.getUint32(36, Endian.little);
-      final token = bd.getUint32(40, Endian.little);
+      final token = bd.getUint32(40, Endian.big);
       if (target != targetId) {
         err = 1;
         return const [];
@@ -355,5 +355,40 @@ void main() {
       throwsA(isA<OtaTransferException>()),
     );
     expect(transfer.cancelRequested, isTrue);
+  });
+
+  test('every op frame fits the companion frame for its route', () {
+    final image = Uint8List.fromList(
+        List<int>.generate(4096, (i) => (i * 31 + 7) & 0xFF));
+    for (final pathBytes in [0, 6, 16]) {
+      final route = OtaRoute(
+        path: Uint8List(pathBytes),
+        encodedPathLen: pathBytes == 0 ? 0 : 0x40 | pathBytes,
+        retPath: Uint8List(0),
+        retPathLen: 0,
+      );
+      final transfer = OtaTransfer(
+        link: FakeDeviceLink(snr: 6.0, rssi: -70),
+        route: route,
+        contract: OtaStartContract(
+          imageSize: image.length,
+          imageSha256: Uint8List(32),
+          targetId: 1,
+          token: 0x12345678,
+        ),
+        ops: computeDelta(Uint8List(0), image).ops,
+      );
+      for (final frame in transfer.wireOps.frames) {
+        // command + priority + header + path_len + frame bytes
+        final companionFrame = 2 + 1 + 1 + pathBytes + frame.length;
+        expect(companionFrame, lessThanOrEqualTo(otaStockCompanionFrameLimit),
+            reason: 'op frame too large for a $pathBytes-byte route');
+      }
+      // The image still transfers whole: chunks cover every byte once.
+      final literalBytes = transfer.wireOps.frames
+          .where((f) => f[2] == otaOpLiteral)
+          .fold<int>(0, (sum, f) => sum + (f[5] | (f[6] << 8)));
+      expect(literalBytes, image.length);
+    }
   });
 }

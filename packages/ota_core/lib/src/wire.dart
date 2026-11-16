@@ -25,6 +25,37 @@ const otaMaxPayload = 184;
 /// LITERAL data bytes that fit one op packet.
 const otaLiteralChunk = otaMaxPayload - otaFrameOverhead - 2;
 
+/// The stock companion's transport frame limit (`MAX_FRAME_SIZE` in the
+/// firmware's BaseSerialInterface.h), measured after the 3-byte serial header:
+/// `CMD_SEND_RAW_PACKET` + priority + the packet itself must fit in this.
+///
+/// The Xiao 1.18 firmware silently drops a longer command — the radio stays
+/// alive but nothing is transmitted — so an oversized op is not an error the
+/// caller can see, it is a stalled transfer.
+const otaStockCompanionFrameLimit = 176;
+
+/// Data bytes one OP_LITERAL may carry when the packet goes through a stock
+/// companion: the frame limit less the command, priority, packet header, path
+/// length byte, [pathBytes] of route, and the op's own 9 bytes
+/// (magic 2 + op 1 + seq 2 + length 2 + CRC 2).
+///
+/// Clamped to the pure on-air maximum [otaLiteralChunk]; a route long enough to
+/// leave no room still yields 1 byte so the transfer fails loudly rather than
+/// producing an unsendable frame.
+int otaLiteralChunkForCompanion({
+  required int pathBytes,
+  int frameLimit = otaStockCompanionFrameLimit,
+}) {
+  final available = frameLimit -
+      2 /* command + priority */ -
+      1 /* header */ -
+      1 /* path_len */ -
+      pathBytes -
+      (otaFrameOverhead + 2);
+  if (available < 1) return 1;
+  return available < otaLiteralChunk ? available : otaLiteralChunk;
+}
+
 /// CRC-16/CCITT-FALSE: poly 0x1021, init 0xFFFF, no reflection, no final XOR.
 /// Bitwise — identical to the firmware's `crc16_ccitt`.
 int crc16CcittFalse(Iterable<int> data) {
@@ -68,6 +99,13 @@ Uint8List buildOp(int op, {int? seq, List<int> body = const []}) {
 }
 
 /// `OP_START body: size:u32 sha256[32] target:u32 token:u32` (44 bytes).
+///
+/// The token is four opaque bytes, not a number: the firmware prints them in
+/// memory order (`token=%02x%02x%02x%02x` over `token[0..3]`) and compares
+/// them with `memcmp`. Writing the parsed integer little-endian would send the
+/// bytes reversed and the node would refuse the arm (err=7). Kept as an int
+/// for the CLI surface; written big-endian so the four bytes go out exactly as
+/// printed.
 Uint8List buildStart({
   required int size,
   required List<int> sha256,
@@ -80,7 +118,7 @@ Uint8List buildStart({
   bd.setUint32(0, size, Endian.little);
   body.setRange(4, 36, sha256);
   bd.setUint32(36, targetId, Endian.little);
-  bd.setUint32(40, token, Endian.little);
+  bd.setUint32(40, token, Endian.big);
   return buildOp(otaOpStart, seq: 0, body: body);
 }
 

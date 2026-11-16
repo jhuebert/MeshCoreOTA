@@ -253,7 +253,7 @@ class _FakeCompanion {
       final size = bd.getUint32(0, Endian.little);
       final sha = body.sublist(9, 41);
       final targetId = bd.getUint32(36, Endian.little);
-      final token = bd.getUint32(40, Endian.little);
+      final token = bd.getUint32(40, Endian.big);
       if (targetId != targetIdForEnvironment('Xiao_S3_WIO_repeater')) {
         return const [];
       }

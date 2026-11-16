@@ -168,7 +168,14 @@ class WireOps {
 }
 
 /// Derive the wire-ready op stream from delta ops.
-WireOps wireOpsFor(List<DeltaOp> ops) {
+///
+/// [literalChunk] is the most data bytes one OP_LITERAL may carry. The default
+/// is the pure on-air maximum, but a packet sent through a stock companion
+/// must fit the companion's frame (see [otaLiteralChunkForCompanion]), which is
+/// usually the tighter bound — an oversized frame is dropped silently by the
+/// companion, so the op never lands and the transfer stalls.
+WireOps wireOpsFor(List<DeltaOp> ops, {int literalChunk = otaLiteralChunk}) {
+  assert(literalChunk >= 1 && literalChunk <= otaLiteralChunk);
   final frames = <Uint8List>[];
   var seq = 1;
   for (final op in ops) {
@@ -179,14 +186,14 @@ WireOps wireOpsFor(List<DeltaOp> ops) {
       case LiteralOp(:final data):
         var offset = 0;
         while (offset < data.length) {
-          final end = offset + otaLiteralChunk;
+          final end = offset + literalChunk;
           frames.add(buildLiteralChunk(
             seq: seq,
             data: Uint8List.sublistView(
                 data, offset, end > data.length ? data.length : end),
           ));
           seq++;
-          offset += otaLiteralChunk;
+          offset += literalChunk;
         }
     }
   }
@@ -210,9 +217,12 @@ class OtaTransfer {
     this.askTimeout = const Duration(seconds: 10),
     this.maxRetriesPerWindow = 12,
     this.opSpacing = const Duration(milliseconds: 25),
+    this.companionFrameLimit = otaStockCompanionFrameLimit,
     this.shouldCancel,
   })  : assert(windowSize >= 1),
-        wireOps = wireOpsFor(ops);
+        wireOps = wireOpsFor(ops,
+            literalChunk: otaLiteralChunkForCompanion(
+                pathBytes: route.path.length, frameLimit: companionFrameLimit));
 
   final RadioLink link;
   final OtaRoute route;
@@ -230,6 +240,13 @@ class OtaTransfer {
 
   /// Small spacing between queued writes to spare the companion's TX pool.
   final Duration opSpacing;
+
+  /// Largest companion transport frame this transfer may produce
+  /// (`MAX_FRAME_SIZE` in the stock firmware, after the 3-byte serial header).
+  /// Commands over this are dropped by the companion without an error, so the
+  /// literal chunk size is derived from it. Raise it only for a transport
+  /// known to carry more.
+  final int companionFrameLimit;
 
   /// Checked alongside [cancel] at every op boundary — lets a UI bind a
   /// cancel flag without holding a reference to this engine.

@@ -51,7 +51,9 @@ void main() {
       expect(bd.getUint32(0, Endian.little), 1000);
       expect(body.sublist(4, 36), sha);
       expect(bd.getUint32(36, Endian.little), 0xDEADBEEF);
-      expect(bd.getUint32(40, Endian.little), 0x12345678);
+      // The token is four opaque bytes printed in memory order; writing the
+      // parsed value big-endian keeps those bytes in the printed order.
+      expect(bd.getUint32(40, Endian.big), 0x12345678);
     });
 
     test('buildCopy/buildLiteralChunk round trip via the node-side seq rules',
@@ -95,6 +97,18 @@ void main() {
           2669264081); // 0x9f19bcd1
       expect(targetIdForEnvironment('RAK_4631_repeater'), 81007613);
       expect(targetIdForEnvironment('PicoW_repeater'), 1413693056);
+    });
+
+    test('literal chunks fit a stock companion frame for the route', () {
+      // Zero hop: 176 - 2 (cmd+priority) - 1 (header) - 1 (path_len) - 9 (op).
+      expect(otaLiteralChunkForCompanion(pathBytes: 0), 163);
+      // Each route byte comes out of the same budget.
+      expect(otaLiteralChunkForCompanion(pathBytes: 6), 157);
+      // Never more than the pure on-air maximum.
+      expect(otaLiteralChunkForCompanion(pathBytes: 0),
+          lessThanOrEqualTo(otaLiteralChunk));
+      // A route that leaves no room clamps to 1 rather than going negative.
+      expect(otaLiteralChunkForCompanion(pathBytes: 200), 1);
     });
   });
 }
