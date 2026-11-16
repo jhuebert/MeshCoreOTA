@@ -338,6 +338,33 @@ void main() {
     expect(status.ok, isTrue);
   });
 
+  test('pacing is derived from the radio and never below the floor', () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    final image = Uint8List.fromList(_FakeCompanion._pattern(0x5C, 600));
+    fake.setRunningForTest(image);
+    final stage = await flow.stage(fake.target, image, version: 'v1.18.0-r4');
+    final ops = computeDelta(Uint8List(0), image).ops;
+    final sw = Stopwatch()..start();
+    // No opSpacing override: the flow asks the link for radio params and paces
+    // to a full-size packet's airtime (plus a commit margin), min 250 ms.
+    await flow.transfer(
+      target: fake.target,
+      contract: OtaStartContract(
+        imageSize: image.length,
+        imageSha256: Uint8List.fromList(sha256.convert(image).bytes),
+        targetId: targetIdForEnvironment(env),
+        token: stage.token,
+      ),
+      ops: ops,
+      route: OtaRoute.zeroHop(),
+      windowSize: 4,
+    );
+    sw.stop();
+    expect(fake.stagedImage, image);
+    // Real pacing applied: the transfer cannot be instant.
+    expect(sw.elapsedMilliseconds, greaterThan(200));
+  });
+
   test('full pipeline: stage → transfer → ready → apply → verify', () async {
     const env = 'Xiao_S3_WIO_repeater';
     final baseImage = _FakeCompanion._pattern(0x22, 8192);
@@ -363,6 +390,7 @@ void main() {
       ops: ops,
       route: OtaRoute.zeroHop(),
       windowSize: 4,
+      opSpacing: Duration.zero, // tests are not paced to a radio
     );
     expect(result.packetsSent, greaterThan(0));
     expect(fake.stagedImage, image);
@@ -402,6 +430,7 @@ void main() {
       ops: ops,
       route: OtaRoute.zeroHop(),
       windowSize: 4,
+      opSpacing: Duration.zero, // tests are not paced to a radio
     );
     expect(() => flow.awaitReady(fake.target),
         throwsA(isA<UpdateFlowException>()));

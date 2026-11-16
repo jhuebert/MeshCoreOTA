@@ -250,7 +250,8 @@ class FakeDeviceLink
     calls.add('sendRawPacket');
     if (rawTxError != null) throw rawTxError!;
     _txCount++;
-    final lost = dropEveryNthTx != null && _txCount % dropEveryNthTx! == 0;
+    final lost = dropPredicate?.call(_txCount) ??
+        (dropEveryNthTx != null && _txCount % dropEveryNthTx! == 0);
     if (lost) {
       calls.add('sendRawPacket-dropped');
       return;
@@ -267,7 +268,16 @@ class FakeDeviceLink
 
   /// When set, every Nth `sendRawPacket` is silently dropped (models link
   /// loss). The drop counter increments for every attempted send.
+  ///
+  /// Strictly periodic loss is a pathological model: a retry that always sends
+  /// the same bytes in the same order can lock step with it and never get
+  /// through (real air loss is not that regular). Prefer [dropPredicate] for a
+  /// deterministic but non-periodic pattern.
   int? dropEveryNthTx;
+
+  /// Decides whether the send numbered [txCount] (1-based) is lost. Overrides
+  /// [dropEveryNthTx], so a test can model scattered loss with a seeded hash.
+  bool Function(int txCount)? dropPredicate;
 
   /// Optional in-band handler invoked for every transmitted packet. Return
   /// false to drop the packet before it reaches any listener. Useful for

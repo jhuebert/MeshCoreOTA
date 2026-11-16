@@ -88,8 +88,12 @@ class UpdateFlow {
     required OtaRoute route,
     void Function(TransferProgress)? onProgress,
     int windowSize = 12,
+    // Overrides the airtime-derived pacing (tests, or a caller that already
+    // knows better).
+    Duration? opSpacing,
     bool Function()? shouldCancel,
   }) async {
+    final spacing = opSpacing ?? await _pacing();
     final engine = OtaTransfer(
       link: link,
       route: route,
@@ -98,11 +102,45 @@ class UpdateFlow {
       windowSize: windowSize,
       askTimeout: const Duration(seconds: 10),
       maxRetriesPerWindow: 12,
-      opSpacing: const Duration(milliseconds: 20),
+      // Pace to the radio, not to the companion's queue. Sending ops faster
+      // than the node can commit them provokes re-sends that cost more than
+      // the delay saved: on hardware, 100 ms spacing needed 3.8x the ops over
+      // 45 s, while 400 ms needed 1.24x over 27 s. One maximum-size packet of
+      // airtime, plus a margin for the node's flash commit, is the floor.
+      opSpacing: spacing,
+      // Let the tail of a window finish transmitting and committing before
+      // asking: a premature ask reports a lower next_expected and invites a
+      // pointless re-send of ops the node already has.
+      askSettle: const Duration(milliseconds: 250),
       shouldCancel: shouldCancel,
     );
     final result = await engine.run(onProgress: onProgress);
     return result;
+  }
+
+  /// Delay between queued ops, derived from the radio's airtime.
+  ///
+  /// A full-size op frame occupies the channel for its whole airtime, and the
+  /// node then commits it to flash. Queueing faster than that merely builds a
+  /// backlog of ops the node has not written yet, which the window report then
+  /// reads as "missing" — so every window gets re-broadcast. Falls back to a
+  /// safe constant when the radio parameters are unavailable.
+  Future<Duration> _pacing() async {
+    const fallback = Duration(milliseconds: 250);
+    try {
+      final p = await link.radioParams();
+      final airtime = loraTimeOnAirMicros(
+        payloadBytes: otaMaxPayload,
+        spreadingFactor: p.spreadingFactor,
+        bandwidthHz: p.bandwidthHz,
+        codingRate: p.codingRate,
+      );
+      final us = (airtime * 1.5).round() + 60000; // airtime + commit margin
+      final candidate = Duration(microseconds: us);
+      return candidate > fallback ? candidate : fallback;
+    } catch (_) {
+      return fallback;
+    }
   }
 
   /// After the transfer, read `ota status` and require state=ready.

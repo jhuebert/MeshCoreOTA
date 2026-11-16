@@ -113,7 +113,17 @@ class Bench {
   /// Resolve the repeater contact by name (case-insensitive substring), else
   /// the only repeater-type contact.
   Future<void> resolveTarget() async {
-    final contacts = await client.listContacts();
+    // A companion that just had a session dropped can be slow to answer.
+    List<Contact> contacts;
+    for (var attempt = 0;; attempt++) {
+      try {
+        contacts = await client.listContacts();
+        break;
+      } catch (e) {
+        if (attempt >= 2) rethrow;
+        await Future<void>.delayed(Duration(milliseconds: 800 * (attempt + 1)));
+      }
+    }
     info('companion has ${contacts.length} contact(s)');
     Contact? match;
     for (final c in contacts) {
@@ -229,6 +239,10 @@ class Bench {
     final wall = DateTime.now().difference(t1);
     info('  transfer: ${_secs(wall)} wall, ${result.packetsSent} packets, '
         '${result.retries} retries, engine ${_secs(result.elapsed)}');
+    info('  amplification: ${result.amplificationLabel} literal bytes '
+        '(${result.literalBytesSent}B sent for ${result.uniqueLiteralBytes}B '
+        'of image), ops ${result.opAmplification.toStringAsFixed(2)}x '
+        '(${result.duplicateOps} re-broadcast of ${result.uniqueOps})');
     return (result: result, delta: delta, arm: arm);
   }
 }

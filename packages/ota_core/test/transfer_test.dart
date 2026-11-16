@@ -36,6 +36,14 @@ class FakeOtaNode {
   int pendingToken = -1;
   int lastAskRetPathLen = 0;
 
+  /// Ops whose bytes have been written, i.e. what the node could report.
+  int _received = 1;
+
+  /// Ops committed per ask. Big by default (a commit is instant); a test can
+  /// lower it to model a flash write that delays the watermark.
+  int commitPerAsk = 1 << 30;
+  int asks = 0;
+
   bool get stagingArmed =>
       state == FakeNodeState.staging || state == FakeNodeState.ready;
   int get nextExpected => _expect & 0xFFFF;
@@ -57,6 +65,12 @@ class FakeOtaNode {
     if (op == otaOpAsk) {
       lastAskRetPathLen = body.length > 3 ? body[3] : 0;
       if (!stagingArmed) return const [];
+      asks++;
+      // Work through the write queue: commit up to [commitPerAsk] received ops.
+      final commitTo = _expect + commitPerAsk > _received
+          ? _received
+          : _expect + commitPerAsk;
+      _expect = commitTo;
       return [
         buildOp(otaOpReport, body: [_expect & 0xFF, (_expect >> 8) & 0xFF]),
       ];
@@ -97,12 +111,13 @@ class FakeOtaNode {
       _written = 0;
       _expectedSha = List<int>.from(sha);
       _expect = 1;
+      _received = 1;
       err = 0;
       return const [];
     }
 
     if (!stagingArmed) return const [];
-    if (seq != _expect)
+    if (seq != _received)
       return const []; // strictly in order; everything else is dropped
 
     if (op == otaOpCopy) {
@@ -117,7 +132,7 @@ class FakeOtaNode {
       _slot.setRange(_written, _written + len,
           running.sublist(baseOffset, baseOffset + len));
       _written += len;
-      _expect++;
+      _received++;
       return const [];
     }
 
@@ -130,7 +145,7 @@ class FakeOtaNode {
       }
       _slot.setRange(_written, _written + len, body.sublist(7, 7 + len));
       _written += len;
-      _expect++;
+      _received++;
       return const [];
     }
 
@@ -189,12 +204,18 @@ class _Harness {
     required Uint8List base,
     required Uint8List target,
     int dropEveryNth = 0,
+    int? dropPercent,
     int slotSize = 262144,
   }) {
     node =
         FakeOtaNode(running: base, slotSize: slotSize, targetId: _testTargetId);
     link = FakeDeviceLink(snr: 6.0, rssi: -70);
     if (dropEveryNth > 0) link.dropEveryNthTx = dropEveryNth;
+    if (dropPercent != null) {
+      // Scattered loss (deterministic): a strictly periodic pattern can lock
+      // step with a fixed retry cadence, which real air loss never does.
+      link.dropPredicate = (n) => (n * 2654435761) % 100 < dropPercent;
+    }
   }
 
   OtaTransfer makeTransfer({
@@ -234,8 +255,9 @@ class _Harness {
       ops: ops,
       windowSize: windowSize,
       askTimeout: const Duration(milliseconds: 200),
-      maxRetriesPerWindow: 8,
+      maxRetriesPerWindow: 32,
       opSpacing: Duration.zero,
+      askSettle: Duration.zero,
     );
   }
 }
@@ -264,7 +286,7 @@ void main() {
     final base = Uint8List.fromList(
         List<int>.generate(8192, (i) => (i * 13 + 5) & 0xFF));
     final target = _mutate(base, random);
-    harness.wire(base: base, target: target, dropEveryNth: 7);
+    harness.wire(base: base, target: target, dropPercent: 12);
     final transfer =
         harness.makeTransfer(target: target, base: base, windowSize: 4);
     final result = await transfer.run();
@@ -355,6 +377,61 @@ void main() {
       throwsA(isA<OtaTransferException>()),
     );
     expect(transfer.cancelRequested, isTrue);
+  });
+
+  test('a lagging node is waited for, not re-broadcast at', () async {
+    final harness = _Harness();
+    final base = Uint8List.fromList(
+        List<int>.generate(8192, (i) => (i * 29 + 3) & 0xFF));
+    final target = _mutate(base, random);
+    harness.wire(base: base, target: target);
+    final transfer = harness.makeTransfer(target: target, base: base);
+    // The node takes the window off the air but commits one op per ask, as a
+    // flash write that stalls the watermark does on hardware.
+    harness.node.commitPerAsk = 1;
+    final result = await transfer.run();
+    expect(harness.node.state, FakeNodeState.ready);
+    // Recovery came from asking again, so nothing was sent twice.
+    expect(result.duplicateOps, 0,
+        reason: 'a node that is merely behind must not be re-sent ops');
+    expect(result.opAmplification, 1.0);
+    expect(result.amplification, 1.0);
+    expect(result.literalBytesSent, result.uniqueLiteralBytes);
+  });
+
+  test('the amplification metric counts re-broadcast bytes', () async {
+    final harness = _Harness();
+    // Own seed: the file shares one Random, which would make this case depend
+    // on test order.
+    final seeded = Random(0xA11CE);
+    final base = Uint8List.fromList(
+        List<int>.generate(4096, (i) => (i * 17 + 11) & 0xFF));
+    final target = _mutate(base, seeded);
+    harness.wire(base: base, target: target, dropPercent: 12);
+    final transfer = harness.makeTransfer(target: target, base: base);
+    final result = await transfer.run();
+    expect(harness.node.state, FakeNodeState.ready);
+    // Ops really were lost, so recovery had to re-broadcast: the metric must
+    // show it rather than reporting a perfect 1.0x.
+    expect(result.duplicateOps, greaterThan(0));
+    expect(result.opAmplification, greaterThan(1.0));
+  });
+
+  test('result labels expose the efficiency numbers', () async {
+    final harness = _Harness();
+    final base = Uint8List.fromList(
+        List<int>.generate(1024, (i) => (i * 13 + 5) & 0xFF));
+    final target = _mutate(base, Random(0xBEEF));
+    harness.wire(base: base, target: target);
+    final transfer = harness.makeTransfer(target: target, base: base);
+    final result = await transfer.run();
+    // A clean link sends every byte once, and the labels say so.
+    expect(result.amplification, 1.0);
+    expect(result.amplificationLabel, '1.00x');
+    expect(result.opAmplification, 1.0);
+    expect(result.uniqueOps, transfer.wireOps.frames.length);
+    expect(result.uniqueLiteralBytes, transfer.wireOps.uniqueLiteralBytes);
+    expect(result.uniqueLiteralBytes, greaterThan(0));
   });
 
   test('every op frame fits the companion frame for its route', () {
