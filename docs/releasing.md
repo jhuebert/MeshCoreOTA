@@ -68,6 +68,13 @@ signing key → verifies signatures, zip alignment, and version codes →
 fast-forwards `main`, tags `vX.Y.Z` → creates the GitHub Release with the
 APKs, `SHA256SUMS.txt`, `build-metadata.txt`, and the notes.
 
+After the APK release is published, a desktop matrix builds from the tag and
+attaches Linux (`linux-x64.tar.gz`), Windows (`windows-x64.zip`) and macOS
+(`macos.zip`) bundles to the same release. The desktop builds are **not
+signed or notarized**; Windows SmartScreen and macOS Gatekeeper require the
+user to confirm the first launch. If one platform fails, re-run only that
+failed job from the Actions UI — the published APK release is untouched.
+
 Version codes: the universal APK uses `BUILD_NUMBER`; split APKs get the
 Flutter ABI offsets (+1000 v7a, +2000 arm64, +4000 x86_64) — Android update
 semantics, matches MeshChameleon's handling.

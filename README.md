@@ -1,168 +1,250 @@
 # MeshCoreOTA
 
-Over-the-air firmware updates for **MeshCore repeaters** — from your phone,
-over LoRa, with no laptop at the tower and no mesh flood traffic.
+<p align="center">
+  <img src="app/assets/icon/icon.png" alt="MeshCoreOTA" width="132" height="132">
+</p>
 
-The app talks to a stock MeshCore companion device over BLE (Nordic UART
-Service) or TCP, and uses it purely as a radio. The OTA ops ride inside
-ordinary encrypted REQ/RESPONSE datagrams: each op goes out as a
-`CMD_SEND_BINARY_REQ` to the companion, which encrypts it and routes it to the
-repeater like any other request. Intermediate nodes only forward standard
-mesh traffic, so they do not need any custom firmware — only the target
-repeater runs the fork. The app picks the board, the version and the transfer
-parameters; the repeater only applies ops and verifies SHA-256. Everything
-else is app-side.
+**MeshCoreOTA updates MeshCore repeater firmware over the air, from your phone
+or laptop — no tower visit, no laptop at the site, and no special traffic
+flooding your mesh.**
 
-**Status: benched and working, pre-release.** The fork firmware implementing
-the repeater side lives in `lora-ota` at
-[jhuebert/MeshCore](https://github.com/jhuebert/MeshCore); the wire contract
-ops ride inside ordinary encrypted REQ/RESPONSE datagrams. The full flow has
-been exercised on hardware — stage, SHA gate, apply, automatic rollback — but
-treat every path as field-unproven until an update has flown to a node you
-did not assemble yourself. The whole flow is designed so mistakes cannot
-brick a node (see "Safety model" below).
+A repeater on a hill, a roof or a water tower is hard to reach and easy to
+put off updating. Plugging in a USB cable means a climb, a ladder or a drive.
+MeshCoreOTA lets an authorised operator send a release to that repeater
+through a MeshCore companion that is already on the mesh. The repeater
+verifies the image, stores it in its spare firmware slot, and only boots it
+when you say so. If the new firmware cannot start its radio, the repeater
+flips back to the one that worked, by itself.
 
-Android is the release target. iOS is not supported and is not planned until
-there is hardware to test on. A Linux desktop build exists as a testing
-target (TCP companions only).
+The app is a companion for the **[MeshCore](https://github.com/meshcore-dev/MeshCore)
+repeater firmware fork**; the over-the-air feature is part of that firmware.
+The companion device stays on its stock firmware.
 
-## What it does
+## Download
 
-1. Connect to a companion (BLE scan, or TCP for the bench/127.0.0.1).
-2. Pick a repeater from the companion's contacts, or enter its public key.
-3. Sign in as repeater admin (password entered per session, never stored).
-4. Pick a firmware:
-   - **GitHub** — releases from the fork (`filter-vX.Y.Z` stable,
-     `filter-vX.Y.Z-dev.N` dev builds). App-slot `.bin` images only —
-     `-merged.bin` is never offered; OTA cannot carry a bootloader.
-   - **Library** — images cached on-device, imported from a `.bin`, or from a
-     "field pack" (`.zip`) exported earlier. Works with no bars.
-5. Review: board, version, delta-vs-full transfer estimate with an airtime
-   estimate at the companion's current radio config.
-6. Transfer: windowed REQ/RESPONSE datagrams with `OP_ASK`/`OP_REPORT`
-   recovery — the node re-asks for exactly what it missed. Ops ride ordinary
-   mesh requests, so intermediate nodes forward them without custom firmware.
-7. Commit: `ota apply` flips the boot partition and reboots. The app re-logs
-   in and checks `version`. A bad image flips itself back automatically in
-   the fork firmware (boot health check).
-8. Undo: one button sends `ota rollback`.
+Releases are on the
+**[MeshCoreOTA releases page](https://github.com/jhuebert/MeshCoreOTA/releases)**:
 
-Delta updates are the default: unchanged regions become `OP_COPY` ops against
-the running image (matched by full version stamp — the `running=` string from
-`ota status`; no base in the library → full image). The device-side SHA-256
-gate decides what may boot; a wrong base fails staging at `OP_END` and the
-node keeps the old image.
+| Platform | What to download | Notes |
+|---|---|---|
+| Android | `MeshCoreOTA-<version>-universal.apk` | Sideload it; play services are not needed. |
+| Linux | `MeshCoreOTA-<version>-linux-x64.tar.gz` | Unpack and run `meshcoreota`. |
+| Windows | `MeshCoreOTA-<version>-windows-x64.zip` | Unpack and run `meshcore_ota.exe`. |
+| macOS | `MeshCoreOTA-<version>-macos.zip` | Unpack and open `meshcore_ota.app`. |
 
-## Safety model (why this cannot brick a node)
+The desktop builds are unsigned: Windows SmartScreen and macOS Gatekeeper
+will ask you to confirm the first launch. Android installs are signed with
+the project's app key, so upgrading an existing install keeps your data.
 
-- **Staged bytes are untrusted until proven.** `OP_END` does SHA-256 over the
-  staged slot; mismatch → staging scrapped, `state=error`, nothing boots.
-- **Nothing boots without an admin.** `ota apply` requires the same admin
-  session every other repeater CLI command does.
-- **New image boots, fails health check → flips back.** The fork firmware
-  re-verifies LoRa init + one packet TX on the fresh boot; failure flips the
-  boot partition back to the previous slot and reboots. No human intervention.
-- **Ops travel as ordinary encrypted requests.** The transfer rides the same
-  REQ/RESPONSE path as a status request: direct along the companion's saved
-  route when it has one, flooded (like any ordinary request) when it does not.
-  No special payload type crosses the mesh, and relays need no custom code.
-- **The companion is stock.** No companion-firmware change; it is used exactly
-  as it ships (its binary-request path, the same one status requests use).
+## What you need
 
-See also `SECURITY.md` for the threat model; the firmware side of the
-contract is specified in the fork's
-[`examples/simple_repeater/OtaUpdate.h`](https://github.com/jhuebert/MeshCore/blob/lora-ota/examples/simple_repeater/OtaUpdate.h).
+- A repeater running the **OTA-enabled MeshCore fork** — see
+  [jhuebert/MeshCore](https://github.com/jhuebert/MeshCore). A stock
+  repeater says "this firmware does not speak the ota CLI" when you check it.
+- A **MeshCore companion** that the app can reach: over Bluetooth on a phone,
+  or over Wi-Fi/Ethernet (TCP) on any platform.
+- **Admin access to the repeater.** Either the companion's key is already in
+  the repeater's admin list (then no password is needed), or you know its
+  admin password.
+- The firmware image you want to install. The app downloads the fork's
+  releases for you, or you can import a `.bin` file — including a custom
+  build.
 
-## Building
+## Getting started
 
-Flutter stable (CI pins the exact version — see
-[.github/workflows/ci.yml](.github/workflows/ci.yml)). From the repo root:
+The app walks you through seven steps. You can go back at any point; nothing
+is changed on the repeater until the transfer starts, and nothing boots until
+you confirm.
+
+### 1. Connect the companion
+
+![Connect screen](docs/images/01-connect.png)
+
+Pick **Bluetooth** on a phone, or **TCP / Wi-Fi** on a computer (or a phone
+talking to a Wi-Fi companion). Tap a discovered companion, or enter its
+`host:port`.
+
+The **Firmware library** is available here before you connect. Use it to
+download a release while you still have Wi-Fi, or to import a custom image.
+
+### 2. Pick a repeater
+
+![Pick a repeater](docs/images/02-repeater.png)
+
+The **Repeaters** tab lists the repeaters your companion knows. Use the
+**Public key** tab for a node that is not in its contact list — paste the
+64-character public key.
+
+### 3. Sign in
+
+![Sign in](docs/images/03-admin.png)
+
+The app signs in as repeater admin and reads the node's state: firmware
+version, board, boot state and the running image's hash. **The password is
+optional**: leave it blank when the companion's key already has admin rights
+in the repeater's access list.
+
+### 4. Choose firmware
+
+![Choose firmware](docs/images/04-firmware.png)
+
+The **GitHub** tab lists the fork's releases, newest first. **Stable** and
+**Dev builds** are separate tabs. The list is scoped to the board the
+repeater reported, so you cannot accidentally pick another board's image.
+
+- Tapping an image **selects** it for this update.
+- The download button on a release saves **that whole version** (every
+  board's image) on your device for offline use.
+- **Offline** shows only the versions you have already saved.
+- **Library** is every image on the device; import a `.bin` here for custom
+  firmware.
+
+### 5. Review
+
+![Review update](docs/images/05-review.png)
+
+You see the node, the install image, the delta base (the image the repeater
+is already running, used to send only what changed), the estimated airtime,
+and the radio plan.
+
+**Before and after images.** The app picks the "before" image by matching the
+repeater's reported image hash. If you have a custom build, use **Change
+base** to choose the file the repeater actually runs, or **Full image** to
+send every byte. **Change image** returns to the picker.
+
+**Radio plan.** A transfer is heavy for a live mesh, so you can move it off
+the production channel:
+
+- **Live mesh** — the normal channel and the saved DIRECT route. You can enter
+  a DIRECT path override.
+- **Temporary private channel** — both the repeater and the companion move to
+  a private radio preset for the length of the transfer, then return. The
+  transfer is zero-hop, so no other node hears it.
+- **The repeater's second preset (radio2)** — the repeater keeps serving the
+  live mesh on its normal channel and carries the transfer on its second
+  preset. The companion is tuned to it for the duration. If radio2 was
+  already enabled, the app tells you and leaves the repeater's configuration
+  alone.
+
+The app suggests a private frequency and a duration from the node's radio
+settings and the transfer estimate; you can change either.
+
+### 6. Transfer
+
+The app stages the image into the repeater's **inactive** firmware slot,
+streams the changes as ordinary encrypted admin requests, and the repeater
+asks for anything it missed. Progress, retries and a log are on screen. You
+can cancel; a cancelled transfer discards the staged image.
+
+### 7. Commit and verify
+
+When the image is fully staged, it has already passed the repeater's SHA-256
+check. **Commit update** flips the boot partition and reboots. The app signs
+back in and confirms the new version answered.
+
+If the new firmware cannot start its radio, the repeater's boot health check
+flips back to the previous firmware automatically. You can also roll back
+manually at any time with **Roll back to previous firmware**.
+
+## Going offline
+
+The **cloud** button on the firmware screen (and the **Work offline** switch on the review screen) switches the app offline. In
+offline mode it never contacts GitHub — not for the release list, not for an
+image. The **Offline** tab shows the versions already saved on the device,
+like a music app's downloaded list.
+
+The setting is remembered, so a device that goes into the field stays offline
+across restarts. Switch it back on when you have a connection.
+
+To prepare: while on Wi-Fi, open **Choose firmware → GitHub**, pick the
+version you want, and press the download button on that release. Every image
+of that version is saved. Do the same for the version the repeater currently
+runs; that second image is what makes a small delta possible. You can also
+export or import a **field pack** (`.zip`) from the library screen to move a
+set of images between devices.
+
+## Custom firmware
+
+Custom builds work exactly like releases:
+
+1. Build your firmware (the repeater side needs the OTA feature).
+2. **Firmware library → Import a .bin firmware file**, on any platform.
+3. Select it on the **Library** or **Offline** tab.
+4. On the review screen, choose the file the repeater already runs as the
+   **base** — or send the full image.
+
+A custom image has no board name, so the app uses the board id the repeater
+itself reported. The repeater still refuses an image built for another board
+and still verifies the hash, so a wrong file cannot be bricked into place.
+
+![Firmware library](docs/images/09-library.png)
+
+## Safety and limits
+
+- **Nothing boots until you commit.** Staging writes only the spare slot.
+- **The staged bytes are verified by the repeater**, not by the app. A
+  mismatch discards the staging session.
+- **Only an admin can start.** The same login as every other repeater CLI
+  command is required.
+- **A bad boot flips back.** The new image must start its radio and send one
+  packet; failure restores the previous partition.
+- **A low battery suspends staging.** Charge or power the repeater first.
+- **Board mismatch is refused.** The image must be built for the board the
+  repeater reports.
+- The companion is used as shipped. Relays on the path need no custom
+  firmware.
+
+## Troubleshooting
+
+| What you see | What it means |
+|---|---|
+| "This firmware does not speak the ota CLI" | The repeater is not running an OTA-enabled fork build. Flash one over USB/Wi-Fi first. |
+| "login rejected" | The password is wrong and this companion's key is not in the repeater's admin list. Try the password, or add the key to the ACL. |
+| "logged in, but not as admin" | The key is in the ACL as a guest. Give it admin rights on the repeater. |
+| "No saved direct route" | The companion does not know a path. Enter a DIRECT path, use a private radio plan, or let the request flood. |
+| "battery gate active; staging refused" | The repeater's battery is low. Charge or power it. |
+| "the node refused ... radio2" | radio2 cannot use that preset (it overlaps the live band or cannot be scanned). Pick another frequency. |
+| "the image did not pass verification" | The delta base was not the image the repeater runs, or the file is damaged. Choose the correct base or send the full image. |
+| The transfer stalls | A lost reply, not necessarily a lost update. Wait for the retry, or cancel and retry; the staged session is discarded safely. |
+| The node does not answer after commit | It may be rolling back. Re-check with the app; if it is back on the old version, the new image failed its boot health check. |
+
+## Screenshots
+
+| Firmware picker | Offline versions |
+|---|---|
+| ![Firmware](docs/images/04-firmware.png) | ![Offline](docs/images/08-offline.png) |
+
+| Repeater list | Firmware library |
+|---|---|
+| ![Repeaters](docs/images/02-repeater.png) | ![Library](docs/images/09-library.png) |
+
+## How it works (short version)
+
+The app talks to your companion, which encrypts each operation as an ordinary
+admin request to the repeater — the same path a status request takes.
+Intermediate nodes forward it like any other request, so relays need no
+special firmware. The repeater reassembles the stream into its spare firmware
+slot, verifies the SHA-256, and waits for an explicit apply. The first boot of
+a new image proves its radio; if it cannot, the previous slot boots instead.
+
+The exact wire contract is specified in the fork's
+[`OtaUpdate.h`](https://github.com/jhuebert/MeshCore/blob/lora-ota/examples/simple_repeater/OtaUpdate.h)
+and summarised in [AGENTS.md](AGENTS.md). The companion stays stock.
+
+## For developers
+
+This repository holds the Flutter app and its pure-Dart packages. Build and
+test from the repo root:
 
 ```sh
-./scripts/check.sh      # analyze + format + test everything
-./scripts/build.sh apk --release
-./scripts/build.sh linux --release
+./scripts/check.sh                     # format, analyze, all tests
+./scripts/coverage.sh                  # coverage gate
+./scripts/build.sh apk --release       # Android
+./scripts/build.sh linux --release     # Linux desktop
+./scripts/build.sh windows --release   # Windows (run on Windows)
+./scripts/build.sh macos --release     # macOS (run on macOS)
 ```
 
-### Linux (testing target)
-
-The desktop Linux build is a first-class **testing target**, not a release
-artifact. It exists so the whole OTA flow can be exercised on a laptop
-without installing an APK on a phone: pair it with a WiFi/Ethernet companion
-(or a `127.0.0.1:5000` simulator) and drive an update over TCP.
-
-Notes:
-
-- **BLE companion support is Android/iOS only** in this app. On Linux the
-  connect screen offers TCP only (a WiFi/Ethernet companion or a local
-  simulator); the BLE transport stays mobile. The `flutter_blue_plus` plugin
-  does have a Linux binding, but BLE on desktop via BlueZ is not validated —
-  treat it as future work, not a supported path.
-- **File import/export** (field packs) is Android/iOS only; the library
-  itself (list/delete) is fully usable on Linux.
-- **No foreground service** on Linux — the transfer runs in-process, so keep
-  the window open during an update. (On Android/iOS the transfer keeps its
-  foreground service.)
-- The Linux build is not signed, versioned, or shipped — APKs remain the
-  release artifact. CI builds it on every push to keep it honest.
-
-Releases are built and signed by CI — see
-[docs/releasing.md](docs/releasing.md). Sideload note: installs from GitHub
-Releases are signed with the app signing key, so replacing an install keeps
-your data.
-
-## Layout
-
-```text
-app/                     the Flutter app (screens, services, theme)
-packages/mesh_protocol/  subtree from MeshChameleon — wire codec, crypto (MIT)
-packages/device_link/    subtree from MeshChameleon — RadioLink SPI, TCP link (MIT)
-packages/test_support/   subtree from MeshChameleon — test plumbing (MIT)
-packages/companion_client/  companion-protocol client (contacts, login, remote CLI)
-packages/ota_core/       wire format, `ota status` contract, delta engine,
-                         transfer engine (windowed, OP_ASK/OP_REPORT)
-```
-
-The `mesh_protocol`/`device_link`/`test_support` packages are reused from
-[MeshChameleon](https://github.com/jhuebert/MeshChameleon) via `git subtree`
-(history preserved). See [ATTRIBUTION.md](ATTRIBUTION.md).
-
-## The OTA wire contract
-
-The app and the fork's repeater firmware (`meshcore/MeshCore`, branch
-`lora-ota`, `examples/simple_repeater/OtaUpdate.h`) speak a frozen,
-append-only contract. Its shape, in one line:
-
-`CMD_SEND_BINARY_REQ` → companion encrypts → ordinary REQ datagram → node
-decrypts → `OTA` op frame → reply inside the RESPONSE as
-`PUSH_CODE_BINARY_RESPONSE` → only the target applies anything.
-
-- Ops are inert until an operator arms with `ota stage` + a single-use token;
-  nothing reaches flash before the SHA-256 gate at `OP_END` passes.
-- `OP_INFO` (0x07) is the capability handshake, answered in every state; the
-  node replies with `OP_INFO_REPORT` (0x08): wire version, target id, slot
-  size, `max_literal`, feature bits (`supportsDelta`, `supportsApply`), the
-  running firmware version and the running image's **SHA-256** — over exactly
-  the bytes the update wrote, so it equals the hash of the `.bin` in this
-  app's library and is how a delta base is chosen (the version stamp is only
-  the fallback for pre-handshake firmware).
-- New features only ever add op codes or report bits; op meaning, field order,
-  field sizes, CRC and the SEQ rules are frozen. Any hard break is a new REQ
-  code, never a silent redefinition.
-- The frame CRC (CRC-16/CCITT-FALSE) guards flash writes, not the transport
-  (the AES-MAC does); packets carry zero padding from the crypto layer and
-  `frame_len` in the REQ envelope says exactly how much of it is the frame.
-
-`bench/` is the hardware front door for the same contract: `dart run
-bin/bench.dart --scenario probe|delta|full|…` drives the real path end to end.
-
-## Contributing
-
-Small, focused PRs against `main`. `./scripts/check.sh` must stay green
-(format, analyze, all package tests, app tests). The `mesh_protocol`,
-`device_link`, and `test_support` trees are shared with MeshChameleon —
-prefer upstreaming shared fixes there via the subtree rather than diverging.
-
-## License
-
-MIT — see [LICENSE](LICENSE) and [ATTRIBUTION.md](ATTRIBUTION.md).
+See [AGENTS.md](AGENTS.md) for the layout, the wire-contract rules and the
+verification discipline; [docs/releasing.md](docs/releasing.md) covers signing
+and releases; [SECURITY.md](SECURITY.md) has the threat model.

@@ -8,6 +8,39 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Added
 
+- **A guided seven-step flow.** Connect → Repeater → Admin → Firmware →
+  Review → Transfer → Verify, with the same step bar and bottom action on
+  every screen. The admin login moved to its own step, and the repeater list
+  and manual public key are separate tabs — a long contact list no longer
+  hides the fields below it.
+- **Optional admin password.** A blank login is valid: the repeater checks
+  whether the companion's key is already an admin in its ACL, so no password
+  is needed for a provisioned companion. `Check node` is never disabled for
+  an empty password.
+- **Board-scoped version picker.** The node's `OP_INFO` target id is mapped
+  back to its build environment; the board dropdown is alpha-sorted, prefilled
+  from that, and the GitHub listing only shows images for the chosen board.
+- **Stable and dev are separate tabs**, each newest-first with release dates
+  (dev builds used to be a switch under one long list).
+- **Version-based offline library.** Saving a version downloads every board's
+  image of that release, and the Offline tab lists only saved versions (with
+  a complete/partial marker). A persistent **Go offline** switch on the
+  firmware screen prevents *every* GitHub request, including the catalog.
+- **Three radio plans.** Live mesh with the DIRECT path override; a temporary
+  private preset on both the repeater and the companion; or the repeater's
+  radio2 preset while the live mesh keeps running. Off-mesh modes are zero-hop,
+  and a settings screen suggests a preset and a duration from the node's radio
+  and the transfer estimate. An existing radio2 configuration is reported and
+  left untouched.
+- **Before/after image selection.** Choose the delta base explicitly (or force
+  a full image), and import custom `.bin` builds on any platform. A custom
+  image uses the board id the node itself reported.
+- **Windows and macOS desktop builds**, alongside Linux; the release workflow
+  attaches all three to the GitHub Release. TCP is a first-class transport on
+  every platform, including file import/export on desktop.
+- **App icon.** A repeater-and-update-loop launcher icon (generated from
+  `app/assets/icon/icon.svg`) and a user-guide README with screenshots.
+
 - **OP_INFO handshake.** The app now asks the node for its capabilities
   before arming: wire version, board target id, slot size, `max_literal`,
   and the feature bits (`supportsDelta`, `supportsApply`), plus the running

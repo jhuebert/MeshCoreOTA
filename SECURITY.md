@@ -56,8 +56,11 @@ code with no new guarantee at the arm/SHA/apply gates.
 
 - **Repeater admin password** — per session only, in memory, never logged,
   never persisted (no `flutter_secure_storage` use). Closing the app forgets
-  it. Anyone with the unlocked phone during a session has the same admin
-  session as the user — same as any logged-in repeater app.
+  it. A blank password is a legitimate login when the companion's key is
+  already an admin in the node's ACL; the app sends the stock blank-login
+  request and the node decides. Anyone with the unlocked phone during a
+  session has the same admin session as the user — same as any logged-in
+  repeater app.
 - **Companion connection** — BLE pairing is handled by the OS; the app never
   sees or stores pairing keys.
 
@@ -65,10 +68,14 @@ code with no new guarantee at the arm/SHA/apply gates.
 
 - No telemetry, no analytics, no crash reporting, no network access except
   the firmware catalog/download endpoints (`api.github.com`,
-  `objects.githubusercontent.com` for the fork's releases).
+  `objects.githubusercontent.com` for the fork's releases). The **offline**
+  switch disables even those: the app never contacts GitHub while it is on.
 - No persistent copy of uploaded images beyond the local **library** (explicit
   user action), which holds only public release images and their SHA-256.
-- No store listing dependency — releases are GitHub Releases APKs.
+  The only other app-owned state is `ota_settings.json`, which records the
+  offline flag.
+- No store listing dependency — releases are GitHub Releases (signed Android
+  APKs and unsigned desktop bundles).
 
 ## Reporting
 
