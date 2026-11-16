@@ -36,8 +36,9 @@ class LibraryEntry {
 
 /// Persistent local firmware library. Every entry is `<sha256>.bin` plus a
 /// `<sha256>.json` sidecar with env/version/origin metadata. The app finds
-/// delta bases by matching the node's reported running sha (16 hex prefix),
-/// and never uploads anything to this directory implicitly — images land here
+/// delta bases by matching the node's reported running image SHA-256 (the
+/// `OP_INFO` handshake), falling back to the `running=` version stamp; and
+/// never uploads anything to this directory implicitly — images land here
 /// only from an explicit download, import, or pack restore.
 class FirmwareLibrary {
   FirmwareLibrary(this.directory);
@@ -63,11 +64,27 @@ class FirmwareLibrary {
     return out;
   }
 
+  /// Find the base image for a delta against a node whose running image hashes
+  /// to [runningSha256] (the `OP_INFO` handshake's full SHA-256). A byte match
+  /// is the identity, so the entry's environment does not matter: the same
+  /// image is the same base either way. Returns null when the library holds no
+  /// such image (the caller falls back to the version stamp, then to a full
+  /// image).
+  Future<LibraryEntry?> findBaseForSha(List<int> runningSha256) async {
+    final id =
+        runningSha256.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    for (final entry in await list()) {
+      if (entry.sha256 == id) return entry;
+    }
+    return null;
+  }
+
   /// Find the base image for a delta against a node running [runningVersion]
   /// (the full `running=` stamp from `ota status`, e.g.
-  /// `v1.18.0-r4-filter-d1ebd2f`). The version stamp is the identity proxy:
-  /// same release build ⇒ same bytes. A wrong guess is caught by the device
-  /// SHA gate (err=4) — nothing boots; the operator retries full-image.
+  /// `v1.18.0-r4-filter-d1ebd2f`). The version stamp is a weaker identity than
+  /// [findBaseForSha]: two builds of one commit can carry the same stamp and
+  /// still differ (the build date is embedded). A wrong guess is caught by the
+  /// device SHA gate (err=4) — nothing boots; the operator retries full-image.
   /// Returns null when there is no confident base — the caller falls back
   /// to a full image.
   Future<LibraryEntry?> findBaseFor(

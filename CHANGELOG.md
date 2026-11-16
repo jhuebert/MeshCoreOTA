@@ -11,7 +11,7 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 - **OP_INFO handshake.** The app now asks the node for its capabilities
   before arming: wire version, board target id, slot size, `max_literal`,
   and the feature bits (`supportsDelta`, `supportsApply`), plus the running
-  firmware version and full running-slot SHA-256 (`OtaNodeInfo`,
+  firmware version and the running image's SHA-256 (`OtaNodeInfo`,
   `queryNodeInfo`). `UpdateFlow.stage` takes an optional `expectedTargetId`
   and refuses a definitive board mismatch before registering an arm; a node
   that does not answer is treated as unknown and proceeds as before (the
@@ -20,6 +20,22 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 - **Board-mismatch fast fail.** `runUpdate` passes the selected environment's
   target id into `stage()`; a node reporting a different board id aborts
   staging with `UpdateFlowException` before any arm is registered.
+- **Delta base by exact image hash.** The library now matches bases with
+  `FirmwareLibrary.findBaseForSha()` against the handshake's running-image
+  SHA-256 first, and only falls back to the `running=` version stamp. Two
+  builds of one commit share a stamp and can still differ (the build date is
+  embedded), which silently broke a delta and burned the whole transfer
+  before the device's SHA gate rejected it.
+- **The node's reported SHA-256 is the `.bin` hash.** It is taken over exactly
+  the bytes an update wrote (length from the ESP image header, appended
+  digest included) instead of over the whole erase-filled partition, so it
+  is comparable with the app's own images (`ota status` reports the same
+  hash).
+- **RESPONSE padding is handled by CRC.** `PUSH_CODE_BINARY_RESPONSE` payloads
+  arrive zero-padded to a 16-byte block; the parser now trims by trying frame
+  CRCs instead of assuming the frame ends at the last non-zero byte (which
+  broke reports whose CRC ends in `0x00`, and every report larger than one
+  block, including `OP_INFO_REPORT`).
 
 ### Changed
 

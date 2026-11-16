@@ -76,6 +76,23 @@ void main() {
     );
   });
 
+  test('findBaseForSha matches the running image by exact bytes', () async {
+    final image = _bytes(7, 3000);
+    final entry = await library.importBytes(
+      image,
+      env: 'Xiao_S3_WIO_repeater_observer',
+      version: 'v1.18.0-r4-filter-d1ebd2f',
+      origin: 'github',
+      fileName: 'x.bin',
+    );
+    final hit = await library.findBaseForSha(sha256.convert(image).bytes);
+    expect(hit, isNotNull);
+    expect(hit!.id, entry.id);
+    // An image the library does not hold is no base at all.
+    expect(await library.findBaseForSha(sha256.convert(_bytes(9, 8)).bytes),
+        isNull);
+  });
+
   test('field pack roundtrip preserves entries', () async {
     final first = await library.importBytes(
       _bytes(7, 3000),

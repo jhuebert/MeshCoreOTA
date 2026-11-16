@@ -183,20 +183,35 @@ OtaReport? parseReport(List<int> payload) {
   return OtaReport(frame[3] | (frame[4] << 8));
 }
 
+/// Trim the crypto layer's zero padding from a RESPONSE payload: the shortest
+/// prefix that carries a valid OTA frame (magic + CRC) wins. Padding is 0..15
+/// zero bytes, and the frame itself may end in zeros, so the CRC decides.
+/// Returns null when no prefix frames.
+Uint8List? unpadFrame(List<int> payload) {
+  var len = payload.length;
+  while (len >= 2) {
+    final cand = Uint8List.fromList(payload.sublist(0, len));
+    if (len >= 7 && unwrapFrame(cand) != null) return cand;
+    if (payload[len - 1] != 0) return null; // dropped a real byte: no frame
+    len--;
+  }
+  return null;
+}
+
 /// `PUSH_CODE_BINARY_RESPONSE` (0x8C), emitted by the companion when the
 /// target of our `CMD_SEND_BINARY_REQ` answers with a RESPONSE.
 ///
 /// Two record layouts circulate in the field, and this parser accepts both:
 ///
-///   `[8C][00][tag(4)][payload…]`                      older companions
-///   `[8C][00][pubkey_prefix(6)][tag(4)][payload…]`    current companions
+///   `[8C][00][tag(4)][payload…]`                      tag first
+///   `[8C][00][pubkey_prefix(6)][tag(4)][payload…]`    pubkey prefix first
 ///
 /// The pubkey prefix (when present) is the responder's truncated identity —
 /// checked against [contactPubKey]. The tag is checked against [askTag] when
 /// known (the ask is always the newest in-flight request, so a well-formed
 /// report for this contact while an ask is out is the answer either way).
-/// Returns the RESPONSE payload (frame bytes, zero padding stripped by the
-/// caller), or null when the push does not parse.
+/// Returns the OTA frame with the crypto layer's padding stripped, or null
+/// when the push does not parse.
 Uint8List? binaryResponseReport(Uint8List frame,
     {required Uint8List contactPubKey, int? askTag}) {
   if (frame.isEmpty || frame[0] != 0x8C) return null;
@@ -218,12 +233,12 @@ Uint8List? binaryResponseReport(Uint8List frame,
         (frame[tagAt + 2] << 16) |
         (frame[tagAt + 3] << 24);
     if (askTag != null && tag != askTag) continue;
-    final payload = Uint8List.fromList(frame.sublist(tagAt + 4));
-    // The tag-at-2 layout is ambiguous: the first candidate must still
-    // unwrap as a well-formed OTA frame (magic + CRC) before we accept it;
-    // otherwise fall through to the pubkey-prefix layout.
-    if (unwrapFrame(payload) == null) continue;
-    return payload;
+    // The tag-at-2 layout is ambiguous (the first four bytes of a pubkey
+    // prefix would read as a tag), so the payload must frame before we
+    // accept it; otherwise fall through to the pubkey-prefix layout.
+    final report = unpadFrame(frame.sublist(tagAt + 4));
+    if (report == null) continue;
+    return report;
   }
   return null;
 }

@@ -19,9 +19,8 @@ class OtaStatus {
 
   final String running;
 
-  /// First 8 bytes of the running slot's SHA-256, as printed (16 lowercase
-  /// hex chars). Used to base-match delta candidates against the node's
-  /// running image.
+  /// First 8 bytes of the running image's SHA-256, as printed (16 lowercase
+  /// hex chars). The full hash comes from the `OP_INFO` handshake.
   final String shaPrefix;
 
   final OtaPhase state;

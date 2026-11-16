@@ -35,7 +35,25 @@ Uint8List _cannedInfoReport() {
   return buildOp(otaOpInfoReport, body: body);
 }
 
-Uint8List _pushBinaryResponse(int tag, Uint8List payload) =>
+/// `PUSH_CODE_BINARY_RESPONSE` as a companion emits it: the tag-first record
+/// layout, with the RESPONSE plaintext zero-padded to a 16-byte block exactly
+/// as the crypto layer delivers it.
+Uint8List _pushBinaryResponse(int tag, Uint8List payload) {
+  final padded = (payload.length + 15) & ~15;
+  return Uint8List.fromList([
+    pushCodeBinaryResponse,
+    0,
+    tag & 0xFF,
+    (tag >> 8) & 0xFF,
+    (tag >> 16) & 0xFF,
+    (tag >> 24) & 0xFF,
+    ...payload,
+    ...List<int>.filled(padded - payload.length, 0),
+  ]);
+}
+
+/// The other record layout in the field: pubkey prefix, then tag.
+Uint8List _pushBinaryResponsePrefixed(int tag, Uint8List payload) =>
     Uint8List.fromList([
       pushCodeBinaryResponse,
       0,
@@ -101,6 +119,16 @@ void main() {
     expect(info, isNotNull);
     expect(info!.targetId, 0xDEADBEEF);
     expect(info.runningVersion, 'XiaoS3_WIO_repeater-ota');
+  });
+
+  test('queryNodeInfo reads the pubkey-prefix record layout too', () async {
+    final link = FakeDeviceLink(snr: 6.0, rssi: -70);
+    link.binaryRequestHandler = (contact, reqData, tag) async {
+      link.simulatePush(_pushBinaryResponsePrefixed(tag, _cannedInfoReport()));
+    };
+    final info = await queryNodeInfo(link, testContact,
+        timeout: const Duration(seconds: 1));
+    expect(info!.runningSha256, List<int>.generate(32, (i) => i + 0xA0));
   });
 
   test('queryNodeInfo resolves null when the node does not answer', () async {

@@ -159,6 +159,65 @@ void main() {
           isNull);
     });
 
+    test('parseBinaryResponse strips the crypto layer zero padding', () {
+      // The RESPONSE plaintext is zero-padded to a 16-byte block; the frame
+      // ends well before it (this is what the live mesh delivers).
+      final report = appendCrc16(const [0x4F, 0x54, 0x06, 0x34, 0x12]);
+      const tag = 0x12345678;
+      final contact = Uint8List.fromList([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]);
+      for (final prefix in <List<int>>[
+        const [], // tag-first layout
+        const [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF], // pubkey-prefix layout
+      ]) {
+        final frame = Uint8List.fromList([
+          0x8C,
+          0x00,
+          ...prefix,
+          tag & 0xFF,
+          (tag >> 8) & 0xFF,
+          (tag >> 16) & 0xFF,
+          (tag >> 24) & 0xFF,
+          ...report,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+        ]);
+        expect(
+            parseBinaryResponse(frame, contactPubKey: contact, askTag: tag)
+                ?.nextExpected,
+            0x1234);
+      }
+    });
+
+    test('a report whose CRC ends in zero still parses through padding', () {
+      // Padding is 0..15 zero bytes and the frame itself may end in zeros, so
+      // the CRC — not the last non-zero byte — decides where the frame ends.
+      final report = appendCrc16(const [0x4F, 0x54, 0x06, 0x00, 0x42]);
+      expect(report.last, 0);
+      final contact = Uint8List.fromList([1, 2, 3, 4, 5, 6]);
+      final frame = Uint8List.fromList([
+        0x8C,
+        0x00,
+        0x01,
+        0x02,
+        0x03,
+        0x04,
+        ...report,
+        0,
+        0,
+        0,
+      ]);
+      expect(
+          parseBinaryResponse(frame, contactPubKey: contact, askTag: 0x04030201)
+              ?.nextExpected,
+          0x4200);
+    });
+
     test('targetIdForEnvironment matches the frozen rule', () {
       // sha256(pio_env)[0..3] little endian; verified independently with
       // Python hashlib (see wire.dart).

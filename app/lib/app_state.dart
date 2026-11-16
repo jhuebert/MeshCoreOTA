@@ -63,6 +63,12 @@ class AppState extends ChangeNotifier {
   String adminPassword = '';
 
   OtaStatus? nodeStatus;
+
+  /// What the node said in the `OP_INFO` handshake: capabilities, target id,
+  /// and the running image's full SHA-256 (the delta base identity). Null on
+  /// firmware without the handshake.
+  OtaNodeInfo? nodeInfo;
+
   bool probing = false;
   String? probeError;
 
@@ -206,6 +212,7 @@ class AppState extends ChangeNotifier {
     contacts = const [];
     target = null;
     nodeStatus = null;
+    nodeInfo = null;
     companionName = '';
     manualRoutePath = '';
   }
@@ -256,6 +263,7 @@ class AppState extends ChangeNotifier {
         Contact(publicKey: bytes, name: name, advType: advTypeRepeater);
     target = contact;
     nodeStatus = null;
+    nodeInfo = null;
     manualRoutePath = '';
     manualRouteError = null;
     notifyListeners();
@@ -265,6 +273,7 @@ class AppState extends ChangeNotifier {
   void selectTarget(Contact contact) {
     target = contact;
     nodeStatus = null;
+    nodeInfo = null;
     probeError = null;
     manualRoutePath = '';
     manualRouteError = null;
@@ -282,12 +291,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       nodeStatus = await flow.probe(t, adminPassword);
+      // Best effort: the handshake is what makes a delta base exact, but a
+      // node without it still updates (its `running=` stamp is the fallback).
+      nodeInfo = nodeStatus == null ? null : await flow.tryNodeInfo(t);
       if (nodeStatus == null) {
         probeError = 'This firmware does not speak the ota CLI '
             '(expected a fork lora-ota build, e.g. Xiao_S3_WIO_repeater-*-lora-ota).';
       }
     } catch (e) {
       nodeStatus = null;
+      nodeInfo = null;
       probeError = '$e';
     } finally {
       probing = false;
@@ -423,9 +436,16 @@ class AppState extends ChangeNotifier {
     }
     final lib = await _openLibrary();
     final env = selectedEnvironment;
-    baseEntry = env == null
-        ? null
-        : await lib.findBaseFor(env: env, runningVersion: status.running);
+    // The handshake's full SHA-256 identifies the running bytes exactly, so
+    // prefer it: two builds of one commit can share a version stamp and still
+    // differ. The stamp stays as the fallback for pre-handshake firmware.
+    final info = nodeInfo;
+    baseEntry =
+        info == null ? null : await lib.findBaseForSha(info.runningSha256);
+    if (baseEntry == null && env != null) {
+      baseEntry =
+          await lib.findBaseFor(env: env, runningVersion: status.running);
+    }
     if (baseEntry != null) {
       try {
         final baseBytes = await lib.read(baseEntry!);

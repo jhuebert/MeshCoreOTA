@@ -399,7 +399,7 @@ Future<void> scenarioProbe(Bench b) async {
   info('  radio:   $radio');
 
   // OP_INFO handshake: the node's capabilities, target id, running version
-  // and full running-slot SHA-256.
+  // and the running image's SHA-256.
   final nodeInfo = await b.nodeInfo();
   if (nodeInfo == null) {
     info('  info: node did not answer (pre-handshake firmware, or unreachable)');

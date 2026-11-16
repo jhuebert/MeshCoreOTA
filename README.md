@@ -142,7 +142,10 @@ decrypts → `OTA` op frame → reply inside the RESPONSE as
 - `OP_INFO` (0x07) is the capability handshake, answered in every state; the
   node replies with `OP_INFO_REPORT` (0x08): wire version, target id, slot
   size, `max_literal`, feature bits (`supportsDelta`, `supportsApply`), the
-  running firmware version and the **full running-slot SHA-256**.
+  running firmware version and the running image's **SHA-256** — over exactly
+  the bytes the update wrote, so it equals the hash of the `.bin` in this
+  app's library and is how a delta base is chosen (the version stamp is only
+  the fallback for pre-handshake firmware).
 - New features only ever add op codes or report bits; op meaning, field order,
   field sizes, CRC and the SEQ rules are frozen. Any hard break is a new REQ
   code, never a silent redefinition.

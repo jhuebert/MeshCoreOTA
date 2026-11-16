@@ -43,9 +43,21 @@ upstream there (via subtree) rather than diverging.
 - `OP_INFO` (0x07) is the capability handshake — answered in every state.
   `OP_INFO_REPORT` (0x08) carries wire version, target id, slot size,
   `max_literal`, the feature bits (`supportsDelta`, `supportsApply`), the
-  running firmware version (NUL-padded 32 bytes) and the **full running-slot
-  SHA-256** — the delta base an app should prefer over version-string
-  matching.
+  running firmware version (NUL-padded 32 bytes) and the **running image's
+  SHA-256** — taken over exactly the bytes an update wrote (image length from
+  the ESP image header, appended digest included), so it equals the hash of
+  the app's own `.bin`. That hash, not the version stamp, is the delta base
+  identity: two builds of one commit share a stamp and can still differ.
+  All zeros means "cannot tell" (no readable image).
+- `target id` is the **build environment** id (`sha256(pio_env)[0..3]`), not a
+  hardware id. Flashing a node with another variant of the same board (e.g.
+  `_observer` ↔ plain) is refused by the node and by `stage()` — switch
+  variants over USB/Wi-Fi, not OTA.
+- `PUSH_CODE_BINARY_RESPONSE` (0x8C) payloads arrive zero-padded to a 16-byte
+  block; `unpadFrame()` trims them by CRC, so a report whose CRC ends in `0x00`
+  still parses. Two record layouts exist (tag first, or pubkey prefix then
+  tag); both are accepted, and the tag-at-2 candidate must frame before it is
+  believed.
 - New ops get new codes; existing ops never change meaning, field order or
   size; the SEQ rules and CRC are frozen. Hard breaks are a new REQ code,
   never a silent redefinition.
