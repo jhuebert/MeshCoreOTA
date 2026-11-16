@@ -9,6 +9,8 @@ import '../app_state.dart';
 import '../services/ble_device_link.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/wizard.dart';
+import 'library_screen.dart';
 import 'target_screen.dart';
 
 /// Step 1: pick the companion the phone talks to. The companion is used as
@@ -81,10 +83,11 @@ class _ConnectScreenState extends State<ConnectScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
+          const WizardBar(step: 1, label: 'Connect the companion'),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Text(
-              'Update a MeshCore repeater over LoRa — no laptop, no tower visit. '
+              'Update a MeshCore repeater over LoRa — no laptop at the site. '
               'This app talks to your companion device; the companion radios to '
               'the repeater.',
               style: TextStyle(
@@ -98,10 +101,12 @@ class _ConnectScreenState extends State<ConnectScreen> {
               segments: const [
                 ButtonSegment(
                     value: false,
-                    label: Text('BLE'),
+                    label: Text('Bluetooth'),
                     icon: Icon(Icons.bluetooth)),
                 ButtonSegment(
-                    value: true, label: Text('TCP'), icon: Icon(Icons.wifi)),
+                    value: true,
+                    label: Text('TCP / Wi-Fi'),
+                    icon: Icon(Icons.wifi)),
               ],
               selected: {_tcpMode},
               onSelectionChanged: (s) => setState(() => _tcpMode = s.first),
@@ -113,6 +118,31 @@ class _ConnectScreenState extends State<ConnectScreen> {
             ..._buildBleCard(context, app),
           if (app.connectError != null) ErrorBanner(app.connectError!),
           if (connected) ..._buildConnectedCard(context, app),
+          const SectionHeader('Firmware'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Card(
+              child: ListTile(
+                leading: const Icon(Icons.inventory_2_outlined,
+                    color: OtaTheme.accent),
+                title: const Text('Firmware library'),
+                subtitle: const Text(
+                  'Download images ahead of time, import a custom build, or '
+                  'prepare an offline field pack.',
+                  style: TextStyle(color: OtaTheme.textMuted, fontSize: 11),
+                ),
+                trailing:
+                    const Icon(Icons.chevron_right, color: OtaTheme.textMuted),
+                onTap: () async {
+                  await app.refreshLibrary();
+                  if (!context.mounted) return;
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const LibraryScreen()),
+                  );
+                },
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -215,15 +245,16 @@ class _ConnectScreenState extends State<ConnectScreen> {
                     Icon(Icons.wifi, color: OtaTheme.accent),
                     SizedBox(width: 10),
                     Text(
-                      'TCP companion (bench / WiFi)',
+                      'TCP companion',
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Point at a WiFi/Ethernet companion, or a simulator on your '
-                  'machine (127.0.0.1:5000). Used for bench validation.',
+                  'Point at a Wi-Fi or Ethernet companion (host:port), a USB '
+                  'serial-to-TCP bridge, or a companion on this machine. This '
+                  'is the normal path on a computer.',
                   style: TextStyle(
                       color: OtaTheme.textMuted, fontSize: 12, height: 1.4),
                 ),
@@ -313,7 +344,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
                     MaterialPageRoute(builder: (_) => const TargetScreen()),
                   ),
                   icon: const Icon(Icons.cell_tower),
-                  label: const Text('Pick a repeater'),
+                  label: const Text('Next: pick a repeater'),
                 ),
               ],
             ),

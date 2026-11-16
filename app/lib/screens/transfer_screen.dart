@@ -7,6 +7,7 @@ import '../app_state.dart';
 import '../services/foreground.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/wizard.dart';
 import 'verify_screen.dart';
 
 /// Step 5: the transfer itself. DIRECT packets only; the node re-verifies
@@ -77,6 +78,7 @@ class _TransferScreenState extends State<TransferScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
+          const WizardBar(step: 6, label: 'Transfer'),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Text(
@@ -126,7 +128,7 @@ class _TransferScreenState extends State<TransferScreen> {
                 : _StepState.pending,
           ),
           _stepRow(
-            label: 'Transfer (DIRECT, windowed)',
+            label: 'Transfer (windowed REQ stream)',
             state: phase.index >= UpdatePhase.readyToApply.index
                 ? _StepState.ok
                 : phase == UpdatePhase.transferring

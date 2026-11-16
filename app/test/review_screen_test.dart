@@ -7,6 +7,9 @@ import 'package:provider/provider.dart';
 
 import 'package:meshcore_ota/app_state.dart';
 import 'package:meshcore_ota/screens/review_screen.dart';
+import 'package:meshcore_ota/services/radio_plan.dart';
+
+import 'support.dart';
 
 void main() {
   testWidgets('route override accepts valid paths and surfaces invalid ones',
@@ -35,5 +38,127 @@ void main() {
     await tester.pump();
     expect(app.manualRouteError, isNotNull);
     expect(find.textContaining('path'), findsWidgets);
+  });
+
+  reviewExtras();
+}
+
+// The review step is where the operator sees the radio choice and the
+// before/after images. These cover the wizard chrome and the base picker.
+void _bigView(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1200, 2600);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+}
+
+void reviewExtras() {
+  testWidgets('a private radio plan replaces the path override',
+      (tester) async {
+    _bigView(tester);
+    final app = AppState();
+    app.selectTarget(Contact(
+      publicKey: Uint8List(32),
+      name: 'target repeater',
+      advType: advTypeRepeater,
+    ));
+    app.nodePreset = const LoRaPreset(
+      frequencyHz: 910525000,
+      bandwidthHz: 62500,
+      spreadingFactor: 7,
+      codingRate: 5,
+    );
+    app.radioPlan = RadioPlan(
+      mode: RadioMode.tempRadio,
+      preset: RadioPlan.suggestTempRadio(app.nodePreset!),
+      durationMinutes: 15,
+    );
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppState>.value(
+        value: app,
+        child: const MaterialApp(home: ReviewScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Step 5 of 7'), findsOneWidget);
+    expect(find.text('Temporary private channel'), findsOneWidget);
+    expect(find.textContaining('15 min'), findsOneWidget);
+    expect(find.text('Direct path override (optional)'), findsNothing);
+    final start = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Start update'),
+    );
+    expect(start.onPressed, isNotNull);
+  });
+
+  testWidgets('the base picker chooses a library image', (tester) async {
+    _bigView(tester);
+    final app = AppState();
+    app.selectTarget(Contact(
+      publicKey: Uint8List(32),
+      name: 'target repeater',
+      advType: advTypeRepeater,
+    ));
+    final lib = FakeLibrary();
+    app.library = lib;
+    final entry = lib.addImage(
+      Uint8List.fromList(List.filled(8, 9)),
+      env: 'Xiao_S3_WIO_repeater_observer',
+      version: 'v1.1.0-rc5-cd72e1a2',
+    );
+    app.libraryEntries = await lib.list();
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppState>.value(
+        value: app,
+        child: const MaterialApp(home: ReviewScreen()),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Change base'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delta base'), findsOneWidget);
+    await tester.tap(find.text(entry.fileName));
+    await tester.pumpAndSettle();
+
+    expect(app.baseOverride?.id, entry.id);
+    expect(find.textContaining('chosen manually'), findsOneWidget);
+  });
+
+  testWidgets('an invalid radio plan blocks the start button', (tester) async {
+    _bigView(tester);
+    final app = AppState();
+    app.selectTarget(Contact(
+      publicKey: Uint8List(32),
+      name: 'target repeater',
+      advType: advTypeRepeater,
+    ));
+    // radio2 on the live frequency is refused by the node.
+    app.nodePreset = const LoRaPreset(
+      frequencyHz: 910525000,
+      bandwidthHz: 62500,
+      spreadingFactor: 7,
+      codingRate: 5,
+    );
+    app.radioPlan = RadioPlan(
+      mode: RadioMode.radio2,
+      preset: app.nodePreset,
+      durationMinutes: 10,
+    );
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppState>.value(
+        value: app,
+        child: const MaterialApp(home: ReviewScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('must not overlap'), findsOneWidget);
+    final start = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Start update'),
+    );
+    expect(start.onPressed, isNull);
   });
 }

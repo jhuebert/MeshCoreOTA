@@ -186,5 +186,60 @@ void main() {
       expect(cached.releases.single.tag, 'filter-v1.18.0-r4');
       await dir.delete(recursive: true);
     });
+
+    test('cacheOnly uses the cache and never the network', () async {
+      final dir = await Directory.systemTemp.createTemp('catalog_only_test');
+      final cacheFile = File('${dir.path}/catalog.json');
+      final releasesJson = jsonEncode([
+        _releaseJson(
+          tag: 'filter-v1.18.0-r4',
+          prerelease: false,
+          publishedAt: '2026-11-12T20:17:54Z',
+          assets: [
+            _asset('Xiao_S3_WIO_repeater-v1.18.0-r4-filter-d1ebd2f.bin', 1,
+                'filter-v1.18.0-r4'),
+          ],
+        ),
+      ]);
+      final online = GitHubSource(
+        fetchJson: (_) async => jsonDecode(releasesJson),
+        fetchBytes: (_) async => Uint8List(0),
+        cacheFile: cacheFile,
+      );
+      await online.catalog();
+
+      var fetched = false;
+      final offline = GitHubSource(
+        fetchJson: (_) async {
+          fetched = true;
+          return const [];
+        },
+        fetchBytes: (_) async {
+          fetched = true;
+          return Uint8List(0);
+        },
+        cacheFile: cacheFile,
+        // Even a stale cache is served: the user explicitly went offline.
+        cacheTtl: Duration.zero,
+      );
+      final cached = await offline.catalog(cacheOnly: true);
+      expect(fetched, isFalse);
+      expect(cached.fromCache, isTrue);
+      expect(cached.releases.single.tag, 'filter-v1.18.0-r4');
+
+      final empty = GitHubSource(
+        fetchJson: (_) async {
+          fetched = true;
+          return const [];
+        },
+        fetchBytes: (_) async => Uint8List(0),
+      );
+      await expectLater(
+        empty.catalog(cacheOnly: true),
+        throwsA(isA<GitHubSourceException>()),
+      );
+      expect(fetched, isFalse);
+      await dir.delete(recursive: true);
+    });
   });
 }

@@ -162,8 +162,16 @@ class GitHubSource {
       'https://api.github.com/repos/$_releaseRepo/releases?per_page=30');
 
   /// Default catalog: network first, cache fallback.
-  Future<Catalog> catalog({bool forceRefresh = false}) async {
+  ///
+  /// [cacheOnly] never touches the network — the offline switch uses it, so a
+  /// device in the field cannot sit in a connect timeout on every launch.
+  Future<Catalog> catalog(
+      {bool forceRefresh = false, bool cacheOnly = false}) async {
     final cached = await _readCache();
+    if (cacheOnly) {
+      if (cached != null) return cached;
+      throw GitHubSourceException('offline mode: no cached release list');
+    }
     if (!forceRefresh &&
         cached != null &&
         DateTime.now().difference(cached.fetchedAt) < cacheTtl) {

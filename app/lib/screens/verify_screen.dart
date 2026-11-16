@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../app_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/wizard.dart';
 
 /// Final step: boot into the new image and prove it works. The node
 /// rebooted into an image its SHA-256 gate approved; the boot health check
@@ -48,6 +49,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
+          const WizardBar(step: 7, label: 'Verify'),
           const SizedBox(height: 18),
           if (phase == UpdatePhase.applying || phase == UpdatePhase.verifying)
             const Column(

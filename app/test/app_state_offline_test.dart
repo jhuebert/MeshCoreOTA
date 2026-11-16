@@ -1,0 +1,252 @@
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:ota_core/ota_core.dart';
+
+import 'package:meshcore_ota/app_state.dart';
+import 'package:meshcore_ota/services/firmware_library.dart';
+import 'package:meshcore_ota/services/radio_plan.dart';
+
+import 'support.dart';
+
+const _board = 'Xiao_S3_WIO_repeater_observer';
+final _targetId = targetIdForEnvironment(_board);
+
+void main() {
+  test('board detection maps the node target id back to a known environment',
+      () {
+    final app = AppState();
+    app.catalog = catalog([
+      release('filter-v1.1.0-rc5', images: [
+        asset(_board, 'v1.1.0-rc5'),
+        asset('RAK_4631_repeater', 'v1.1.0-rc5'),
+      ]),
+    ]);
+    app.nodeInfo = nodeInfo(targetId: _targetId);
+
+    expect(app.knownEnvironments, contains(_board));
+    expect(app.environmentForTargetId(_targetId), _board);
+    expect(app.detectedBoard, _board);
+    expect(app.environmentForTargetId(0x11111111), isNull);
+  });
+
+  test('changing target forgets the previous node facts', () {
+    final app = AppState();
+    app.nodeStatus = nodeStatus();
+    app.nodeInfo = nodeInfo(targetId: _targetId);
+    app.nodePreset = const LoRaPreset(
+      frequencyHz: 910525000,
+      bandwidthHz: 62500,
+      spreadingFactor: 7,
+      codingRate: 5,
+    );
+    app.selectedBoard = _board;
+    app.radio2Enabled = true;
+    app.manualRoutePath = 'c0ff';
+    app.baseOverride = LibraryEntry(
+      id: 'b' * 64,
+      fileName: 'base.bin',
+      env: _board,
+      version: 'v1',
+      origin: 'import',
+      size: 1,
+      sha256: 'b' * 64,
+      added: DateTime(2026),
+    );
+
+    app.selectTarget(contact('other'));
+
+    expect(app.target?.name, 'other');
+    expect(app.nodeStatus, isNull);
+    expect(app.nodeInfo, isNull);
+    expect(app.nodePreset, isNull);
+    expect(app.selectedBoard, isNull);
+    expect(app.radio2Enabled, isNull);
+    expect(app.baseOverride, isNull);
+    expect(app.manualRoutePath, isEmpty);
+  });
+
+  test('selecting a board drops an image for another board', () {
+    final app = AppState();
+    app.selectedAsset = asset(_board, 'v1.1.0-rc5');
+    app.selectedBoard = _board;
+    app.setSelectedBoard('RAK_4631_repeater');
+    expect(app.selectedAsset, isNull);
+    expect(app.selectedBoard, 'RAK_4631_repeater');
+  });
+
+  test('a cached asset is selected without any network access', () async {
+    final app = AppState();
+    final lib = FakeLibrary();
+    final image = Uint8List.fromList(List.filled(96, 7));
+    final entry = lib.addImage(image,
+        env: _board,
+        version: 'v1.1.0-rc5-cd72e1a2',
+        fileName: '$_board-v1.1.0-rc5-cd72e1a2-filter-abc1234.bin');
+    app.library = lib;
+    app.libraryEntries = await lib.list();
+
+    await app.selectAsset(asset(_board, 'v1.1.0-rc5-cd72e1a2'));
+
+    expect(app.imageError, isNull);
+    expect(app.selectedImage, image);
+    expect(app.selectedLibraryEntry?.id, entry.id);
+  });
+
+  test('offline selection of an unsaved asset is refused', () async {
+    final app = AppState();
+    app.library = FakeLibrary();
+    app.offlineMode = true;
+
+    await app.selectAsset(asset(_board, 'v1.1.0-rc5-cd72e1a2'));
+    expect(app.imageError, contains('offline'));
+    expect(app.selectedImage, isNull);
+  });
+
+  test('an offline download is refused without touching the network', () async {
+    final app = AppState();
+    app.offlineMode = true;
+    final saved = await app.downloadReleaseToLibrary(
+      release('filter-v1.1.0-rc5', images: [asset(_board, 'v1.1.0-rc5')]),
+    );
+    expect(saved, 0);
+  });
+
+  test('offline versions group by version and note completeness', () async {
+    final app = AppState();
+    final lib = FakeLibrary();
+    lib.addImage(Uint8List.fromList(List.filled(16, 1)),
+        env: _board,
+        version: 'v1.1.0-rc5',
+        fileName: '$_board-v1.1.0-rc5-filter-abc1234.bin');
+    lib.addImage(Uint8List.fromList(List.filled(16, 2)),
+        env: 'RAK_4631_repeater',
+        version: 'v1.1.0-rc5',
+        fileName: 'RAK_4631_repeater-v1.1.0-rc5-filter-abc1234.bin');
+    lib.addImage(Uint8List.fromList(List.filled(16, 3)),
+        env: _board, version: 'v1.1.0-rc4');
+    app.library = lib;
+    app.libraryEntries = await lib.list();
+    app.catalog = catalog([
+      release('filter-v1.1.0-rc5', images: [
+        asset(_board, 'v1.1.0-rc5'),
+        asset('RAK_4631_repeater', 'v1.1.0-rc5'),
+      ]),
+      release('filter-v1.1.0-rc4', images: [
+        asset(_board, 'v1.1.0-rc4'),
+        asset('RAK_4631_repeater', 'v1.1.0-rc4'),
+      ]),
+    ]);
+
+    final versions = app.offlineVersions;
+    expect(versions, hasLength(2));
+    final rc5 = versions.firstWhere((v) => v.version == 'v1.1.0-rc5');
+    expect(rc5.complete, isTrue);
+    expect(rc5.known, isTrue);
+    expect(rc5.entries, hasLength(2));
+    final rc4 = versions.firstWhere((v) => v.version == 'v1.1.0-rc4');
+    expect(rc4.complete, isFalse);
+  });
+
+  test('a library entry is matched by file name or by sha', () {
+    final app = AppState();
+    app.libraryEntries = [
+      LibraryEntry(
+        id: 'a' * 64,
+        fileName: 'custom.bin',
+        env: 'custom',
+        version: 'custom',
+        origin: 'import',
+        size: 1,
+        sha256: 'a' * 64,
+        added: DateTime(2026),
+      ),
+    ];
+    expect(
+        app.libraryEntryForAsset(
+            asset(_board, 'v1', sha256: 'a' * 64, size: 1)),
+        isNotNull);
+    expect(app.libraryEntryForAsset(asset(_board, 'v2', sha256: 'b' * 64)),
+        isNull);
+  });
+
+  test('radio plan transitions suggest a preset and a duration', () {
+    final app = AppState();
+    app.nodePreset = const LoRaPreset(
+      frequencyHz: 910525000,
+      bandwidthHz: 62500,
+      spreadingFactor: 7,
+      codingRate: 5,
+    );
+
+    app.setRadioMode(RadioMode.tempRadio);
+    expect(app.radioPlan.mode, RadioMode.tempRadio);
+    expect(app.radioPlan.preset, isNotNull);
+    expect(app.radioPlanProblem, isNull);
+
+    app.setRadioPreset(const LoRaPreset(
+      frequencyHz: 915000000,
+      bandwidthHz: 125000,
+      spreadingFactor: 9,
+      codingRate: 5,
+    ));
+    expect(app.radioPlan.preset!.frequencyMhz, 915);
+
+    app.setRadioDuration(45);
+    expect(app.radioPlan.durationMinutes, 45);
+    app.setRadioDuration(99999);
+    expect(app.radioPlan.durationMinutes, RadioPlan.maxDurationMinutes);
+
+    app.setRadioMode(RadioMode.radio2);
+    expect(app.radioPlan.mode, RadioMode.radio2);
+  });
+
+  test('estimate label distinguishes full and delta', () {
+    final app = AppState();
+    expect(app.estimateLabel(), 'size unknown');
+  });
+
+  estimateTests();
+}
+
+void estimateTests() {
+  test('per-mode estimates scale with the mode and the preset', () async {
+    final app = AppState();
+    app.nodePreset = const LoRaPreset(
+      frequencyHz: 910525000,
+      bandwidthHz: 62500,
+      spreadingFactor: 7,
+      codingRate: 5,
+    );
+    final lib = FakeLibrary();
+    app.library = lib;
+    final entry = lib.addImage(Uint8List.fromList(List.filled(120000, 3)),
+        env: _board, version: 'v1.1.0-rc5');
+    app.libraryEntries = await lib.list();
+    await app.selectLibraryEntryForUpdate(entry);
+
+    final live = app.estimateSecondsForMode(RadioMode.liveMesh);
+    final temp =
+        app.estimateSecondsForMode(RadioMode.tempRadio, preset: app.nodePreset);
+    final radio2 =
+        app.estimateSecondsForMode(RadioMode.radio2, preset: app.nodePreset);
+
+    expect(live, isNotNull);
+    expect(live, greaterThan(0));
+    expect(temp, live);
+    expect(radio2, greaterThan(temp!));
+    expect(radio2, closeTo(temp * RadioPlan.radio2DutyFactor, 2));
+  });
+
+  test('no image means no estimate', () {
+    final app = AppState();
+    app.nodePreset = const LoRaPreset(
+      frequencyHz: 910525000,
+      bandwidthHz: 62500,
+      spreadingFactor: 7,
+      codingRate: 5,
+    );
+    expect(app.estimateSecondsForPreset(app.nodePreset), isNull);
+    expect(app.estimateSecondsForMode(RadioMode.liveMesh), isNull);
+  });
+}

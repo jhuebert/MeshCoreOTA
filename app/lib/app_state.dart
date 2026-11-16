@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:companion_client/companion_client.dart';
@@ -13,9 +14,15 @@ import 'package:path_provider/path_provider.dart';
 import 'services/ble_device_link.dart';
 import 'services/firmware_library.dart';
 import 'services/github_source.dart';
+import 'services/radio_plan.dart';
 import 'services/update_flow.dart';
 
 enum ConnectionPhase { disconnected, connecting, connected }
+
+/// Which release channel the firmware picker is showing. Both are sorted
+/// newest-first; dev builds are their own tab rather than a switch buried
+/// under the stable list.
+enum ReleaseTrack { stable, dev }
 
 enum UpdatePhase {
   idle,
@@ -59,7 +66,9 @@ class AppState extends ChangeNotifier {
   List<Contact> contacts = const [];
   Contact? target;
 
-  /// Admin password for the current session only — never persisted.
+  /// Admin password for the current session only — never persisted. May be
+  /// empty when the companion's key already holds admin rights on the node
+  /// (the repeater's ACL grants admin without a password).
   String adminPassword = '';
 
   OtaStatus? nodeStatus;
@@ -68,6 +77,15 @@ class AppState extends ChangeNotifier {
   /// and the running image's full SHA-256 (the delta base identity). Null on
   /// firmware without the handshake.
   OtaNodeInfo? nodeInfo;
+
+  /// The node's primary radio preset, read with `get radio` while checking
+  /// it. Used to suggest and validate the off-mesh transfer settings.
+  LoRaPreset? nodePreset;
+
+  /// Whether radio2 is enabled on the node, and its status line, read with
+  /// `radio2 status`. `null` means the question was not answered.
+  bool? radio2Enabled;
+  String? radio2Status;
 
   bool probing = false;
   String? probeError;
@@ -80,8 +98,24 @@ class AppState extends ChangeNotifier {
   Catalog? catalog;
   bool catalogLoading = false;
   bool catalogFromCache = false;
-  bool showDevReleases = false;
+  ReleaseTrack releaseTrack = ReleaseTrack.stable;
   String? catalogError;
+
+  /// When on, the app never reaches GitHub: the picker shows only versions
+  /// already saved on this device. Persisted, because the field is exactly
+  /// where the setting matters (no signal, app restarted).
+  bool offlineMode = false;
+  File? _settingsFile;
+
+  /// The release currently being saved for offline use, and how far along it
+  /// is (0..1 when known).
+  String? downloadingReleaseTag;
+  double? releaseDownloadProgress;
+
+  /// The board (build environment) the firmware picker is scoped to. It is
+  /// pre-filled from the node's `OP_INFO` target id as soon as the catalog or
+  /// library knows that environment's name.
+  String? selectedBoard;
 
   FirmwareLibrary? library;
   List<LibraryEntry> libraryEntries = const [];
@@ -90,7 +124,7 @@ class AppState extends ChangeNotifier {
   /// A GitHub asset chosen for install.
   FirmwareAsset? selectedAsset;
 
-  /// A library entry chosen for install (offline mode).
+  /// A library entry chosen for install (offline mode, or a custom `.bin`).
   LibraryEntry? selectedLibraryEntry;
 
   Uint8List? _selectedImage;
@@ -98,13 +132,49 @@ class AppState extends ChangeNotifier {
   bool imageLoading = false;
   String? imageError;
 
-  /// The matched delta base (library entry running the node's exact
-  /// `running=` stamp). Null → full image.
-  LibraryEntry? baseEntry;
+  /// The matched delta base (the image the node is running). Null → full
+  /// image. [autoBaseEntry] is the library match; [baseOverride] is the
+  /// operator's explicit choice (custom builds, or "the file the node has").
+  LibraryEntry? autoBaseEntry;
+  LibraryEntry? baseOverride;
+
+  /// The operator asked for a full image even though a base was matched.
+  bool forceFullImage = false;
+
+  LibraryEntry? get baseEntry =>
+      forceFullImage ? null : (baseOverride ?? autoBaseEntry);
+  bool get baseIsManual => !forceFullImage && baseOverride != null;
   DeltaResult? deltaResult;
 
   // download bookkeeping
   double? downloadProgress; // 0..1 when known, else null (indeterminate)
+
+  // ---------------- radio ----------------
+
+  /// How the transfer reaches the node: the live mesh, a temporary private
+  /// preset shared by both ends, or the repeater's second preset.
+  RadioPlan radioPlan = const RadioPlan();
+
+  /// The companion's live preset (read when a connection is adopted).
+  LoRaPreset? companionPreset;
+
+  /// The preset the companion was on before an off-mesh plan moved it, so it
+  /// can be put back afterwards.
+  LoRaPreset? _restorePreset;
+
+  /// Whether this update enabled radio2 on the node (and must turn it off
+  /// again). False when the node already had radio2 enabled.
+  bool _enabledRadio2ForUpdate = false;
+
+  /// Whether the suggested preset/duration may still follow the node/image;
+  /// an operator edit pins them.
+  bool _radioPresetAuto = true;
+  bool _radioDurationAuto = true;
+
+  /// Whether the radio has been moved off the live preset for this transfer.
+  bool _radioMoved = false;
+
+  String? radioPlanError;
 
   // ---------------- update ----------------
 
@@ -140,9 +210,35 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> initServices() async {
+    try {
+      final support = await getApplicationSupportDirectory();
+      _settingsFile = File('${support.path}/ota_settings.json');
+      if (await _settingsFile!.exists()) {
+        final decoded = jsonDecode(await _settingsFile!.readAsString());
+        if (decoded is Map && decoded['offline'] == true) offlineMode = true;
+      }
+    } catch (_) {
+      // Settings are a convenience; a read failure must not stop the app.
+    }
     final lib = await _openLibrary();
     libraryEntries = await lib.list();
     notifyListeners();
+  }
+
+  Future<void> setOfflineMode(bool value) async {
+    if (offlineMode == value) return;
+    offlineMode = value;
+    notifyListeners();
+    try {
+      final file = _settingsFile;
+      if (file != null) {
+        await file.writeAsString(jsonEncode({'offline': offlineMode}),
+            flush: true);
+      }
+    } catch (_) {
+      // Best effort: the switch still works for this session.
+    }
+    if (!offlineMode && catalog == null) unawaited(loadCatalog());
   }
 
   // ---------------- connection ----------------
@@ -188,6 +284,12 @@ class AppState extends ChangeNotifier {
     try {
       final info = await link.selfInfo();
       companionName = info.nodeName;
+      companionPreset = LoRaPreset(
+        frequencyHz: info.radioParams.frequencyHz,
+        bandwidthHz: info.radioParams.bandwidthHz,
+        spreadingFactor: info.radioParams.spreadingFactor,
+        codingRate: info.radioParams.codingRate,
+      );
     } catch (_) {
       companionName = '';
     }
@@ -213,7 +315,12 @@ class AppState extends ChangeNotifier {
     target = null;
     nodeStatus = null;
     nodeInfo = null;
+    nodePreset = null;
+    radio2Enabled = null;
+    radio2Status = null;
     companionName = '';
+    companionPreset = null;
+    selectedBoard = null;
     manualRoutePath = '';
   }
 
@@ -262,49 +369,106 @@ class AppState extends ChangeNotifier {
     final contact =
         Contact(publicKey: bytes, name: name, advType: advTypeRepeater);
     target = contact;
-    nodeStatus = null;
-    nodeInfo = null;
-    manualRoutePath = '';
-    manualRouteError = null;
+    _resetNodeFacts();
     notifyListeners();
     return contact;
   }
 
-  void selectTarget(Contact contact) {
-    target = contact;
+  /// Everything that described the previously checked node. Changing target
+  /// must drop it: a board or delta base from another node is worse than none.
+  void _resetNodeFacts() {
     nodeStatus = null;
     nodeInfo = null;
-    probeError = null;
+    nodePreset = null;
+    radio2Enabled = null;
+    radio2Status = null;
+    selectedBoard = null;
+    baseOverride = null;
+    autoBaseEntry = null;
+    forceFullImage = false;
+    _radioPresetAuto = true;
+    _radioDurationAuto = true;
     manualRoutePath = '';
     manualRouteError = null;
+    probeError = null;
+  }
+
+  void selectTarget(Contact contact) {
+    target = contact;
+    _resetNodeFacts();
     notifyListeners();
   }
 
-  /// Admin login + `ota status`. Populates [nodeStatus] on success;
-  /// [probeError] carries the device/app error on failure.
-  Future<void> probe() async {
+  /// Admin login + `ota status` + the capability handshake and radio facts.
+  /// Populates [nodeStatus] on success; [probeError] carries the device/app
+  /// error on failure.
+  ///
+  /// [password] may be empty: the repeater treats a blank login as "is this
+  /// key already in my ACL?", so a companion whose key is an admin needs no
+  /// password at all.
+  Future<void> probe({String? password}) async {
     final t = target;
     final flow = _flow;
     if (t == null || flow == null) return;
+    final secret = password ?? adminPassword;
     probing = true;
     probeError = null;
     notifyListeners();
     try {
-      nodeStatus = await flow.probe(t, adminPassword);
-      // Best effort: the handshake is what makes a delta base exact, but a
+      nodeStatus = await flow.probe(t, secret);
+      // The handshake is what makes a delta base and the board exact, but a
       // node without it still updates (its `running=` stamp is the fallback).
       nodeInfo = nodeStatus == null ? null : await flow.tryNodeInfo(t);
       if (nodeStatus == null) {
         probeError = 'This firmware does not speak the ota CLI '
             '(expected a fork lora-ota build, e.g. Xiao_S3_WIO_repeater-*-lora-ota).';
+      } else {
+        // The radio facts are only needed for the off-mesh transfer options;
+        // old firmware answers neither, and neither query makes the probe fail.
+        final radio = await _cliQuiet(t, 'get radio');
+        nodePreset = radio == null ? null : LoRaPreset.parse(radio);
+        radio2Status = await _cliQuiet(t, 'radio2 status');
+        final radio2 = radio2Status?.trim().toLowerCase();
+        radio2Enabled = radio2 == null
+            ? null
+            : (radio2.startsWith('on')
+                ? true
+                : radio2.startsWith('off')
+                    ? false
+                    : null);
+        _adoptDetectedBoard();
+        _prefillRadioPlan();
+        // A new node's running image is a different delta base; re-match it
+        // (the old node's base would silently fail the SHA gate). A library
+        // problem must not turn a successful probe into a failure.
+        if (_selectedImage != null) {
+          try {
+            baseOverride = null;
+            await _matchBase();
+            await _refreshRadioDuration();
+          } catch (_) {}
+        }
       }
     } catch (e) {
       nodeStatus = null;
       nodeInfo = null;
+      nodePreset = null;
+      radio2Enabled = null;
+      radio2Status = null;
       probeError = '$e';
     } finally {
       probing = false;
       notifyListeners();
+    }
+  }
+
+  /// A CLI read on the checked node that is allowed to fail (old firmware,
+  /// a command the role does not expose). Returns null on any error.
+  Future<String?> _cliQuiet(Contact t, String command) async {
+    try {
+      return await _flow!.client.remoteCli(t, command);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -316,19 +480,83 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       final source = await _openSource();
-      catalog = await source.catalog(forceRefresh: forceRefresh);
+      catalog = await source.catalog(
+        forceRefresh: forceRefresh && !offlineMode,
+        cacheOnly: offlineMode,
+      );
       catalogFromCache = catalog!.fromCache;
+      _adoptDetectedBoard();
     } catch (e) {
-      catalog = null;
-      catalogError = '$e';
+      // Offline with no cache is not an error: the offline tab is the view.
+      if (!offlineMode) catalog = null;
+      catalogError = offlineMode
+          ? 'Offline — no cached release list. Downloaded versions are in '
+              'the Offline tab.'
+          : '$e';
     } finally {
       catalogLoading = false;
       notifyListeners();
     }
   }
 
-  void toggleDevReleases(bool value) {
-    showDevReleases = value;
+  void setReleaseTrack(ReleaseTrack track) {
+    releaseTrack = track;
+    notifyListeners();
+  }
+
+  /// Every build environment the app can name (from the catalog and the
+  /// library). Board detection maps the node's target id back into this set.
+  Set<String> get knownEnvironments {
+    final out = <String>{};
+    for (final release in catalog?.releases ?? const <FirmwareRelease>[]) {
+      for (final asset in release.appImages) {
+        out.add(asset.env);
+      }
+    }
+    for (final entry in libraryEntries) {
+      if (entry.env != customEnvironment && entry.env != 'unknown') {
+        out.add(entry.env);
+      }
+    }
+    return out;
+  }
+
+  /// The environment whose build id is [targetId], if the app knows that
+  /// environment's name. The node reports the id only (`sha256(env)[0..3]`),
+  /// so this is the inverse lookup the picker needs.
+  String? environmentForTargetId(int targetId) {
+    final envs = knownEnvironments.toList()..sort();
+    for (final env in envs) {
+      if (targetIdForEnvironment(env) == targetId) return env;
+    }
+    return null;
+  }
+
+  /// The board the checked node runs, as far as the app can tell. Null when
+  /// the node did not answer the handshake or its build is not in the catalog
+  /// or library (a custom build).
+  String? get detectedBoard {
+    final info = nodeInfo;
+    if (info == null) return null;
+    return environmentForTargetId(info.targetId);
+  }
+
+  void _adoptDetectedBoard() {
+    final detected = detectedBoard;
+    if (detected != null && selectedBoard == null) selectedBoard = detected;
+  }
+
+  void setSelectedBoard(String? env) {
+    if (selectedBoard == env) return;
+    selectedBoard = env;
+    // A selection made for another board is no longer installable.
+    if (selectedAsset != null && selectedAsset!.env != env) {
+      selectedAsset = null;
+      _selectedImage = null;
+      deltaResult = null;
+      autoBaseEntry = null;
+    }
+    baseOverride = null;
     notifyListeners();
   }
 
@@ -338,29 +566,30 @@ class AppState extends ChangeNotifier {
     try {
       final lib = await _openLibrary();
       libraryEntries = await lib.list();
+      _adoptDetectedBoard();
     } finally {
       libraryLoading = false;
       notifyListeners();
     }
   }
 
-  /// The releases visible to the picker, grouped by channel.
+  /// The releases for the selected track, newest first. Board filtering is
+  /// applied per asset by the picker so a release with no image for this
+  /// board is hidden rather than empty.
   List<FirmwareRelease> get visibleReleases {
-    final all = catalog?.releases ?? const [];
-    final out = all.where((r) {
-      if (!showDevReleases && r.isDevTrack) return false;
-      return r.appImages.isNotEmpty;
-    }).toList()
+    final dev = releaseTrack == ReleaseTrack.dev;
+    final out = (catalog?.releases ?? const <FirmwareRelease>[])
+        .where((r) => r.isDevTrack == dev)
+        .where((r) => r.appImages.any((a) => assetMatchesBoard(a)))
+        .toList()
       ..sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
-    // stable first, then dev builds
-    out.sort((a, b) {
-      if (a.isDevTrack == b.isDevTrack) {
-        return b.publishedAt.compareTo(a.publishedAt);
-      }
-      return a.isDevTrack ? 1 : -1;
-    });
     return out;
   }
+
+  /// Whether [asset] is built for the board the picker is scoped to. With no
+  /// board chosen every asset is shown (the prune before a board is known).
+  bool assetMatchesBoard(FirmwareAsset asset) =>
+      selectedBoard == null || asset.env == selectedBoard;
 
   /// Select a GitHub asset and load (download) its bytes.
   Future<void> selectAsset(FirmwareAsset asset) async {
@@ -368,30 +597,39 @@ class AppState extends ChangeNotifier {
     selectedLibraryEntry = null;
     _selectedImage = null;
     deltaResult = null;
+    forceFullImage = false;
     imageLoading = true;
     imageError = null;
     downloadProgress = null;
     notifyListeners();
     try {
-      final source = await _openSource();
-      final bytes = await source.downloadAsset(asset);
+      // A version saved for offline use is already on disk; selecting it must
+      // never reach GitHub (the field has no signal).
+      final cached = libraryEntryForAsset(asset);
+      if (cached != null) {
+        final lib = await _openLibrary();
+        _selectedImage = await lib.read(cached);
+        selectedLibraryEntry = cached;
+        await _matchBase();
+        await _refreshRadioDuration();
+        return;
+      }
+      if (offlineMode) {
+        throw StateError(
+            'offline — save this version for offline use before selecting it');
+      }
+      final bytes = await (await _openSource()).downloadAsset(asset);
       _selectedImage = bytes;
-      final lib = await _openLibrary();
-      // Keep the release image in the library for reuse as a delta base.
-      final entry = await lib.importBytes(
+      final entry = await _importImage(
         bytes,
         env: asset.env,
         version: asset.version,
         origin: 'github',
         fileName: asset.name,
       );
-      libraryEntries = await lib.list();
-      LibraryEntry? selected;
-      for (final e in libraryEntries) {
-        if (e.id == entry.id) selected = e;
-      }
-      selectedLibraryEntry = selected;
+      selectedLibraryEntry = entry;
       await _matchBase();
+      await _refreshRadioDuration();
     } catch (e) {
       imageError = '$e';
       _selectedImage = null;
@@ -402,12 +640,137 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Select a library entry for install (offline mode).
+  /// The library image for [asset], matched by its file name or (when the
+  /// release publishes sums) its SHA-256.
+  LibraryEntry? libraryEntryForAsset(FirmwareAsset asset) {
+    for (final entry in libraryEntries) {
+      if (entry.fileName == asset.name) return entry;
+      if (asset.sha256 != null && entry.sha256 == asset.sha256) return entry;
+    }
+    return null;
+  }
+
+  /// Save every image of [release] for offline use — all boards, so the
+  /// device carries a complete version rather than a per-device guess.
+  /// Returns how many images were newly saved.
+  Future<int> downloadReleaseToLibrary(FirmwareRelease release) async {
+    if (offlineMode) {
+      log_('offline mode — go online to download a version');
+      return 0;
+    }
+    if (downloadingReleaseTag != null) return 0;
+    final total = release.appImages.length;
+    if (total == 0) return 0;
+    final missing = release.appImages
+        .where((a) => libraryEntryForAsset(a) == null)
+        .toList();
+    downloadingReleaseTag = release.tag;
+    releaseDownloadProgress = (total - missing.length) / total;
+    notifyListeners();
+    var saved = 0;
+    try {
+      final source = await _openSource();
+      for (final asset in missing) {
+        final bytes = await source.downloadAsset(asset);
+        await _importImage(
+          bytes,
+          env: asset.env,
+          version: asset.version,
+          origin: 'github',
+          fileName: asset.name,
+        );
+        saved++;
+        releaseDownloadProgress = (total - missing.length + saved) / total;
+        notifyListeners();
+      }
+      log_(saved == 0
+          ? '${release.tag} was already saved for offline use'
+          : 'saved ${release.tag} for offline use ($saved image(s))');
+    } catch (e) {
+      log_('saving ${release.tag} failed after $saved image(s): $e');
+    } finally {
+      downloadingReleaseTag = null;
+      releaseDownloadProgress = null;
+      notifyListeners();
+    }
+    return saved;
+  }
+
+  /// Downloaded versions, newest first: the offline view. A version is
+  /// "complete" when the catalog says every asset of that release is here.
+  List<OfflineVersion> get offlineVersions {
+    final byVersion = <String, List<LibraryEntry>>{};
+    for (final entry in libraryEntries) {
+      byVersion.putIfAbsent(entry.version, () => []).add(entry);
+    }
+    final releasesByVersion = <String, FirmwareRelease>{};
+    for (final release in catalog?.releases ?? const <FirmwareRelease>[]) {
+      for (final asset in release.appImages) {
+        releasesByVersion.putIfAbsent(asset.version, () => release);
+      }
+    }
+    final out = <OfflineVersion>[];
+    for (final group in byVersion.entries) {
+      final release = releasesByVersion[group.key];
+      final entries = group.value..sort((a, b) => a.env.compareTo(b.env));
+      final complete = release != null &&
+          release.appImages.every((a) => libraryEntryForAsset(a) != null);
+      out.add(OfflineVersion(
+        version: group.key,
+        entries: entries,
+        complete: complete,
+        known: release != null,
+        isDev: release?.isDevTrack ?? group.key.contains('-dev.'),
+      ));
+    }
+    out.sort((a, b) => b.entries.first.added.compareTo(a.entries.first.added));
+    return out;
+  }
+
+  Future<LibraryEntry> _importImage(
+    Uint8List bytes, {
+    required String env,
+    required String version,
+    required String origin,
+    String? fileName,
+  }) async {
+    final lib = await _openLibrary();
+    final entry = await lib.importBytes(
+      bytes,
+      env: env,
+      version: version,
+      origin: origin,
+      fileName: fileName,
+    );
+    libraryEntries = await lib.list();
+    _adoptDetectedBoard();
+    return entry;
+  }
+
+  /// Import a `.bin` as a library entry. Used for custom builds and for the
+  /// "the file this node already has" base: the name is only metadata, the
+  /// SHA-256 is the identity.
+  Future<LibraryEntry> importLocalImage(
+    Uint8List bytes, {
+    required String fileName,
+    String? env,
+    String? version,
+  }) =>
+      _importImage(
+        bytes,
+        env: env ?? customEnvironment,
+        version: version ?? _versionFromFileName(fileName),
+        origin: 'import',
+        fileName: fileName,
+      );
+
+  /// Select a library entry for install (offline mode, or a custom `.bin`).
   Future<void> selectLibraryEntryForUpdate(LibraryEntry entry) async {
     selectedLibraryEntry = entry;
     selectedAsset = null;
     _selectedImage = null;
     deltaResult = null;
+    forceFullImage = false;
     imageLoading = true;
     imageError = null;
     notifyListeners();
@@ -415,6 +778,7 @@ class AppState extends ChangeNotifier {
       final lib = await _openLibrary();
       _selectedImage = await lib.read(entry);
       await _matchBase();
+      await _refreshRadioDuration();
     } catch (e) {
       imageError = '$e';
       _selectedImage = null;
@@ -424,14 +788,32 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Make [entry] the explicit delta base. Null restores the automatic match
+  /// (by the node's running-image hash, then the version stamp).
+  Future<void> setBaseOverride(LibraryEntry? entry) async {
+    baseOverride = entry;
+    forceFullImage = false;
+    await _recomputeDelta();
+    await _refreshRadioDuration();
+    notifyListeners();
+  }
+
+  /// Send the whole image even when a delta base was matched.
+  Future<void> setFullImage(bool value) async {
+    forceFullImage = value;
+    if (value) baseOverride = null;
+    await _recomputeDelta();
+    await _refreshRadioDuration();
+    notifyListeners();
+  }
+
   /// Compute the delta against the matched base, if any.
   Future<void> _matchBase() async {
     final status = nodeStatus;
     final image = _selectedImage;
-    deltaResult = null;
-    baseEntry = null;
+    autoBaseEntry = null;
     if (status == null || image == null) {
-      notifyListeners();
+      await _recomputeDelta();
       return;
     }
     final lib = await _openLibrary();
@@ -440,20 +822,36 @@ class AppState extends ChangeNotifier {
     // prefer it: two builds of one commit can share a version stamp and still
     // differ. The stamp stays as the fallback for pre-handshake firmware.
     final info = nodeInfo;
-    baseEntry =
+    autoBaseEntry =
         info == null ? null : await lib.findBaseForSha(info.runningSha256);
-    if (baseEntry == null && env != null) {
-      baseEntry =
+    if (autoBaseEntry == null && env != null) {
+      autoBaseEntry =
           await lib.findBaseFor(env: env, runningVersion: status.running);
     }
-    if (baseEntry != null) {
-      try {
-        final baseBytes = await lib.read(baseEntry!);
-        deltaResult = computeDelta(baseBytes, image);
-      } catch (_) {
-        baseEntry = null; // unreadable base: fall back to full image
-        deltaResult = null;
-      }
+    await _recomputeDelta();
+  }
+
+  Future<void> _recomputeDelta() async {
+    deltaResult = null;
+    final image = _selectedImage;
+    final base = baseEntry;
+    if (image == null) {
+      notifyListeners();
+      return;
+    }
+    if (base == null) {
+      notifyListeners();
+      return;
+    }
+    try {
+      final lib = await _openLibrary();
+      final baseBytes = await lib.read(base);
+      deltaResult = computeDelta(baseBytes, image);
+    } catch (_) {
+      // An unreadable base is not a base: fall back to a full image.
+      if (baseOverride != null) baseOverride = null;
+      autoBaseEntry = null;
+      deltaResult = null;
     }
     notifyListeners();
   }
@@ -470,35 +868,157 @@ class AppState extends ChangeNotifier {
   String? get selectedDisplayVersion =>
       selectedAsset?.displayVersion ?? selectedLibraryEntry?.version;
 
+  /// Whether radio2 is enabled on the checked node (null: not asked / old
+  /// firmware).
+  bool? get radio2State => radio2Enabled;
+
+  /// The preset the node's live mesh runs on (falls back to the companion's —
+  /// the same mesh when the update path works at all).
+  LoRaPreset? get livePreset => nodePreset ?? companionPreset;
+
+  // ---------------- radio plan ----------------
+
+  void setRadioMode(RadioMode mode) {
+    if (radioPlan.mode == mode) return;
+    radioPlan = radioPlan.copyWith(mode: mode);
+    radioPlanError = null;
+    if (radioPlan.usesRadio && radioPlan.preset == null) {
+      _radioPresetAuto = true;
+      _radioDurationAuto = true;
+      _prefillRadioPreset();
+      _refreshRadioDuration();
+    }
+    notifyListeners();
+  }
+
+  void setRadioPreset(LoRaPreset preset) {
+    radioPlan = radioPlan.copyWith(preset: preset);
+    _radioPresetAuto = false;
+    radioPlanError = null;
+    notifyListeners();
+  }
+
+  void setRadioDuration(int minutes) {
+    radioPlan = radioPlan.copyWith(
+        durationMinutes: minutes.clamp(
+            RadioPlan.minDurationMinutes, RadioPlan.maxDurationMinutes));
+    _radioDurationAuto = false;
+    radioPlanError = null;
+    notifyListeners();
+  }
+
+  /// The reason the plan cannot start, or null. Recomputed on demand so the
+  /// UI always reflects the live preset.
+  String? get radioPlanProblem => radioPlan.error(primary: livePreset);
+
+  /// A suggested preset for the current mode, or null for live-mesh mode.
+  LoRaPreset? suggestedRadioPreset() {
+    final live = livePreset;
+    if (live == null || radioPlan.mode == RadioMode.liveMesh) return null;
+    return radioPlan.mode == RadioMode.radio2
+        ? RadioPlan.suggestRadio2(live)
+        : RadioPlan.suggestTempRadio(live);
+  }
+
+  /// A transfer-duration suggestion in minutes, from the airtime estimate.
+  Future<int> suggestedRadioDurationMinutes() async =>
+      RadioPlan.suggestDurationMinutes(await estimateTransferSeconds());
+
+  void _prefillRadioPreset() {
+    final live = livePreset;
+    if (live == null) return;
+    radioPlan = radioPlan.copyWith(
+        preset: radioPlan.mode == RadioMode.radio2
+            ? RadioPlan.suggestRadio2(live)
+            : RadioPlan.suggestTempRadio(live));
+  }
+
+  Future<void> _refreshRadioDuration() async {
+    if (!_radioDurationAuto) return;
+    final minutes = await suggestedRadioDurationMinutes();
+    if (!_radioDurationAuto) return; // the operator typed meanwhile
+    radioPlan = radioPlan.copyWith(durationMinutes: minutes);
+    notifyListeners();
+  }
+
+  /// Called after a successful probe: the node's preset is what the plan
+  /// must clear.
+  void _prefillRadioPlan() {
+    if (!radioPlan.usesRadio) return;
+    if (_radioPresetAuto || radioPlan.preset == null) _prefillRadioPreset();
+    _refreshRadioDuration();
+  }
+
   /// Estimated transfer size: literal bytes (delta) or full image.
   int? get estimatedTransferBytes =>
       deltaResult?.literalBytes ?? _selectedImage?.length;
+
+  /// A compact label for the chosen image's transfer size.
+  String estimateLabel() {
+    final bytes = estimatedTransferBytes;
+    if (bytes == null) return 'size unknown';
+    final text = bytes >= 1024 * 1024
+        ? '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB'
+        : '${(bytes / 1024).toStringAsFixed(0)} KB';
+    return deltaResult != null ? 'delta ~$text' : 'full $text';
+  }
 
   /// Bytes to send total — delta estimated, or full image.
   int get transferBytesEstimate =>
       deltaResult?.literalBytes ?? _selectedImage?.length ?? 0;
 
-  /// LoRa airtime estimate in seconds at the companion's current radio
-  /// config, or null when radio params are unavailable.
+  /// Airtime estimate in seconds for the selected image on [preset].
+  ///
+  /// One literal chunk per packet, plus the op frames and a few reports; the
+  /// mode factor accounts for radio2 sharing the radio with the live mesh.
+  /// Synchronous so a settings screen can compare modes while the user types.
+  int? estimateSecondsForPreset(LoRaPreset? preset, {double factor = 1.0}) {
+    final bytes = estimatedTransferBytes;
+    if (preset == null || bytes == null || bytes <= 0) return null;
+    final packets = (bytes / otaLiteralChunk).ceil() + 16;
+    final us = loraTimeOnAirMicros(
+      payloadBytes: otaMaxPayload,
+      spreadingFactor: preset.spreadingFactor,
+      bandwidthHz: preset.bandwidthHz,
+      codingRate: preset.codingRate,
+    );
+    return (packets * us / 1e6 * factor).ceil();
+  }
+
+  /// Airtime estimate in seconds for [mode] at the current selection. The
+  /// preset is the plan's (for off-mesh modes) or the live one.
+  int? estimateSecondsForMode(RadioMode mode, {LoRaPreset? preset}) {
+    final chosen = mode == RadioMode.liveMesh
+        ? livePreset
+        : (preset ?? radioPlan.preset ?? livePreset);
+    final factor = mode == RadioMode.radio2 ? RadioPlan.radio2DutyFactor : 1.0;
+    return estimateSecondsForPreset(chosen, factor: factor);
+  }
+
+  /// LoRa airtime estimate in seconds at the preset the transfer will use, or
+  /// null when the radio parameters are unavailable.
   Future<int?> estimateTransferSeconds() async {
     final image = _selectedImage;
     final link = _link;
     if (image == null || link == null) return null;
     try {
-      final params = await link.radioParams();
-      final bytes = estimatedTransferBytes ?? image.length;
-      // wire payload is literal bytes + op headers; upper-bound packets.
-      final packets = (bytes / 160).ceil() + 16;
-      final us = loraTimeOnAirMicros(
-        payloadBytes: 175,
-        spreadingFactor: params.spreadingFactor,
-        bandwidthHz: params.bandwidthHz,
-        codingRate: params.codingRate,
-      );
-      return (packets * us / 1e6).ceil();
+      final preset = radioPlan.usesRadio && radioPlan.preset != null
+          ? radioPlan.preset
+          : await _liveParams(link);
+      return estimateSecondsForPreset(preset, factor: radioPlan.estimateFactor);
     } catch (_) {
       return null;
     }
+  }
+
+  Future<LoRaPreset> _liveParams(RadioLink link) async {
+    final params = await link.radioParams();
+    return LoRaPreset(
+      frequencyHz: params.frequencyHz,
+      bandwidthHz: params.bandwidthHz,
+      spreadingFactor: params.spreadingFactor,
+      codingRate: params.codingRate,
+    );
   }
 
   // ---------------- update execution ----------------
@@ -508,83 +1028,203 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Full pipeline: stage → transfer → report ready. Throws on any failure;
-  /// callers rethrow or surface via [updateError]. The caller (transfer
-  /// screen) maps exceptions to UI.
+  /// Full pipeline: move the radio if asked, stage → transfer → report ready,
+  /// then put the radio back. Throws on any failure; callers rethrow or
+  /// surface via [updateError]. The caller (transfer screen) maps exceptions
+  /// to UI.
   Future<void> runUpdate({required String version}) async {
     final t = target;
     final flow = _flow;
     final image = _selectedImage;
-    final env = selectedEnvironment;
-    if (t == null || flow == null || image == null || env == null) {
+    if (t == null || flow == null || image == null) {
       throw StateError('update not ready');
     }
+    final planProblem = radioPlanProblem;
+    if (planProblem != null) {
+      throw UpdateFlowException('radio settings: $planProblem');
+    }
+    // The node's own target id is the authority when the handshake answered;
+    // a custom build has no catalog environment to derive one from.
+    final env = selectedEnvironment;
+    final expected = (env != null && env != customEnvironment)
+        ? targetIdForEnvironment(env)
+        : nodeInfo?.targetId;
+    final targetId = nodeInfo?.targetId ?? expected;
+    if (targetId == null) {
+      throw UpdateFlowException('choose the firmware board before starting');
+    }
     // Resolve the route before arming so a bad manual path leaves no armed
-    // staging session behind.
-    final route = _routeFor(t);
+    // staging session behind. Off-mesh modes are zero-hop by definition.
+    final route = radioPlan.requiresZeroHop ? OtaRoute.zeroHop() : _routeFor(t);
     updatePhase = UpdatePhase.staging;
     log_('arming: ${image.length} bytes, version $version');
     notifyListeners();
 
-    final targetId = targetIdForEnvironment(env);
-    final stage = await flow.stage(t, image,
-        version: version, expectedTargetId: targetId);
-    log_(
-        'armed: size=${stage.size} token=${stage.token.toRadixString(16).padLeft(8, '0')}');
-
-    List<DeltaOp> ops;
-    if (baseEntry != null) {
-      final lib = await _openLibrary();
-      final baseBytes = await lib.read(baseEntry!);
-      ops = computeDelta(baseBytes, image).ops;
-      log_(
-          'delta: ${deltaResult?.copyBytes ?? 0} bytes reused, ${deltaResult?.literalBytes ?? 0} to send');
-    } else {
-      ops = computeDelta(Uint8List(0), image).ops;
-      log_('full image: ${image.length} bytes');
-    }
-
-    final sha = sha256List(image);
-    updatePhase = UpdatePhase.transferring;
-    cancelRequested = false;
-    progress = null;
-    notifyListeners();
-
+    _radioMoved = false;
     try {
-      await flow.transfer(
-        target: t,
-        contract: OtaStartContract(
-          imageSize: image.length,
-          imageSha256: sha,
-          targetId: targetId,
-          token: stage.token,
-        ),
-        ops: ops,
-        route: route,
-        windowSize: 8,
-        onProgress: (p) {
-          progress = p;
-          notifyListeners();
-        },
-        shouldCancel: () => cancelRequested,
-      );
-    } on OtaTransferException catch (e) {
-      if (cancelRequested) {
-        await flow.abortQuietly(t);
-        updatePhase = UpdatePhase.idle;
-        log_('cancelled — staged image discarded');
-        throw UpdateFlowException('cancelled');
+      if (radioPlan.requiresZeroHop) {
+        await _applyRadioPlan(t);
       }
-      await flow.abortQuietly(t);
-      updatePhase = UpdatePhase.failed;
-      throw UpdateFlowException('transfer failed: ${e.message}');
-    }
+      final stage = await flow.stage(t, image,
+          version: version, expectedTargetId: expected);
+      log_(
+          'armed: size=${stage.size} token=${stage.token.toRadixString(16).padLeft(8, '0')}');
 
-    // Confirm the staged image passed the node's SHA gate.
-    await flow.awaitReady(t);
-    updatePhase = UpdatePhase.readyToApply;
-    log_('staged and verified — ready to apply');
+      List<DeltaOp> ops;
+      if (baseEntry != null) {
+        final lib = await _openLibrary();
+        final baseBytes = await lib.read(baseEntry!);
+        ops = computeDelta(baseBytes, image).ops;
+        log_(
+            'delta: ${deltaResult?.copyBytes ?? 0} bytes reused, ${deltaResult?.literalBytes ?? 0} to send');
+      } else {
+        ops = computeDelta(Uint8List(0), image).ops;
+        log_('full image: ${image.length} bytes');
+      }
+
+      final sha = sha256List(image);
+      updatePhase = UpdatePhase.transferring;
+      cancelRequested = false;
+      progress = null;
+      notifyListeners();
+
+      try {
+        await flow.transfer(
+          target: t,
+          contract: OtaStartContract(
+            imageSize: image.length,
+            imageSha256: sha,
+            targetId: targetId,
+            token: stage.token,
+          ),
+          ops: ops,
+          route: route,
+          windowSize: 8,
+          onProgress: (p) {
+            progress = p;
+            notifyListeners();
+          },
+          shouldCancel: () => cancelRequested,
+        );
+      } on OtaTransferException catch (e) {
+        if (cancelRequested) {
+          await flow.abortQuietly(t);
+          updatePhase = UpdatePhase.idle;
+          log_('cancelled — staged image discarded');
+          throw UpdateFlowException('cancelled');
+        }
+        await flow.abortQuietly(t);
+        updatePhase = UpdatePhase.failed;
+        throw UpdateFlowException('transfer failed: ${e.message}');
+      }
+
+      // Confirm the staged image passed the node's SHA gate.
+      await flow.awaitReady(t);
+      updatePhase = UpdatePhase.readyToApply;
+      log_('staged and verified — ready to apply');
+      notifyListeners();
+    } finally {
+      // Put the radios back before the operator commits: the apply (and its
+      // verification) belongs on the live mesh, and the temporary preset was
+      // only ever for the transfer.
+      if (_radioMoved) await _restoreRadioPlan(t);
+    }
+  }
+
+  /// Move the repeater and/or the companion onto the transfer preset. Both
+  /// firmware CLIs defer the retune for ~2 s so their reply leaves first.
+  Future<void> _applyRadioPlan(Contact t) async {
+    final link = _link;
+    final flow = _flow;
+    final preset = radioPlan.preset;
+    if (link == null || flow == null || preset == null) {
+      throw UpdateFlowException('no link for the radio settings');
+    }
+    _radioMoved = false;
+    _restorePreset = companionPreset ?? await _liveParams(link);
+    if (radioPlan.mode == RadioMode.radio2) {
+      if (radio2Enabled == true) {
+        // Leave the node's own radio2 configuration alone; the operator
+        // entered the preset it already uses.
+        log_('radio2 already enabled — leaving the node configuration as is');
+      } else {
+        await _nodeCommand(t, radioPlan.radio2Command);
+        _radioMoved = true;
+        _enabledRadio2ForUpdate = true;
+        log_('radio2 enabled on the node: ${preset.label}');
+      }
+    } else {
+      await _nodeCommand(t, radioPlan.tempRadioCommand);
+      _radioMoved = true;
+      log_(
+          'node moved to ${preset.label} for ${radioPlan.durationMinutes} min');
+    }
+    final reply = await link.runCliCommand(radioPlan.tempRadioCommand);
+    _radioMoved = true;
+    if (!reply.trim().toLowerCase().startsWith('ok')) {
+      throw UpdateFlowException('the companion refused the temporary preset',
+          deviceReply: reply);
+    }
+    log_(
+        'companion moved to ${preset.label} for ${radioPlan.durationMinutes} min');
+    // Both ends retune 2 s after queueing the reply.
+    await Future<void>.delayed(const Duration(seconds: 3));
+  }
+
+  /// Undo [_applyRadioPlan]. Best effort: the transfer already succeeded or
+  /// failed, and a radio that stays off-mesh for a few minutes reverts by
+  /// itself (the temporary presets are time-boxed on both ends).
+  Future<void> _restoreRadioPlan(Contact t) async {
+    final link = _link;
+    final live = _restorePreset ?? companionPreset;
+    try {
+      if (_enabledRadio2ForUpdate) {
+        // The node must leave radio2 before the companion leaves the shared
+        // preset, so the reply has a chance to get out.
+        final reply = await _nodeCommandOrNull(t, 'radio2 off');
+        _enabledRadio2ForUpdate = false;
+        radio2Enabled = false;
+        log_(reply != null && reply.toLowerCase().contains('ok')
+            ? 'radio2 turned back off'
+            : 'radio2 restore not acknowledged — check the node');
+      } else if (radioPlan.mode == RadioMode.tempRadio && live != null) {
+        // Send the original preset back, short-lived, so the mesh recovers
+        // now instead of when the timer expires. The reply may be lost.
+        await _nodeCommandOrNull(t, 'tempradio ${live.cli},1');
+      }
+    } finally {
+      if (link != null && live != null) {
+        try {
+          final reply = await link.runCliCommand('tempradio ${live.cli},1');
+          log_(reply.trim().toLowerCase().startsWith('ok')
+              ? 'companion back on ${live.label}'
+              : 'companion radio restore said: ${reply.trim()}');
+        } catch (e) {
+          log_('companion radio restore failed: $e');
+        }
+        await Future<void>.delayed(const Duration(seconds: 3));
+      }
+    }
+    _radioMoved = false;
     notifyListeners();
+  }
+
+  Future<void> _nodeCommand(Contact t, String command) async {
+    final reply = await _flow!.client.remoteCli(t, command);
+    if (reply.trim().toLowerCase().startsWith('err') ||
+        reply.toLowerCase().contains('error')) {
+      throw UpdateFlowException('the node refused "$command"',
+          deviceReply: reply);
+    }
+  }
+
+  Future<String?> _nodeCommandOrNull(Contact t, String command) async {
+    try {
+      return await _flow!.client
+          .remoteCli(t, command, timeout: const Duration(seconds: 10));
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Commit: `ota apply` → node reboots into the new image.
@@ -654,9 +1294,41 @@ class AppState extends ChangeNotifier {
     return OtaRoute.zeroHop();
   }
 
+  /// A version-ish label for a hand-picked `.bin`: its file name without the
+  /// directory and extension.
+  static String _versionFromFileName(String fileName) {
+    var name = fileName.split(RegExp(r'[/\\]')).last;
+    if (name.toLowerCase().endsWith('.bin')) {
+      name = name.substring(0, name.length - 4);
+    }
+    return name.isEmpty ? 'custom' : name;
+  }
+
   static String _hex(List<int> bytes) =>
       bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
   static Uint8List sha256List(List<int> data) =>
       Uint8List.fromList(sha256.convert(data).bytes);
+}
+
+/// A firmware version this device has images for — the offline view's unit.
+///
+/// Versions are downloaded whole (every board's image), so the operator picks
+/// a version, not a device. [complete] is only meaningful when the catalog
+/// still knows the release ([known]); an imported field pack can be partial
+/// because the release is unknown.
+class OfflineVersion {
+  const OfflineVersion({
+    required this.version,
+    required this.entries,
+    required this.complete,
+    required this.known,
+    required this.isDev,
+  });
+
+  final String version;
+  final List<LibraryEntry> entries;
+  final bool complete;
+  final bool known;
+  final bool isDev;
 }

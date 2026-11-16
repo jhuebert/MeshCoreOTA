@@ -16,14 +16,16 @@ void main() {
       ),
     );
     expect(find.text('MeshCoreOTA'), findsWidgets);
-    // TCP transport is offered everywhere; BLE is Android/iOS only.
+    // TCP transport is offered everywhere; Bluetooth is Android/iOS only.
     if (Platform.isAndroid || Platform.isIOS) {
-      expect(find.text('BLE'), findsOneWidget);
-      expect(find.text('TCP'), findsOneWidget);
+      expect(find.text('Bluetooth'), findsOneWidget);
+      expect(find.text('TCP / Wi-Fi'), findsOneWidget);
       expect(find.text('Scan'), findsOneWidget);
     } else {
       expect(find.textContaining('TCP'), findsWidgets);
       expect(find.text('Scan'), findsNothing);
     }
+    // The library is reachable before a companion is ever connected.
+    expect(find.text('Firmware library'), findsOneWidget);
   });
 }

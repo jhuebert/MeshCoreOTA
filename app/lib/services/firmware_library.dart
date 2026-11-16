@@ -6,6 +6,12 @@ import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+/// Pseudo-environment for a `.bin` whose name does not carry a build
+/// environment (a custom build, or the file a node already runs). The image's
+/// SHA-256 is its identity; the node's own reported target id is what an
+/// update is armed for.
+const customEnvironment = 'custom';
+
 /// One image in the offline library.
 class LibraryEntry {
   const LibraryEntry({
