@@ -20,6 +20,11 @@ dart run bin/bench.dart ... --image new.bin --base running.bin --scenario delta
 # timing only: stage and transfer, never apply
 dart run bin/bench.dart ... --image big.bin --base running.bin --scenario measure
 
+# route over an explicit DIRECT path instead of the saved/zero-hop route
+# (pushes the path into the companion's contact record, like change_path)
+dart run bin/bench.dart ... --image new.bin --base running.bin \
+  --path c0ff,c0c0 --scenario probe
+
 # failure modes: bad token, corrupted literal stream, mid-transfer abort
 dart run bin/bench.dart ... --image new.bin --scenario reject
 
@@ -43,11 +48,14 @@ for: the wire `target_id` is `sha256(env)[0..3]`, and the node refuses an arm
 meant for another board.
 
 Useful flags: `--window N` (ops per ask; default 4), `--spacing MS` (delay
-between queued writes; default 50), `--port`, `--contact`.
+between queued writes; default is airtime-derived from the companion's radio
+config, matching the app — pass an explicit value to override), `--port`,
+`--contact`.
 
 `bin/probe.dart` and `bin/probe2.dart` are single-shot wire probes used to
-localise a fault: they arm a session, send one `OP_START` (and in `probe2` one
-op and one `OP_ASK`), and dump every packet the companion reports as received.
+localise a fault: they arm a session, send one `OP_START` inside a binary
+request (and in `probe2` one op and one `OP_ASK`), and dump every packet the
+companion reports as received.
 That is how the arm-token byte order and the duplicate-filter bugs were found —
 a transfer that stalls tells you nothing, whereas "the node saw `OP_START` but
 no `OP_REPORT` ever came back" pins it immediately.

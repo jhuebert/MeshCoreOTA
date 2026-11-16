@@ -72,7 +72,7 @@ class _FakeCompanion {
   Future<void> boot() async {
     await link.connect();
     link.frameHandler = _onCommandFrame;
-    link.txHandler = _onRawPacket;
+    link.binaryRequestHandler = _onBinaryRequest;
   }
 
   void setRunningForTest(Uint8List image) {
@@ -231,21 +231,24 @@ class _FakeCompanion {
       hex.length ~/ 2,
       (i) => int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16));
 
-  Future<bool> _onRawPacket(Uint8List packetBytes, int priority) async {
-    final payload = _otaPayload(packetBytes);
-    if (payload != null) {
-      for (final response in _handleOtaFrame(payload)) {
-        final replyPacket = PacketBuilder.createRawCustom(response).writeTo();
-        link.simulatePush(Uint8List.fromList([0x88, 24, 0xBA, ...replyPacket]));
-      }
+  Future<void> _onBinaryRequest(
+      Contact contact, List<int> reqData, int tag) async {
+    if (reqData.length < 2 || reqData[0] != reqTypeOta) return;
+    final flen = reqData[1];
+    if (reqData.length < 2 + flen) return;
+    final frame = Uint8List.fromList(reqData.sublist(2, 2 + flen));
+    for (final response in _handleOtaFrame(frame)) {
+      link.simulatePush(Uint8List.fromList([
+        pushCodeBinaryResponse,
+        0, // reserved
+        ...contact.publicKey.sublist(0, 6),
+        tag & 0xFF,
+        (tag >> 8) & 0xFF,
+        (tag >> 16) & 0xFF,
+        (tag >> 24) & 0xFF,
+        ...response,
+      ]));
     }
-    return true; // companion OK'd the write
-  }
-
-  Uint8List? _otaPayload(Uint8List packetBytes) {
-    final pkt = Packet.readFrom(packetBytes);
-    if (pkt == null || pkt.payloadType != payloadTypeRawCustom) return null;
-    return Uint8List.fromList(pkt.payload);
   }
 
   List<Uint8List> _handleOtaFrame(Uint8List frame) {

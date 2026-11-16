@@ -29,7 +29,12 @@ Future<void> main(List<String> argv) async {
   final client = CompanionClient(link);
 
   link.pushes.listen((frame) {
-    if (frame.isEmpty || frame[0] != pushCodeLogRxData) return;
+    if (frame.isEmpty) return;
+    if (frame[0] == pushCodeBinaryResponse) {
+      print('  RX push: BINARY_RESPONSE ${_hex(frame)}');
+      return;
+    }
+    if (frame[0] != pushCodeLogRxData) return;
     final raw = RawRxFrame.parse(frame);
     final pkt = raw == null ? null : Packet.readFrom(raw.raw);
     if (pkt == null) return;
@@ -49,29 +54,31 @@ Future<void> main(List<String> argv) async {
   print('stage: $stage');
   if (arm == null) exit(1);
 
-  await link.sendRawPacket(PacketBuilder.createRawCustom(buildStart(
+  final start = buildStart(
     size: image.length,
     sha256: _sha(image),
     targetId: targetIdForEnvironment(env),
     token: arm.token,
-  )).writeTo());
+  );
+  await link.sendBinaryRequest(target, [reqTypeOta, start.length, ...start]);
   print('sent OP_START');
   await Future<void>.delayed(const Duration(seconds: 2));
 
   final frames = wireOpsFor(
     computeDelta(Uint8List(0), Uint8List.sublistView(image, 0, 4096)).ops,
-    literalChunk: otaLiteralChunkForCompanion(pathBytes: 0),
+    literalChunk: otaLiteralChunkForBinaryReq(),
   ).frames;
   final first = frames.first;
   print(
       'first op: ${first.length} B payload, op=0x${first[2].toRadixString(16)}');
-  await link.sendRawPacket(PacketBuilder.createRawCustom(first).writeTo());
+  await link.sendBinaryRequest(target, [reqTypeOta, first.length, ...first]);
   print('sent op seq=${first[3] | (first[4] << 8)}');
   await Future<void>.delayed(const Duration(seconds: 2));
 
-  await link.sendRawPacket(
-      PacketBuilder.createRawCustom(buildAsk(retPathLen: 0)).writeTo());
-  print('sent OP_ASK');
+  final ask = buildAsk();
+  final sent =
+      await link.sendBinaryRequest(target, [reqTypeOta, ask.length, ...ask]);
+  print('sent OP_ASK (tag=${sent.tag})');
   await Future<void>.delayed(const Duration(seconds: 4));
 
   print('status: ${await client.remoteCli(target, 'ota status')}');

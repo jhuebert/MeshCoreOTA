@@ -11,8 +11,8 @@
 //
 //   dart run bench/bin/bench.dart \
 //     --host 192.168.1.165 --port 5000 --password password \
-//     --contact XiaoS3 --env Xiao_S3_WIO_repeater \
-//     --image /path/to/new.bin [--base /path/to/running.bin] \
+//     --contact XiaoS3 --env Xiao_S3_WIO_repeater_observer \
+//     --image /path/to/new.bin [--base /path/to/running.bin] [--path c0ff,c0c0] \
 //     --scenario all
 //
 // Scenarios (comma separated):
@@ -86,7 +86,8 @@ class Bench {
     required this.env,
     required this.contactName,
     required this.windowSize,
-    required this.spacing,
+    required this.spacingOverride,
+    this.routePath = '',
   });
 
   final String host;
@@ -96,8 +97,12 @@ class Bench {
   final String contactName;
   final int windowSize;
 
-  /// Delay between queued writes; the companion's raw-TX pool is small.
-  final Duration spacing;
+  /// Comma-separated path hashes (e.g. `c0ff,c0c0`). Empty = zero hop.
+  final String routePath;
+
+  /// Delay between queued writes: explicit `--spacing MS`, or airtime-derived
+  /// when null (see [spacingFor]).
+  final Duration? spacingOverride;
 
   late TcpDeviceLink link;
   late CompanionClient client;
@@ -113,6 +118,9 @@ class Bench {
   /// Resolve the repeater contact by name (case-insensitive substring), else
   /// the only repeater-type contact.
   Future<void> resolveTarget() async {
+    // A companion that missed replies while the app was away holds them in
+    // its offline queue; without a drain the next CLI reply is a stale one.
+    await client.drainMessages();
     // A companion that just had a session dropped can be slow to answer.
     List<Contact> contacts;
     for (var attempt = 0;; attempt++) {
@@ -143,6 +151,7 @@ class Bench {
     info(
         'target: "${target.name}" key=${target.publicKeyHex.substring(0, 12)}… '
         'route=${target.hasDirectRoute ? '${target.outPathLen}' : 'unknown'}');
+    await applyRouteOverride();
   }
 
   Future<void> login() async {
@@ -187,24 +196,55 @@ class Bench {
     throw StateError('node did not come back within ${timeout.inSeconds}s');
   }
 
-  OtaRoute get route => OtaRoute.zeroHop();
+  /// Push the `--path` override into the companion's contact record, like
+  /// meshcli's `change_path`. Binary requests carry no per-packet path, so the
+  /// companion's stored record is the only handle for splitting a route.
+  /// Delay between queued writes, derived from the radio's airtime when
+  /// `--spacing` was not given (mirrors the app's pacing rule).
+  Future<Duration> spacingFor() async {
+    if (spacingOverride != null) return spacingOverride!;
+    final params = await link.radioParams();
+    final airtime = loraTimeOnAirMicros(
+      payloadBytes: 175,
+      spreadingFactor: params.spreadingFactor,
+      bandwidthHz: params.bandwidthHz,
+      codingRate: params.codingRate,
+    );
+    final us = (airtime * 1.5).round() + 60000;
+    final derived = Duration(microseconds: us);
+    info('spacing: ${derived.inMilliseconds} ms (airtime-derived)');
+    return derived > const Duration(milliseconds: 150)
+        ? derived
+        : const Duration(milliseconds: 150);
+  }
+
+  Future<void> applyRouteOverride() async {
+    final entered = routePath.trim();
+    if (entered.isEmpty) return;
+    final route = OtaRoute.parsePathList(entered);
+    await link.setContactPath(target,
+        path: route.path, encodedPathLen: route.encodedPathLen);
+    info('set companion path for "${target.name}" to $entered');
+  }
 
   /// Ask the node for its `next_expected` (an OP_REPORT). Null on no answer.
   Future<int?> nextExpected() async {
     final done = Completer<int?>();
+    int? askTag;
     late StreamSubscription<Uint8List> sub;
     sub = link.pushes.listen((frame) {
-      if (frame.isEmpty || frame[0] != pushCodeLogRxData) return;
-      final raw = RawRxFrame.parse(frame);
-      final pkt = raw == null ? null : Packet.readFrom(raw.raw);
-      if (pkt == null || pkt.payloadType != payloadTypeRawCustom) return;
-      final report = parseReport(pkt.payload);
-      if (report != null && !done.isCompleted)
+      if (frame.isEmpty || frame[0] != pushCodeBinaryResponse) return;
+      final report = parseBinaryResponse(frame,
+          contactPubKey: target.publicKey, askTag: askTag);
+      if (report != null && !done.isCompleted) {
         done.complete(report.nextExpected);
+      }
     });
     try {
-      await link.sendRawPacket(
-          PacketBuilder.createRawCustom(buildAsk(retPathLen: 0)).writeTo());
+      final ask = buildAsk();
+      final sent =
+          await link.sendBinaryRequest(target, [reqTypeOta, ask.length, ...ask]);
+      askTag = sent.tag;
       return await done.future.timeout(const Duration(seconds: 15));
     } catch (_) {
       return null;
@@ -286,13 +326,13 @@ class Bench {
       }
       final engine = OtaTransfer(
         link: link,
-        route: route,
+        contact: target,
         contract: contract,
         ops: delta.ops,
         windowSize: windowSize,
         askTimeout: askTimeout ?? const Duration(seconds: 10),
         maxRetriesPerWindow: maxRetries ?? 12,
-        opSpacing: spacing,
+        opSpacing: await spacingFor(),
         resumeFrom: resumeFrom,
         shouldCancel: shouldCancel,
       );
@@ -377,8 +417,20 @@ Future<void> scenarioUpdate(Bench b, Uint8List image,
     return;
   }
 
-  final applyReply = await b.cli('ota apply');
-  check('$label apply accepted', isApplyReply(applyReply), applyReply);
+  // A successful `ota apply` never flushes a reply: the node flips the boot
+  // partition and reboots inside the command. Treat the resulting timeout as
+  // the expected race and verify by logging back in and reading `version`.
+  var applyTimedOut = false;
+  String applyReply = '';
+  try {
+    applyReply = await b.cli('ota apply');
+  } on CompanionTimeoutException {
+    applyTimedOut = true;
+  }
+  check(
+      '$label apply accepted',
+      applyTimedOut || isApplyReply(applyReply),
+      applyTimedOut ? 'reboot raced the reply (expected)' : applyReply);
   final tApply = DateTime.now();
   await b.waitRebootAndLogin();
   final reboot = DateTime.now().difference(tApply);
@@ -403,12 +455,14 @@ Future<void> scenarioReject(Bench b, Uint8List image, {Uint8List? base}) async {
   if (arm == null) return;
 
   final badToken = arm.token ^ 0xFFFFFFFF;
-  await b.link.sendRawPacket(PacketBuilder.createRawCustom(buildStart(
+  final startFrame = buildStart(
     size: image.length,
     sha256: _sha256(image),
     targetId: targetIdForEnvironment(b.env),
     token: badToken,
-  )).writeTo());
+  );
+  await b.link.sendBinaryRequest(
+      b.target, [reqTypeOta, startFrame.length, ...startFrame]);
   await Future<void>.delayed(const Duration(seconds: 2));
   var st = await b.status();
   check(
@@ -433,7 +487,7 @@ Future<void> scenarioReject(Bench b, Uint8List image, {Uint8List? base}) async {
   final tampered = _tamperLiterals(ops, corrupt);
   final tamperEngine = OtaTransfer(
     link: b.link,
-    route: b.route,
+    contact: b.target,
     contract: OtaStartContract(
       imageSize: image.length,
       imageSha256: _sha256(image),
@@ -467,7 +521,7 @@ Future<void> scenarioReject(Bench b, Uint8List image, {Uint8List? base}) async {
     var seen = 0;
     final abortEngine = OtaTransfer(
       link: b.link,
-      route: b.route,
+      contact: b.target,
       contract: OtaStartContract(
         imageSize: image.length,
         imageSha256: _sha256(image),
@@ -476,7 +530,7 @@ Future<void> scenarioReject(Bench b, Uint8List image, {Uint8List? base}) async {
       ),
       ops: ops,
       windowSize: b.windowSize,
-      opSpacing: b.spacing,
+      opSpacing: await b.spacingFor(),
       shouldCancel: () => ++seen > 3,
     );
     var cancelled = false;
@@ -550,12 +604,14 @@ Future<void> scenarioWrongTarget(Bench b, Uint8List image) async {
   check('arm for wrong-target test', arm != null, armReply);
   if (arm == null) return;
   final otherId = targetIdForEnvironment('Some_Other_Board_env');
-  await b.link.sendRawPacket(PacketBuilder.createRawCustom(buildStart(
+  final startFrame = buildStart(
     size: image.length,
     sha256: _sha256(image),
     targetId: otherId,
     token: arm.token,
-  )).writeTo());
+  );
+  await b.link.sendBinaryRequest(
+      b.target, [reqTypeOta, startFrame.length, ...startFrame]);
   await Future<void>.delayed(const Duration(seconds: 3));
   var st = await b.status();
   check(
@@ -563,12 +619,14 @@ Future<void> scenarioWrongTarget(Bench b, Uint8List image) async {
       st?.state == OtaPhase.idle && st?.err == otaErrTarget,
       'state=${st?.state.name} err=${st?.err}');
   // The arm is single-use but not consumed by a stranger's START.
-  await b.link.sendRawPacket(PacketBuilder.createRawCustom(buildStart(
+  final realStart = buildStart(
     size: image.length,
     sha256: _sha256(image),
     targetId: targetIdForEnvironment(b.env),
     token: arm.token,
-  )).writeTo());
+  );
+  await b.link.sendBinaryRequest(
+      b.target, [reqTypeOta, realStart.length, ...realStart]);
   await Future<void>.delayed(const Duration(seconds: 3));
   st = await b.status();
   check('the real target is still accepted afterwards',
@@ -586,12 +644,14 @@ Future<void> scenarioExpiredArm(Bench b, Uint8List image) async {
   if (arm == null) return;
   info('  waiting 125 s for the arm to expire');
   await Future<void>.delayed(const Duration(seconds: 125));
-  await b.link.sendRawPacket(PacketBuilder.createRawCustom(buildStart(
+  final startFrame = buildStart(
     size: image.length,
     sha256: _sha256(image),
     targetId: targetIdForEnvironment(b.env),
     token: arm.token,
-  )).writeTo());
+  );
+  await b.link.sendBinaryRequest(
+      b.target, [reqTypeOta, startFrame.length, ...startFrame]);
   await Future<void>.delayed(const Duration(seconds: 3));
   final st = await b.status();
   check(
@@ -614,7 +674,7 @@ Future<void> scenarioCancel(Bench b, Uint8List image, {Uint8List? base}) async {
   var ops = 0;
   final engine = OtaTransfer(
     link: b.link,
-    route: b.route,
+    contact: b.target,
     contract: OtaStartContract(
       imageSize: image.length,
       imageSha256: _sha256(image),
@@ -625,7 +685,7 @@ Future<void> scenarioCancel(Bench b, Uint8List image, {Uint8List? base}) async {
         ? computeDelta(Uint8List(0), image).ops
         : computeDelta(base, image).ops,
     windowSize: b.windowSize,
-    opSpacing: b.spacing,
+    opSpacing: await b.spacingFor(),
     shouldCancel: () => ops++ > 12, // a few windows in
   );
   var cancelled = false;
@@ -671,7 +731,7 @@ Future<void> scenarioResumeFull(Bench b, Uint8List image) async {
   final delta = computeDelta(Uint8List(0), image);
   final engine = OtaTransfer(
     link: b.link,
-    route: b.route,
+    contact: b.target,
     contract: OtaStartContract(
       imageSize: image.length,
       imageSha256: _sha256(image),
@@ -680,7 +740,7 @@ Future<void> scenarioResumeFull(Bench b, Uint8List image) async {
     ),
     ops: delta.ops,
     windowSize: b.windowSize,
-    opSpacing: b.spacing,
+    opSpacing: await b.spacingFor(),
     resumeFrom: next,
   );
   final t = DateTime.now();
@@ -698,8 +758,19 @@ Future<void> scenarioResumeFull(Bench b, Uint8List image) async {
       ready?.state == OtaPhase.ready && ready?.err == 0,
       'state=${ready?.state.name} off=${ready?.offset}/${ready?.size} err=${ready?.err}');
   if (ready?.state != OtaPhase.ready) return;
-  final apply = await b.cli('ota apply');
-  check('resumed image apply accepted', isApplyReply(apply), apply);
+  // A successful `ota apply` never flushes a reply (the node reboots inside
+  // the command); the timeout is the expected race, verification follows.
+  String apply = '';
+  var applyTimedOut = false;
+  try {
+    apply = await b.cli('ota apply');
+  } on CompanionTimeoutException {
+    applyTimedOut = true;
+  }
+  check(
+      'resumed image apply accepted',
+      applyTimedOut || isApplyReply(apply),
+      applyTimedOut ? 'reboot raced the reply (expected)' : apply);
   await b.waitRebootAndLogin();
   final version = await b.cli('version');
   info('  running after apply: $version');
@@ -710,9 +781,19 @@ Future<void> scenarioRollback(Bench b) async {
   info('\n== rollback ==');
   final before = await b.cli('version');
   info('  version before: $before');
-  final reply = await b.cli('ota rollback');
-  check('rollback accepted', isRollbackReply(reply), reply);
-  if (!isRollbackReply(reply)) return;
+  // `ota rollback` flips the boot partition and reboots inside the command,
+  // so a successful rollback never flushes a reply.
+  String reply = '';
+  var applyTimedOut = false;
+  try {
+    reply = await b.cli('ota rollback');
+  } on CompanionTimeoutException {
+    applyTimedOut = true;
+  }
+  check(
+      'rollback accepted',
+      applyTimedOut || isRollbackReply(reply),
+      applyTimedOut ? 'reboot raced the reply (expected)' : reply);
   await b.waitRebootAndLogin();
   final after = await b.cli('version');
   info('  version after:  $after');
@@ -728,9 +809,10 @@ Future<void> main(List<String> argv) async {
   final host = args['host'] ?? '127.0.0.1';
   final port = int.parse(args['port'] ?? '5000');
   final password = args['password'] ?? 'password';
-  final env = args['env'] ?? 'Xiao_S3_WIO_repeater';
+  final env = args['env'] ?? 'Xiao_S3_WIO_repeater_observer';
   final contactName = args['contact'] ?? '';
   final windowSize = int.parse(args['window'] ?? '4');
+  final routePath = args['path'] ?? '';
   final scenarios = (args['scenario'] ?? 'probe').split(',');
   final imagePath = args['image'];
   final basePath = args['base'];
@@ -742,7 +824,9 @@ Future<void> main(List<String> argv) async {
     env: env,
     contactName: contactName,
     windowSize: windowSize,
-    spacing: Duration(milliseconds: int.parse(args['spacing'] ?? '50')),
+    spacingOverride:
+        args['spacing'] == null ? null : Duration(milliseconds: int.parse(args['spacing']!)),
+    routePath: routePath,
   );
 
   await b.connect();
@@ -753,6 +837,7 @@ Future<void> main(List<String> argv) async {
   if (imagePath != null) image = File(imagePath).readAsBytesSync();
   Uint8List? base;
   if (basePath != null) base = File(basePath).readAsBytesSync();
+  info(routePath.trim().isEmpty ? 'route: companion stored path' : 'route: ${routePath.trim()}');
   if (image != null) {
     info(
         'image: ${image.length} bytes sha=${_hex(_sha256(image)).substring(0, 16)}…');

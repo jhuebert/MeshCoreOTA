@@ -8,8 +8,28 @@ import 'transfer_screen.dart';
 
 /// Step 4: everything about the update before anything goes on air. The
 /// app picks the parameters; the node only applies ops and verifies SHA-256.
-class ReviewScreen extends StatelessWidget {
+class ReviewScreen extends StatefulWidget {
   const ReviewScreen({super.key});
+
+  @override
+  State<ReviewScreen> createState() => _ReviewScreenState();
+}
+
+class _ReviewScreenState extends State<ReviewScreen> {
+  late final TextEditingController _routeController;
+
+  @override
+  void initState() {
+    super.initState();
+    _routeController =
+        TextEditingController(text: context.read<AppState>().manualRoutePath);
+  }
+
+  @override
+  void dispose() {
+    _routeController.dispose();
+    super.dispose();
+  }
 
   String _fmtBytes(int bytes) {
     if (bytes >= 1024 * 1024) {
@@ -45,12 +65,32 @@ class ReviewScreen extends StatelessWidget {
               mono: false),
           InfoRow(
             label: 'Route',
-            value: target.hasDirectRoute
-                ? ((target.outPathLen & 0x3F) == 0
-                    ? 'direct, zero hop'
-                    : 'direct, ${target.outPathLen & 0x3F} hop(s)')
-                : 'no route known — zero-hop DIRECT',
+            value: app.manualRoutePath.trim().isNotEmpty
+                ? 'direct override: ${app.manualRoutePath.trim()} (saved on the companion)'
+                : (target.hasDirectRoute
+                    ? ((target.outPathLen & 0x3F) == 0
+                        ? 'direct, zero hop'
+                        : 'direct, ${target.outPathLen & 0x3F} hop(s)')
+                    : 'no saved route — requests flood'),
             mono: false,
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: TextField(
+              controller: _routeController,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                labelText: 'Direct path override (optional)',
+                hintText: 'c0ff, c0c0  (“0” for zero-hop)',
+                helperText:
+                    'Comma-separated hash hops. Empty keeps the saved route; the '
+                    'override is pushed to the companion (like change_path).',
+                errorText: app.manualRouteError,
+                border: const OutlineInputBorder(),
+              ),
+              onChanged: app.setManualRoutePath,
+            ),
           ),
           InfoRow(label: 'Running', value: status?.running ?? '?'),
           const SectionHeader('Update'),
@@ -96,13 +136,13 @@ class ReviewScreen extends StatelessWidget {
             ),
           ),
           const SectionHeader('Warnings'),
-          if (!target.hasDirectRoute)
+          if (!target.hasDirectRoute && app.manualRoutePath.trim().isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
               child: Text(
-                '• No saved direct route to this node — only zero-hop RF '
-                'reaches it. Multi-hop updates need a saved path on the '
-                'companion (advertise from the repeater).',
+                '• No saved direct route to this node — requests reach it '
+                'only by flooding. Enter a DIRECT path on this screen, or '
+                'save one on the companion (advertise from the repeater).',
                 style:
                     TextStyle(color: OtaTheme.warn, fontSize: 12, height: 1.45),
               ),

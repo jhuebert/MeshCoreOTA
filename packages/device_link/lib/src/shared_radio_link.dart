@@ -207,6 +207,20 @@ class _SharedRadioLinkView implements RadioLink {
       _hub._send(packet, priority);
 
   @override
+  Future<BinaryRequestSent> sendBinaryRequest(
+          Contact contact, List<int> reqData) =>
+      // Device requests serialize inside the base link; queueing them on the
+      // hub's TX tail would only serialize them against unrelated raw
+      // transmissions.
+      _hub.base.sendBinaryRequest(contact, reqData);
+
+  @override
+  Future<void> setContactPath(Contact contact,
+          {required List<int> path, required int encodedPathLen}) =>
+      _hub.base
+          .setContactPath(contact, path: path, encodedPathLen: encodedPathLen);
+
+  @override
   Stream<Uint8List> get pushes => _pushesController.stream;
 
   @override

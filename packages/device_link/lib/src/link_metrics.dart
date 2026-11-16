@@ -180,6 +180,28 @@ class MeteredRadioLink implements RadioLink {
     }
   }
 
+  @override
+  Future<BinaryRequestSent> sendBinaryRequest(
+      Contact contact, List<int> reqData) async {
+    metrics.deviceRequest();
+    try {
+      return await _inner.sendBinaryRequest(contact, reqData);
+    } on DeviceCommandError catch (e) {
+      metrics.deviceRequestFailed(e,
+          timeout: e.kind == DeviceCommandErrorKind.timeout);
+      rethrow;
+    } catch (e) {
+      metrics.deviceRequestFailed(e);
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> setContactPath(Contact contact,
+          {required List<int> path, required int encodedPathLen}) =>
+      _request(() => _inner.setContactPath(contact,
+          path: path, encodedPathLen: encodedPathLen));
+
   Future<T> _request<T>(Future<T> Function() action) async {
     metrics.deviceRequest();
     try {

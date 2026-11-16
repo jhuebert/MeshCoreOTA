@@ -2,7 +2,15 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
-// --- wire format (frozen in M0; mirrors examples/simple_repeater/OtaUpdate.h) ---
+// --- wire format (mirrors examples/simple_repeater/OtaUpdate.h) ------------
+// v2: the op stream rides inside REQ/RESPONSE datagrams. The app ships each
+// op as a CMD_SEND_BINARY_REQ (`[pub_key][REQ_TYPE_OTA][frame_len][op frame]`)
+// to the companion, which encrypts it as an ordinary REQ datagram to the
+// node; the plaintext is padded by the crypto layer to a 16-byte block, so
+// the length byte is what the node uses to slice the frame back out. The
+// node answers an OP_ASK with an OP_REPORT inside the RESPONSE, which the
+// companion surfaces as PUSH_CODE_BINARY_RESPONSE. Intermediate nodes only
+// ever forward ordinary request/response traffic.
 
 const otaMagic0 = 0x4F; // 'O'
 const otaMagic1 = 0x54; // 'T'
@@ -27,34 +35,12 @@ const otaLiteralChunk = otaMaxPayload - otaFrameOverhead - 2;
 
 /// The stock companion's transport frame limit (`MAX_FRAME_SIZE` in the
 /// firmware's BaseSerialInterface.h), measured after the 3-byte serial header:
-/// `CMD_SEND_RAW_PACKET` + priority + the packet itself must fit in this.
+/// the command plus its arguments must fit in this.
 ///
 /// The Xiao 1.18 firmware silently drops a longer command — the radio stays
 /// alive but nothing is transmitted — so an oversized op is not an error the
 /// caller can see, it is a stalled transfer.
 const otaStockCompanionFrameLimit = 176;
-
-/// Data bytes one OP_LITERAL may carry when the packet goes through a stock
-/// companion: the frame limit less the command, priority, packet header, path
-/// length byte, [pathBytes] of route, and the op's own 9 bytes
-/// (magic 2 + op 1 + seq 2 + length 2 + CRC 2).
-///
-/// Clamped to the pure on-air maximum [otaLiteralChunk]; a route long enough to
-/// leave no room still yields 1 byte so the transfer fails loudly rather than
-/// producing an unsendable frame.
-int otaLiteralChunkForCompanion({
-  required int pathBytes,
-  int frameLimit = otaStockCompanionFrameLimit,
-}) {
-  final available = frameLimit -
-      2 /* command + priority */ -
-      1 /* header */ -
-      1 /* path_len */ -
-      pathBytes -
-      (otaFrameOverhead + 2);
-  if (available < 1) return 1;
-  return available < otaLiteralChunk ? available : otaLiteralChunk;
-}
 
 /// CRC-16/CCITT-FALSE: poly 0x1021, init 0xFFFF, no reflection, no final XOR.
 /// Bitwise — identical to the firmware's `crc16_ccitt`.
@@ -69,6 +55,27 @@ int crc16CcittFalse(Iterable<int> data) {
     }
   }
   return crc;
+}
+
+/// Data bytes one OP_LITERAL may carry when the op rides inside a
+/// `CMD_SEND_BINARY_REQ` datagram
+/// (`[cmd(1)][pub_key(32)][req_data…]` ≤ [frameLimit]).
+///
+/// `req_data` is `REQ_TYPE_OTA(1) | frame_len(1) | OTA frame`; the OTA frame
+/// overhead is 7 and the literal carries a 2-byte length. Everything inside
+/// the frame limit travels over the app↔companion hop only; the datagram the
+/// companion puts on air is a standard REQ.
+int otaLiteralChunkForBinaryReq(
+    {int frameLimit = otaStockCompanionFrameLimit}) {
+  final chunk = frameLimit -
+      1 - // cmd
+      32 - // contact pubkey
+      1 - // REQ_TYPE_OTA
+      1 - // frame length byte
+      otaFrameOverhead - // magic + op + seq + crc
+      2; // literal length prefix
+  if (chunk < 1) return 1;
+  return chunk < otaLiteralChunk ? chunk : otaLiteralChunk;
 }
 
 /// Append the wire CRC-16 (little endian) to [payload].
@@ -145,12 +152,11 @@ Uint8List buildLiteralChunk({required int seq, required List<int> data}) {
 /// `OP_END`: no body.
 Uint8List buildEnd({required int seq}) => buildOp(otaOpEnd, seq: seq);
 
-/// `OP_ASK body: ret_path_len:u8 [ret_path]` — carries the return itinerary
-/// for the OP_REPORT being requested. [retPathLen] is encoded like a packet's
-/// path_len byte; empty (0) means zero hop and [retPath] must be empty.
-Uint8List buildAsk({required int retPathLen, List<int> retPath = const []}) {
-  return buildOp(otaOpAsk, body: [retPathLen, ...retPath]);
-}
+/// `OP_ASK`: no body. The OP_REPORT comes back through the stock REQ reply
+/// routing (the target's stored out_path for the sender, or a flood when none
+/// is known), exactly like a status response — there is no return itinerary
+/// to carry.
+Uint8List buildAsk() => buildOp(otaOpAsk);
 
 /// The repeater's answer to an ask.
 class OtaReport {
@@ -161,12 +167,60 @@ class OtaReport {
 }
 
 /// Parse an `OP_REPORT` frame. Returns null for anything else.
-OtaReport? parseReport(Uint8List payload) {
-  final frame = unwrapFrame(payload);
+///
+/// The RESPONSE plaintext arrives zero-padded by the crypto layer, so only
+/// the first 7 bytes carry the frame — after it, only zero padding may
+/// follow.
+OtaReport? parseReport(List<int> payload) {
+  if (payload.length < 7) return null;
+  final frame = unwrapFrame(payload.sublist(0, 7));
   if (frame == null) return null;
   if (frame.length != 3 + 2) return null;
   if (frame[2] != otaOpReport) return null;
+  for (var i = 7; i < payload.length; i++) {
+    if (payload[i] != 0) return null;
+  }
   return OtaReport(frame[3] | (frame[4] << 8));
+}
+
+/// `PUSH_CODE_BINARY_RESPONSE` (0x8C), emitted by the companion when the
+/// target of our `CMD_SEND_BINARY_REQ` answers with a RESPONSE.
+///
+/// Two record layouts circulate in the field, and this parser accepts both:
+///
+///   `[8C][00][tag(4)][payload…]`                      older companions
+///   `[8C][00][pubkey_prefix(6)][tag(4)][payload…]`    current companions
+///
+/// The pubkey prefix (when present) is the responder's truncated identity —
+/// checked against [contactPubKey]. The tag is checked against [askTag] when
+/// known (the ask is always the newest in-flight request, so a well-formed
+/// report for this contact while an ask is out is the answer either way).
+/// Returns the REPORT when the push parses, else null.
+OtaReport? parseBinaryResponse(Uint8List frame,
+    {required Uint8List contactPubKey, int? askTag}) {
+  if (frame.isEmpty || frame[0] != 0x8C) return null;
+  // Candidate frame layouts: tag at 2 (no pubkey prefix) or tag at 8.
+  for (final tagAt in [2, 8]) {
+    if (frame.length < tagAt + 4 + 7) continue;
+    if (tagAt == 8) {
+      var prefixOk = true;
+      for (var i = 0; i < 6; i++) {
+        if (frame[2 + i] != contactPubKey[i]) {
+          prefixOk = false;
+          break;
+        }
+      }
+      if (!prefixOk) continue;
+    }
+    final tag = frame[tagAt] |
+        (frame[tagAt + 1] << 8) |
+        (frame[tagAt + 2] << 16) |
+        (frame[tagAt + 3] << 24);
+    if (askTag != null && tag != askTag) continue;
+    final report = parseReport(frame.sublist(tagAt + 4));
+    if (report != null) return report;
+  }
+  return null;
 }
 
 /// `targetIdForEnvironment` for a build environment: `sha256(pio_env)[0..3]`

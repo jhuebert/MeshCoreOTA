@@ -114,13 +114,19 @@ class OtaStartContract {
   final int token;
 }
 
-/// The DIRECT route to the target node.
+/// The DIRECT route to the target node, as stored in the companion.
+///
+/// Binary requests (`CMD_SEND_BINARY_REQ`) have no per-packet path field: the
+/// companion routes the REQ datagram to [contact] using its own stored
+/// record. An explicit path is therefore applied as a companion-side contact
+/// update (see `RadioLink.setContactPath`), not as a per-packet field —
+/// [manual] flags a route the caller asked for by hand so the update is
+/// pushed instead of silently ignored.
 class OtaRoute {
   const OtaRoute({
     required this.path,
     required this.encodedPathLen,
-    required this.retPath,
-    required this.retPathLen,
+    this.manual = false,
   });
 
   /// Route on the wire (consumed hop by hop). Empty = zero hop.
@@ -129,20 +135,69 @@ class OtaRoute {
   /// Encoded path_len byte for [path].
   final int encodedPathLen;
 
-  /// Return itinerary for OP_REPORT frames, in repeater→app order
-  /// (encoded like a path_len byte). Empty = zero hop.
-  final Uint8List retPath;
-  final int retPathLen;
+  /// True when the caller built this route by hand ([parsePathList]) rather
+  /// than from the companion's stored record — callers should push it into
+  /// the companion via `setContactPath` before the transfer.
+  final bool manual;
 
   /// Zero-hop route.
-  OtaRoute.zeroHop()
+  OtaRoute.zeroHop({this.manual = false})
       : path = Uint8List(0),
-        encodedPathLen = 0,
-        retPath = Uint8List(0),
-        retPathLen = 0;
+        encodedPathLen = 0;
 
-  /// Build the route from a contact's DIRECT path, reversing it for the
-  /// return leg. Throws when the contact has no direct route.
+  /// Build the route from a comma-separated path list (`c0ff,c1,c2`).
+  /// "0" means zero-hop. Throws when malformed.
+  static OtaRoute parsePathList(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return OtaRoute.zeroHop();
+    if (trimmed == '0')
+      return OtaRoute.zeroHop(manual: true); // meshcli convention
+    final parts = trimmed
+        .split(',')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.isEmpty || parts.length > 63) {
+      throw OtaTransferException('path must contain 1-63 comma-separated hops');
+    }
+    if (int.tryParse(parts[0], radix: 16) == null) {
+      throw OtaTransferException('path hops must be hexadecimal');
+    }
+    final hashSize = parts[0].length ~/ 2;
+    if (parts[0].length.isOdd || hashSize < 1 || hashSize > 3) {
+      throw OtaTransferException(
+          'path hop size must be 1-3 bytes (2-6 hex digits)');
+    }
+    final path = <int>[];
+    for (final part in parts) {
+      if (part.length != parts[0].length) {
+        throw OtaTransferException('all path hops must have the same size');
+      }
+      final bytes = _hexBytes(part);
+      path.addAll(bytes);
+      if (path.length > maxPathSize) {
+        throw OtaTransferException('path exceeds $maxPathSize bytes');
+      }
+    }
+    return OtaRoute(
+      path: Uint8List.fromList(path),
+      encodedPathLen: PathUtils.encodePathLen(hashSize, parts.length),
+      manual: true,
+    );
+  }
+
+  static List<int> _hexBytes(String hex) {
+    final out = <int>[];
+    for (var i = 0; i < hex.length; i += 2) {
+      final byte = int.tryParse(hex.substring(i, i + 2), radix: 16);
+      if (byte == null) throw OtaTransferException('invalid path hop "$hex"');
+      out.add(byte);
+    }
+    return out;
+  }
+
+  /// Build the route from a contact's DIRECT path. Throws when the contact
+  /// has no direct route.
   factory OtaRoute.fromContactPath({
     required int outPathLen,
     required Uint8List outPath,
@@ -151,26 +206,14 @@ class OtaRoute {
       throw OtaTransferException(
           'contact has no direct route — set the route first');
     }
-    final hashSize = PathUtils.getHashSize(outPathLen);
-    final count = PathUtils.getHashCount(outPathLen);
     final byteLength = PathUtils.getByteLength(outPathLen);
     if (outPath.length < byteLength) {
       throw OtaTransferException('contact path is truncated');
     }
     final path = Uint8List.fromList(outPath.sublist(0, byteLength));
-    // The return itinerary travels repeater → app: reverse the hop order,
-    // keeping the same hash size.
-    final ret = Uint8List(byteLength);
-    for (int i = 0; i < count; i++) {
-      final src = (count - 1 - i) * hashSize;
-      final dst = i * hashSize;
-      ret.setRange(dst, dst + hashSize, path.sublist(src, src + hashSize));
-    }
     return OtaRoute(
       path: path,
       encodedPathLen: outPathLen,
-      retPath: ret,
-      retPathLen: PathUtils.encodePathLen(hashSize, count),
     );
   }
 }
@@ -207,9 +250,9 @@ class WireOps {
 /// Derive the wire-ready op stream from delta ops.
 ///
 /// [literalChunk] is the most data bytes one OP_LITERAL may carry. The default
-/// is the pure on-air maximum, but a packet sent through a stock companion
-/// must fit the companion's frame (see [otaLiteralChunkForCompanion]), which is
-/// usually the tighter bound — an oversized frame is dropped silently by the
+/// is the pure on-air maximum, but an op sent through a stock companion must
+/// fit the companion's frame (see [otaLiteralChunkForBinaryReq]), which is
+/// always the tighter bound — an oversized frame is dropped silently by the
 /// companion, so the op never lands and the transfer stalls.
 WireOps wireOpsFor(List<DeltaOp> ops, {int literalChunk = otaLiteralChunk}) {
   assert(literalChunk >= 1 && literalChunk <= otaLiteralChunk);
@@ -238,16 +281,19 @@ WireOps wireOpsFor(List<DeltaOp> ops, {int literalChunk = otaLiteralChunk}) {
   return WireOps(frames);
 }
 
-/// Windowed op-stream sender with OP_ASK/OP_REPORT recovery.
+/// Windowed op-stream sender over REQ/RESPONSE datagrams.
 ///
-/// The node applies ops strictly in seq order and drops anything else, so
-/// recovery is "re-send from next_expected" after each ask. DIRECT routing
-/// delivers in order per path; the path is consumed hop by hop, so the ask
-/// carries the return itinerary explicitly (never stored by the node).
+/// Each op travels as a binary request (`CMD_SEND_BINARY_REQ`) to the node:
+/// the companion encrypts `tag(4) | REQ_TYPE_OTA | OTA frame` as an ordinary
+/// direct REQ, intermediate nodes forward it untouched, and the node answers
+/// an OP_ASK with an OP_REPORT inside the RESPONSE (surfaced as
+/// `PUSH_CODE_BINARY_RESPONSE`). The node applies ops strictly in seq order
+/// and drops anything else, so recovery is "re-send from next_expected" after
+/// each ask.
 class OtaTransfer {
   OtaTransfer({
     required this.link,
-    required this.route,
+    required this.contact,
     required this.contract,
     required this.ops,
     this.windowSize = 12,
@@ -262,9 +308,8 @@ class OtaTransfer {
     this.shouldCancel,
   })  : assert(windowSize >= 1),
         wireOps = wireOpsFor(ops,
-            literalChunk: otaLiteralChunkForCompanion(
-                pathBytes: route.path.length,
-                frameLimit: companionFrameLimit)) {
+            literalChunk:
+                otaLiteralChunkForBinaryReq(frameLimit: companionFrameLimit)) {
     if (resumeFrom > 1) {
       // Include the already-sent prefix in the cumulative transfer metrics.
       // The session is still the same update: those bytes went out before the
@@ -281,7 +326,12 @@ class OtaTransfer {
   }
 
   final RadioLink link;
-  final OtaRoute route;
+
+  /// The contact this update targets. Binary requests route to it using the
+  /// companion's stored record, so its public key scopes every request and
+  /// the pubkey prefix on every `PUSH_CODE_BINARY_RESPONSE`.
+  final Contact contact;
+
   final OtaStartContract contract;
   final List<DeltaOp> ops;
 
@@ -343,6 +393,10 @@ class OtaTransfer {
   bool _cancelRequested = false;
   Completer<OtaReport>? _reportWaiter;
   OtaReport? _lastReport;
+
+  /// Tag the companion used for the OP_ASK currently outstanding, to match
+  /// the `PUSH_CODE_BINARY_RESPONSE` a node sends back.
+  int? _askTag;
   StreamSubscription<Uint8List>? _reportSub;
   void Function(TransferProgress)? onProgress;
 
@@ -486,13 +540,20 @@ class OtaTransfer {
         '(stalled at op $missing of $target)');
   }
 
-  /// Send OP_ASK and wait for the corresponding OP_REPORT. Leaves _lastReport
+  /// Send OP_ASK and wait for the corresponding OP_REPORT. Leaves [_lastReport]
   /// null when no report arrives within [askTimeout].
   Future<void> _ask() async {
     final waiter = Completer<OtaReport>();
     _reportWaiter = waiter;
-    final ask = buildAsk(retPathLen: route.retPathLen, retPath: route.retPath);
-    await _sendOp(ask);
+    // The node answers an OP_ASK and nothing else, and only one ask is ever
+    // in flight — a well-formed BINARY_RESPONSE for this contact is the
+    // answer. The tag narrows it when known; the pubkey prefix (checked in
+    // _onPush) scopes it to the target.
+    _askTag = null;
+    _lastReport = null;
+    final ask = buildAsk();
+    final sent = await _sendOp(ask);
+    _askTag = sent.tag;
     try {
       _lastReport = await waiter.future.timeout(askTimeout);
     } on TimeoutException {
@@ -502,13 +563,9 @@ class OtaTransfer {
     }
   }
 
-  Future<void> _sendOp(Uint8List otaFrame, {int? opIndex}) async {
-    final raw = PacketBuilder.createRawCustom(
-      otaFrame,
-      path: route.path,
-      encodedPathLen: route.encodedPathLen,
-    );
-    await link.sendRawPacket(raw.writeTo());
+  Future<BinaryRequestSent> _sendOp(Uint8List otaFrame, {int? opIndex}) async {
+    final sent = await link
+        .sendBinaryRequest(contact, [reqTypeOta, otaFrame.length, ...otaFrame]);
     packetsSent++;
     if (otaFrame.length > 2 && otaFrame[2] == otaOpLiteral) {
       literalBytesSent += (otaFrame[5] | (otaFrame[6] << 8));
@@ -516,16 +573,13 @@ class OtaTransfer {
     if (opSpacing > Duration.zero) {
       await Future<void>.delayed(opSpacing);
     }
+    return sent;
   }
 
   void _onPush(Uint8List frame) {
-    if (frame.isEmpty || frame[0] != pushCodeLogRxData) return;
-    final raw = RawRxFrame.parse(frame);
-    if (raw == null) return;
-    final packet = Packet.readFrom(raw.raw);
-    if (packet == null || packet.payloadType != payloadTypeRawCustom) return;
-    if (packet.payload.isEmpty) return;
-    final report = parseReport(packet.payload);
+    if (frame.isEmpty || frame[0] != pushCodeBinaryResponse) return;
+    final report = parseBinaryResponse(frame,
+        contactPubKey: contact.publicKey, askTag: _askTag);
     if (report == null) return;
     _lastReport = report;
     final waiter = _reportWaiter;

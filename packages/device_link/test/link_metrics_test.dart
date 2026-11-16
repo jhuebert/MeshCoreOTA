@@ -4,6 +4,12 @@ import 'package:device_link/device_link.dart';
 import 'package:mesh_protocol/mesh_protocol.dart';
 import 'package:test/test.dart';
 
+Contact _contact() => Contact(
+      publicKey: Uint8List.fromList(List<int>.generate(32, (i) => i + 1)),
+      name: 'tower-1',
+      advType: advTypeRepeater,
+    );
+
 void main() {
   test('tracks connection and connected-duration state', () {
     var now = DateTime.utc(2026, 1, 1);
@@ -62,6 +68,33 @@ void main() {
 
     await link.deviceInfo();
     expect(metrics.deviceRequests, 2);
+  });
+
+  test('binary request failures propagate with metrics', () async {
+    final inner = FakeDeviceLink();
+    final metrics = LinkMetrics();
+    final link = MeteredRadioLink(inner, metrics: metrics);
+
+    await link.connect();
+    await link.sendBinaryRequest(_contact(), const [0x08]);
+    expect(metrics.deviceRequests, 1);
+
+    inner.rawTxError = const DeviceCommandError.timeout(message: 'no ack');
+    await expectLater(
+      link.sendBinaryRequest(_contact(), const [0x08]),
+      throwsA(isA<DeviceCommandError>()),
+    );
+    expect(metrics.deviceRequests, 2);
+    expect(metrics.deviceRequestFailures, 1);
+    expect(metrics.deviceTimeouts, 1);
+
+    inner.rawTxError = StateError('binary exploded');
+    await expectLater(
+      link.sendBinaryRequest(_contact(), const [0x08]),
+      throwsStateError,
+    );
+    expect(metrics.deviceRequestFailures, 2);
+    expect(metrics.deviceTimeouts, 1);
   });
 
   test('records connect, raw TX, and request failures without swallowing them',
@@ -151,13 +184,18 @@ void main() {
     await link.setPathHashMode(2);
     await link.runCliCommand('ver');
     await link.getAllowedRepeatFreq();
+    await link.sendBinaryRequest(_contact(), const [0x08]);
+    await link.setContactPath(_contact(),
+        path: const [0xC0, 0xFF], encodedPathLen: 0x41);
 
     expect(inner.lastClientRepeat, isTrue);
     expect(inner.pathHashMode, 2);
     expect(inner.rebootRequests, 1);
     expect(inner.shutdownRequests, 1);
     expect(inner.cliCommands, containsAll(['ver', 'poweroff']));
-    expect(metrics.deviceRequests, 13);
+    expect(inner.calls, contains('sendBinaryRequest'));
+    expect(inner.calls, contains('setContactPath'));
+    expect(metrics.deviceRequests, 15);
     expect(metrics.deviceRequestFailures, 0);
     expect(link.state, isA<Stream<LinkState>>());
     expect(link.currentState, inner.currentState);

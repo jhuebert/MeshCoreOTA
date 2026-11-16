@@ -266,6 +266,38 @@ class FakeDeviceLink
     await _wait(rawTxAck);
   }
 
+  @override
+  Future<BinaryRequestSent> sendBinaryRequest(
+      Contact contact, List<int> reqData) async {
+    calls.add('sendBinaryRequest');
+    if (rawTxError != null) throw rawTxError!;
+    _txCount++;
+    final tag = (_binaryTag = (_binaryTag + 1) & 0xFFFFFFFF);
+    final lost = dropPredicate?.call(_txCount) ??
+        (dropEveryNthTx != null && _txCount % dropEveryNthTx! == 0);
+    if (lost) {
+      // Air loss is invisible at the command layer: the companion still
+      // queued the datagram, the node just never got it.
+      calls.add('sendBinaryRequest-dropped');
+      return BinaryRequestSent(tag: tag, flooded: false, estTimeoutMs: 0);
+    }
+    if (binaryRequestHandler != null) {
+      await binaryRequestHandler!(contact, reqData, tag);
+    }
+    return BinaryRequestSent(tag: tag, flooded: false, estTimeoutMs: 0);
+  }
+
+  @override
+  Future<void> setContactPath(Contact contact,
+      {required List<int> path, required int encodedPathLen}) async {
+    calls.add('setContactPath');
+    contactPathWrites.add((
+      contact: contact,
+      path: Uint8List.fromList(path),
+      encodedPathLen: encodedPathLen,
+    ));
+  }
+
   /// When set, every Nth `sendRawPacket` is silently dropped (models link
   /// loss). The drop counter increments for every attempted send.
   ///
@@ -288,10 +320,25 @@ class FakeDeviceLink
   /// to [frameHandler].
   Future<bool> Function(Uint8List packet, int priority)? txHandler;
 
+  /// Optional in-band handler invoked for every `CMD_SEND_BINARY_REQ`,
+  /// exactly as the companion would encrypt `tag(4) | [reqData...]` and hand
+  /// it to the mesh. Return without pushing anything to model a node that
+  /// stays silent (the transfer recovers via its own asks).
+  Future<void> Function(Contact contact, List<int> reqData, int tag)?
+      binaryRequestHandler;
+
   /// Optional in-band handler invoked for every companion command frame
   /// written with `sendFrame` (e.g. `CMD_GET_CONTACTS`, `CMD_SEND_LOGIN`).
   /// The frame is the raw command frame (`frame[0]` = command code).
   void Function(Uint8List frame)? frameHandler;
+
+  /// Every `setContactPath` call, in order. The fake does not rewrite the
+  /// passed [Contact] object — neither does the real link; the companion is
+  /// the source of truth for routing.
+  final List<({Contact contact, Uint8List path, int encodedPathLen})>
+      contactPathWrites = [];
+
+  int _binaryTag = 0;
 
   int _txCount = 0;
 

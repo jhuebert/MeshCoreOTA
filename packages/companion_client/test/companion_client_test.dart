@@ -327,5 +327,91 @@ void main() {
         throwsA(isA<CompanionDeviceError>()),
       );
     });
+
+    test('CLI reply times out fast when nothing is queued', () {
+      final target = _repeater();
+      expect(
+        client.remoteCli(target, 'ver',
+            timeout: const Duration(milliseconds: 50)),
+        throwsA(isA<CompanionTimeoutException>()),
+      );
+    });
+  });
+
+  group('drainMessages', () {
+    Uint8List cliMessageFrame(Contact from, String text) {
+      final w = BufferWriter();
+      w.writeByte(respCodeContactMsgRecvV3);
+      w.writeByte(0);
+      w.writeByte(0);
+      w.writeByte(0);
+      w.writeBytes(from.publicKey.sublist(0, 6));
+      w.writeByte(0);
+      w.writeByte(txtTypeCliData);
+      w.writeUInt32Le(100);
+      w.writeBytes(utf8.encode(text));
+      w.writeByte(0);
+      return w.toBytes();
+    }
+
+    test('drops every queued message and reports the count', () async {
+      final target = _repeater();
+      var queued = <Uint8List>[
+        cliMessageFrame(target, 'stale one'),
+        cliMessageFrame(target, 'stale two'),
+      ];
+      link.frameHandler = (frame) {
+        if (frame[0] != cmdSyncNextMessage) return;
+        if (queued.isNotEmpty) {
+          link.simulatePush(queued.removeAt(0));
+        } else {
+          link.simulatePush(Uint8List.fromList([respCodeNoMoreMessages]));
+        }
+      };
+      expect(await client.drainMessages(), 2);
+      expect(queued, isEmpty);
+    });
+
+    test('reports zero on an empty queue', () async {
+      link.frameHandler = (frame) {
+        if (frame[0] != cmdSyncNextMessage) return;
+        link.simulatePush(Uint8List.fromList([respCodeNoMoreMessages]));
+      };
+      expect(await client.drainMessages(), 0);
+    });
+
+    test('remoteCli answers a fresh reply after a drain', () async {
+      final target = _repeater();
+      var queued = <Uint8List>[cliMessageFrame(target, 'stale')];
+      link.frameHandler = (frame) {
+        if (frame[0] != cmdSyncNextMessage) return;
+        if (queued.isNotEmpty) {
+          link.simulatePush(queued.removeAt(0));
+        } else {
+          link.simulatePush(Uint8List.fromList([respCodeNoMoreMessages]));
+        }
+      };
+      expect(await client.drainMessages(), 1);
+      // After the drain, the next CLI call gets the fresh reply, not the stale one.
+      final reply = BufferWriter()
+        ..writeByte(respCodeContactMsgRecvV3)
+        ..writeByte(0)
+        ..writeByte(0)
+        ..writeByte(0)
+        ..writeBytes(target.publicKey.sublist(0, 6))
+        ..writeByte(0)
+        ..writeByte(txtTypeCliData)
+        ..writeUInt32Le(60)
+        ..writeBytes(utf8.encode('vfresh'))
+        ..writeByte(0);
+      link.frameHandler = (frame) {
+        if (frame[0] != cmdSyncNextMessage) return;
+        link.simulatePush(reply.toBytes());
+      };
+      final cliFuture = client.remoteCli(target, 'ver');
+      await _pump();
+      link.simulatePush(Uint8List.fromList([pushCodeMsgWaiting]));
+      expect(await cliFuture, 'vfresh');
+    });
   });
 }

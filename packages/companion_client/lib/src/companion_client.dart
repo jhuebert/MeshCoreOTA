@@ -288,9 +288,31 @@ class CompanionClient {
     }
   }
 
+  /// Dequeue and drop every queued message. Returns how many were dropped.
+  ///
+  /// Intended for bring-up drains after a connect: a companion that missed
+  /// replies while the app was away holds them in its offline queue, and the
+  /// next `remoteCli` call would otherwise consume a stale one as if it were
+  /// the answer to the command it just sent. Each sync is answered straight
+  /// from the companion's local queue, so the per-message round trip is fast;
+  /// the drain stops at the first empty/timeout response.
+  Future<int> drainMessages({
+    Duration perMessageTimeout = const Duration(seconds: 2),
+    int maxMessages = 64,
+  }) async {
+    var drained = 0;
+    while (drained < maxMessages) {
+      final response = await _syncNext(perMessageTimeout);
+      if (response.isEmpty || response[0] == respCodeNoMoreMessages) break;
+      drained++;
+    }
+    return drained;
+  }
+
   /// Send one `CMD_SYNC_NEXT_MESSAGE` and capture its response frame from the
   /// pushes stream. Returns a zero-length frame on timeout.
-  Future<Uint8List> _syncNext() {
+  Future<Uint8List> _syncNext(
+      [Duration timeout = const Duration(seconds: 10)]) {
     final response = Completer<Uint8List>();
     late StreamSubscription<Uint8List> syncSub;
     syncSub = link.pushes.listen((frame) {
@@ -309,7 +331,7 @@ class CompanionClient {
     return link
         .sendFrame(Uint8List.fromList([cmdSyncNextMessage]))
         .then((_) => response.future.timeout(
-              const Duration(seconds: 10),
+              timeout,
               onTimeout: () => Uint8List(0),
             ))
         .whenComplete(syncSub.cancel);

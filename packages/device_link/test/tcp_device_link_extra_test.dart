@@ -236,6 +236,95 @@ void main() {
     );
   });
 
+  test('binary request parses RESP_CODE_SENT (tag, flooded, timeout)',
+      () async {
+    final contact = Contact(
+      publicKey: Uint8List.fromList(List<int>.generate(32, (i) => i + 1)),
+      name: 'tower-1',
+      advType: advTypeRepeater,
+    );
+    Uint8List? written;
+    device = await _ScriptedDevice.start((frame, socket) {
+      if (frame[0] != cmdSendBinaryReq) return;
+      written = Uint8List.fromList(frame);
+      _reply(socket, [
+        respCodeSent,
+        1, // flooded
+        0xEF, 0xBE, 0xAD, 0xDE, // tag 0xDEADBEEF
+        0x04, 0x03, 0x02, 0x01, // est_timeout 0x04030201
+      ]);
+    });
+    await newLink();
+
+    final sent =
+        await link.sendBinaryRequest(contact, const [0x08, 0xCA, 0xFE]);
+    expect(sent.flooded, isTrue);
+    expect(sent.tag, 0xDEADBEEF); // LE on the wire, as getCurrentTimeUnique()
+    expect(sent.estTimeoutMs, 0x01020304);
+    expect(written![0], cmdSendBinaryReq);
+    expect(written!.sublist(1, 33), contact.publicKey);
+    expect(written!.sublist(33), [0x08, 0xCA, 0xFE]);
+  });
+
+  test('binary request rejects a truncated SENT reply', () async {
+    final contact = Contact(
+      publicKey: Uint8List.fromList(List<int>.generate(32, (i) => i + 1)),
+      name: 'tower-1',
+      advType: advTypeRepeater,
+    );
+    device = await _ScriptedDevice.start((frame, socket) {
+      if (frame[0] != cmdSendBinaryReq) return;
+      _reply(socket, [respCodeSent, 0]);
+    });
+    await newLink();
+
+    await expectLater(
+      link.sendBinaryRequest(contact, const [0x01]),
+      throwsA(isA<DeviceCommandError>()
+          .having((e) => e.kind, 'kind', DeviceCommandErrorKind.malformed)),
+    );
+  });
+
+  test('setContactPath writes the companion contact record', () async {
+    final contact = Contact(
+      publicKey: Uint8List.fromList(List<int>.generate(32, (i) => i + 1)),
+      name: 'tower-1',
+      advType: advTypeRepeater,
+      flags: 0x92,
+      lastAdvertTimestamp: 0x01020304,
+      gpsLat: 40.5,
+      gpsLon: -105.5,
+    );
+    Uint8List? written;
+    device = await _ScriptedDevice.start((frame, socket) {
+      if (frame[0] != cmdAddUpdateContact) return;
+      written = Uint8List.fromList(frame);
+      _reply(socket, [respCodeOk]);
+    });
+    await newLink();
+
+    await link.setContactPath(contact,
+        path: const [0xC0, 0xFF], encodedPathLen: 0x41);
+    final w = written!;
+    expect(w[0], cmdAddUpdateContact);
+    expect(w.sublist(1, 33), contact.publicKey);
+    expect(w[33], advTypeRepeater);
+    expect(w[34], 0x92); // flags
+    expect(w[35], 0x41); // encoded path len
+    expect(w[36], 0xC0); // path[0]
+    expect(w[37], 0xFF); // path[1]
+    expect(w[99], 0x00); // path padding (out_path is zero-padded to 64)
+    expect(w.length, 1 + 32 + 1 + 1 + 1 + 64 + 32 + 4 + 4 + 4 + 4); // + lastmod
+    // Name slot: 'tower-1' NUL-padded to 32 bytes
+    expect(String.fromCharCodes(w.sublist(100, 107)), 'tower-1');
+    expect(w[107], 0); // NUL terminator
+    // last_advert then GPS as int microdegrees; lastmod rides at the tail
+    final buf = ByteData.sublistView(w, 132);
+    expect(buf.getUint32(0, Endian.little), 0x01020304);
+    expect(buf.getInt32(4, Endian.little), 40500000);
+    expect(buf.getInt32(8, Endian.little), -105500000);
+  });
+
   test('malformed stats and tuning replies are rejected', () async {
     device = await _ScriptedDevice.start((frame, socket) {
       if (frame[0] == cmdGetStats) _reply(socket, [respCodeStats]);

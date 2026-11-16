@@ -71,14 +71,12 @@ void main() {
       expect(literal.sublist(7, literal.length - 2), [9, 8, 7]);
     });
 
-    test('buildAsk carries the return itinerary', () {
-      final ask = buildAsk(retPathLen: 0x42, retPath: const [0xAA, 0xBB, 0xCC]);
+    test('buildAsk carries no body', () {
+      // v2: the OP_REPORT comes back through the stock REQ reply routing.
+      final ask = buildAsk();
       final unwrapped = unwrapFrame(ask)!;
+      expect(unwrapped.length, 3 + 0);
       expect(unwrapped[2], otaOpAsk);
-      expect(unwrapped[3], 0x42);
-      expect(unwrapped.sublist(4), [0xAA, 0xBB, 0xCC]);
-      final zeroHop = buildAsk(retPathLen: 0);
-      expect(unwrapFrame(zeroHop)!.sublist(3), [0x00]);
     });
 
     test('parseReport reads next_expected', () {
@@ -90,6 +88,76 @@ void main() {
       expect(parseReport(Uint8List.fromList([0x4F, 0x54, 0x06, 0x00])), isNull);
     });
 
+    test('parseReport tolerates the crypto layer zero padding', () {
+      // The RESPONSE plaintext is padded to a 16-byte block; only zeros may
+      // follow the 7-byte frame.
+      final report =
+          Uint8List.fromList(appendCrc16(const [0x4F, 0x54, 0x06, 0x34, 0x12]));
+      expect(parseReport([...report, 0, 0, 0, 0, 0, 0, 0, 0])!.nextExpected,
+          0x1234);
+      expect(parseReport([...report, 0x01]), isNull);
+    });
+
+    test('parseBinaryResponse accepts both companion record layouts', () {
+      final report = appendCrc16(const [0x4F, 0x54, 0x06, 0x34, 0x12]);
+      final pubkey6 = Uint8List.fromList([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]);
+      const tag = 0x12345678;
+      // Older companion: [8C][00][tag(4)][report]
+      final layoutA = Uint8List.fromList([
+        0x8C,
+        0x00,
+        tag & 0xFF,
+        (tag >> 8) & 0xFF,
+        (tag >> 16) & 0xFF,
+        (tag >> 24) & 0xFF,
+        ...report,
+      ]);
+      // Current companion: [8C][00][pubkey6][tag(4)][report]
+      final layoutB = Uint8List.fromList([
+        0x8C,
+        0x00,
+        ...pubkey6,
+        tag & 0xFF,
+        (tag >> 8) & 0xFF,
+        (tag >> 16) & 0xFF,
+        (tag >> 24) & 0xFF,
+        ...report,
+      ]);
+      final contact =
+          Uint8List.fromList([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 1, 2]);
+      expect(
+          parseBinaryResponse(layoutA, contactPubKey: contact, askTag: tag)
+              ?.nextExpected,
+          0x1234);
+      expect(
+          parseBinaryResponse(layoutB, contactPubKey: contact, askTag: tag)
+              ?.nextExpected,
+          0x1234);
+      // A different tag is refused.
+      expect(
+          parseBinaryResponse(layoutA, contactPubKey: contact, askTag: tag + 1),
+          isNull);
+      // pubkey layout with a mismatched sender prefix is refused.
+      final wrongSender = Uint8List.fromList([
+        0x8C,
+        0x00,
+        0x01,
+        0x02,
+        0x03,
+        0x04,
+        0x05,
+        0x06,
+        tag & 0xFF,
+        (tag >> 8) & 0xFF,
+        (tag >> 16) & 0xFF,
+        (tag >> 24) & 0xFF,
+        ...report,
+      ]);
+      expect(
+          parseBinaryResponse(wrongSender, contactPubKey: contact, askTag: tag),
+          isNull);
+    });
+
     test('targetIdForEnvironment matches the frozen rule', () {
       // sha256(pio_env)[0..3] little endian; verified independently with
       // Python hashlib (see wire.dart).
@@ -99,16 +167,15 @@ void main() {
       expect(targetIdForEnvironment('PicoW_repeater'), 1413693056);
     });
 
-    test('literal chunks fit a stock companion frame for the route', () {
-      // Zero hop: 176 - 2 (cmd+priority) - 1 (header) - 1 (path_len) - 9 (op).
-      expect(otaLiteralChunkForCompanion(pathBytes: 0), 163);
-      // Each route byte comes out of the same budget.
-      expect(otaLiteralChunkForCompanion(pathBytes: 6), 157);
+    test('literal chunks fit a stock companion frame', () {
+      // 176 - 1 (cmd) - 32 (pubkey) - 1 (REQ_TYPE_OTA) - 1 (frame length)
+      //      - 7 (frame overhead) - 2 (literal length) = 132.
+      expect(otaLiteralChunkForBinaryReq(), 132);
       // Never more than the pure on-air maximum.
-      expect(otaLiteralChunkForCompanion(pathBytes: 0),
-          lessThanOrEqualTo(otaLiteralChunk));
-      // A route that leaves no room clamps to 1 rather than going negative.
-      expect(otaLiteralChunkForCompanion(pathBytes: 200), 1);
+      expect(otaLiteralChunkForBinaryReq(), lessThanOrEqualTo(otaLiteralChunk));
+      // A transport too small for the op envelope clamps to 1 rather than
+      // going negative.
+      expect(otaLiteralChunkForBinaryReq(frameLimit: 40), 1);
     });
   });
 }

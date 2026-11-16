@@ -166,6 +166,8 @@ const int advTypeSensor = 4;
 const int reqTypeGetStatus = 0x01;
 const int reqTypeKeepAlive = 0x02;
 const int reqTypeGetTelemetryData = 0x03;
+// Fork firmware's OTA ops (admin-only); each request body is one OTA frame.
+const int reqTypeOta = 0x08;
 
 // Server login response codes (`RESP_SERVER_*` in the firmware).
 const int respServerLoginOk = 0x00;

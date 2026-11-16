@@ -41,7 +41,7 @@ Future<void> main() async {
     targetId: targetIdForEnvironment(env),
     token: arm.token,
   );
-  await link.sendRawPacket(PacketBuilder.createRawCustom(start).writeTo());
+  await link.sendBinaryRequest(target, [reqTypeOta, start.length, ...start]);
   await Future<void>.delayed(const Duration(seconds: 2));
   stdout.writeln('status: ${await client.remoteCli(target, 'ota status')}');
   await link.disconnect();

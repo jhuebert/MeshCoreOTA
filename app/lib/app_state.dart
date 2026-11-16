@@ -207,6 +207,7 @@ class AppState extends ChangeNotifier {
     target = null;
     nodeStatus = null;
     companionName = '';
+    manualRoutePath = '';
   }
 
   Future<void> _refreshContacts() async {
@@ -223,6 +224,25 @@ class AppState extends ChangeNotifier {
 
   // ---------------- target selection ----------------
 
+  /// Optional comma-separated DIRECT path hashes entered on the review screen
+  /// (e.g. `c0ff, c0c0`). Empty keeps the saved contact path or zero-hop.
+  String manualRoutePath = '';
+
+  String? manualRouteError;
+
+  void setManualRoutePath(String value) {
+    manualRoutePath = value;
+    manualRouteError = null;
+    if (value.trim().isNotEmpty) {
+      try {
+        OtaRoute.parsePathList(value);
+      } catch (e) {
+        manualRouteError = '$e';
+      }
+    }
+    notifyListeners();
+  }
+
   /// Add a manual target by hex public key (for nodes not in contacts).
   /// [pubkeyHex] must be 64 hex chars. The pseudo-contact has no saved
   /// path; routing falls back to whatever DIRECT route the companion
@@ -236,6 +256,8 @@ class AppState extends ChangeNotifier {
         Contact(publicKey: bytes, name: name, advType: advTypeRepeater);
     target = contact;
     nodeStatus = null;
+    manualRoutePath = '';
+    manualRouteError = null;
     notifyListeners();
     return contact;
   }
@@ -244,6 +266,8 @@ class AppState extends ChangeNotifier {
     target = contact;
     nodeStatus = null;
     probeError = null;
+    manualRoutePath = '';
+    manualRouteError = null;
     notifyListeners();
   }
 
@@ -475,6 +499,9 @@ class AppState extends ChangeNotifier {
     if (t == null || flow == null || image == null || env == null) {
       throw StateError('update not ready');
     }
+    // Resolve the route before arming so a bad manual path leaves no armed
+    // staging session behind.
+    final route = _routeFor(t);
     updatePhase = UpdatePhase.staging;
     log_('arming: ${image.length} bytes, version $version');
     notifyListeners();
@@ -497,7 +524,6 @@ class AppState extends ChangeNotifier {
 
     final targetId = targetIdForEnvironment(env);
     final sha = sha256List(image);
-    final route = _routeFor(t);
     updatePhase = UpdatePhase.transferring;
     cancelRequested = false;
     progress = null;
@@ -586,6 +612,16 @@ class AppState extends ChangeNotifier {
   }
 
   OtaRoute _routeFor(Contact t) {
+    final entered = manualRoutePath.trim();
+    if (entered.isNotEmpty) {
+      try {
+        manualRouteError = null;
+        return OtaRoute.parsePathList(entered);
+      } catch (e) {
+        manualRouteError = '$e';
+        rethrow;
+      }
+    }
     if (t.hasDirectRoute) {
       return OtaRoute.fromContactPath(
         outPathLen: t.outPathLen,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -34,7 +35,6 @@ class FakeOtaNode {
   int pendingSize = 0;
   List<int> pendingSha = const <int>[];
   int pendingToken = -1;
-  int lastAskRetPathLen = 0;
 
   /// Ops whose bytes have been written, i.e. what the node could report.
   int _received = 1;
@@ -63,7 +63,6 @@ class FakeOtaNode {
     final op = body[2];
 
     if (op == otaOpAsk) {
-      lastAskRetPathLen = body.length > 3 ? body[3] : 0;
       if (!stagingArmed) return const [];
       asks++;
       // Work through the write queue: commit up to [commitPerAsk] received ops.
@@ -117,8 +116,9 @@ class FakeOtaNode {
     }
 
     if (!stagingArmed) return const [];
-    if (seq != _received)
+    if (seq != _received) {
       return const []; // strictly in order; everything else is dropped
+    }
 
     if (op == otaOpCopy) {
       final bd = ByteData.sublistView(body, 5);
@@ -177,14 +177,58 @@ const _testTargetId = 0x9F19BCD1; // Xiao_S3_WIO_repeater (sha256 prefix LE)
 Uint8List _sha256Bytes(List<int> data) =>
     Uint8List.fromList(sha256.convert(data).bytes);
 
-Uint8List _logRxFrame(Uint8List packet) =>
-    Uint8List.fromList([0x88, 24, 0xBA, ...packet]); // 6.0 dB snr, -70 dBm rssi
-
-Uint8List? _otaPayload(Uint8List packetBytes) {
-  final pkt = Packet.readFrom(packetBytes);
-  if (pkt == null || pkt.payloadType != payloadTypeRawCustom) return null;
-  return Uint8List.fromList(pkt.payload);
+/// Ask the node for its watermark over a binary request, as a reconnecting
+/// client would, and return it once the node answers. Null on no answer.
+Future<int?> _askOnce(_Harness harness) async {
+  int? staged;
+  int? tag;
+  final completer = Completer<int?>();
+  late StreamSubscription<Uint8List> sub;
+  sub = harness.link.pushes.listen((frame) {
+    if (frame.isEmpty || frame[0] != pushCodeBinaryResponse) return;
+    final report = parseBinaryResponse(frame,
+        contactPubKey: targetContact.publicKey, askTag: tag);
+    if (report != null && !completer.isCompleted) {
+      staged = report.nextExpected;
+      completer.complete(staged);
+    }
+  });
+  try {
+    final sent = await harness.link.sendBinaryRequest(
+        targetContact, [reqTypeOta, buildAsk().length, ...buildAsk()]);
+    tag = sent.tag;
+    return await completer.future.timeout(const Duration(seconds: 1));
+  } catch (_) {
+    return staged;
+  } finally {
+    await sub.cancel();
+  }
 }
+
+/// The target node's contact. The fake does not route by key — the prefix
+/// exists so the transfer's pubkey-prefix filter on pushes has something
+/// stable to match.
+final Contact targetContact = Contact(
+  publicKey: Uint8List.fromList(List<int>.generate(32, (i) => i + 1)),
+  name: 'XiaoS3',
+  advType: advTypeRepeater,
+  outPathLen: 0,
+);
+
+/// `PUSH_CODE_BINARY_RESPONSE` as the companion emits it: code, reserved,
+/// truncated sender pubkey, tag, then the response payload (the OP_REPORT
+/// frame).
+Uint8List binaryResponsePush(Contact contact, int tag, Uint8List report) =>
+    Uint8List.fromList([
+      pushCodeBinaryResponse,
+      0,
+      ...contact.publicKey.sublist(0, 6),
+      tag & 0xFF,
+      (tag >> 8) & 0xFF,
+      (tag >> 16) & 0xFF,
+      (tag >> 24) & 0xFF,
+      ...report,
+    ]);
 
 Uint8List _mutate(Uint8List base, Random random, {int edits = 40}) {
   final target = Uint8List.fromList(base);
@@ -229,23 +273,20 @@ class _Harness {
       sha256: _sha256Bytes(target),
       token: token,
     );
-    link.txHandler = (packet, _) async {
-      final payload = _otaPayload(packet);
-      if (payload != null) {
-        for (final response in node.handlePacket(payload)) {
-          final reply = PacketBuilder.createRawCustom(
-            response,
-            path: const [],
-          ).writeTo();
-          link.simulatePush(_logRxFrame(reply));
+    link.binaryRequestHandler = (contact, reqData, tag) async {
+      if (reqData.length >= 2 && reqData[0] == reqTypeOta) {
+        final flen = reqData[1];
+        if (reqData.length < 2 + flen) return;
+        final frame = Uint8List.fromList(reqData.sublist(2, 2 + flen));
+        for (final response in node.handlePacket(frame)) {
+          link.simulatePush(binaryResponsePush(contact, tag, response));
         }
       }
-      return true;
     };
     final ops = computeDelta(base, target).ops;
     return OtaTransfer(
       link: link,
-      route: OtaRoute.zeroHop(),
+      contact: targetContact,
       contract: OtaStartContract(
         imageSize: target.length,
         imageSha256: _sha256Bytes(target),
@@ -305,21 +346,20 @@ void main() {
       sha256: _sha256Bytes(target),
       token: 0x11111111, // the arm the operator would actually approve
     );
-    harness.link.txHandler = (packet, _) async {
-      final payload = _otaPayload(packet);
-      if (payload != null) {
-        for (final response in harness.node.handlePacket(payload)) {
-          harness.link.simulatePush(
-            _logRxFrame(PacketBuilder.createRawCustom(response).writeTo()),
-          );
+    harness.link.binaryRequestHandler = (contact, reqData, tag) async {
+      if (reqData.length >= 2 && reqData[0] == reqTypeOta) {
+        final flen = reqData[1];
+        if (reqData.length < 2 + flen) return;
+        final frame = Uint8List.fromList(reqData.sublist(2, 2 + flen));
+        for (final response in harness.node.handlePacket(frame)) {
+          harness.link.simulatePush(binaryResponsePush(contact, tag, response));
         }
       }
-      return true;
     };
     final ops = computeDelta(base, target).ops;
     final transfer = OtaTransfer(
       link: harness.link,
-      route: OtaRoute.zeroHop(),
+      contact: targetContact,
       contract: OtaStartContract(
         imageSize: target.length,
         imageSha256: _sha256Bytes(target),
@@ -337,26 +377,125 @@ void main() {
     expect(harness.node.err, 7);
   });
 
-  test('fromContactPath reverses the route and encodes both lengths', () {
+  test('parsePathList accepts a comma-separated 2-byte path', () {
+    final route = OtaRoute.parsePathList('c0ff, c0c0');
+    expect(route.encodedPathLen, 0x42);
+    expect(route.path, [0xC0, 0xFF, 0xC0, 0xC0]);
+    expect(route.manual, isTrue);
+    expect(OtaRoute.parsePathList(' ').path, isEmpty);
+    expect(() => OtaRoute.parsePathList('c0ff,00'),
+        throwsA(isA<OtaTransferException>()));
+    expect(() => OtaRoute.parsePathList('gg'),
+        throwsA(isA<OtaTransferException>()));
+  });
+
+  test('parsePathList treats meshcli "0" as a manual zero hop', () {
+    final route = OtaRoute.parsePathList('0');
+    expect(route.path, isEmpty);
+    expect(route.encodedPathLen, 0);
+    expect(route.manual, isTrue);
+  });
+
+  test('fromContactPath keeps the contact path and encodes the length', () {
     final route = OtaRoute.fromContactPath(
       outPathLen: 0x02, // 2 hops, 1-byte hashes
       outPath: Uint8List.fromList([0xAA, 0xBB]),
     );
     expect(route.encodedPathLen, 0x02);
     expect(route.path, [0xAA, 0xBB]);
-    expect(route.retPath, [0xBB, 0xAA]);
-    expect(route.retPathLen, 0x02);
+    expect(route.manual, isFalse);
 
     final two = OtaRoute.fromContactPath(
       outPathLen: 0x43, // 3 hops, 2-byte hashes
       outPath: Uint8List.fromList([1, 2, 3, 4, 5, 6]),
     );
-    expect(two.retPath, [5, 6, 3, 4, 1, 2]);
-    expect(two.retPathLen, 0x43);
+    expect(two.path, [1, 2, 3, 4, 5, 6]);
+    expect(two.encodedPathLen, 0x43);
 
     expect(
       () => OtaRoute.fromContactPath(outPathLen: 0xFF, outPath: Uint8List(0)),
       throwsA(isA<OtaTransferException>()),
+    );
+  });
+
+  test('route parsing covers the remaining error branches', () {
+    expect(
+        () => OtaRoute.parsePathList('c0ff,aa'), // mixed hop sizes
+        throwsA(isA<OtaTransferException>()));
+    expect(
+        () => OtaRoute.parsePathList('abc'), // odd length
+        throwsA(isA<OtaTransferException>()));
+    expect(() => OtaRoute.parsePathList('gg'),
+        throwsA(isA<OtaTransferException>()));
+    expect(
+        () => OtaRoute.parsePathList('001122334455'), // 6-byte hop: too big
+        throwsA(isA<OtaTransferException>()));
+    expect(
+        () => OtaRoute.parsePathList('c0ff,gg'), // bad char past the first hop
+        throwsA(isA<OtaTransferException>()));
+    final twoHops = List.filled(22, 'aabbcc').join(','); // 66 bytes of path
+    expect(
+        () => OtaRoute.parsePathList(twoHops), // exceeds MAX_PATH_SIZE
+        throwsA(isA<OtaTransferException>()));
+    final tooMany = List.filled(64, 'aa').join(','); // 64 hops
+    expect(() => OtaRoute.parsePathList(tooMany),
+        throwsA(isA<OtaTransferException>()));
+    expect(OtaTransferException('why').toString(), 'OtaTransferException: why');
+    expect(
+      () => OtaRoute.fromContactPath(
+          outPathLen: 0x42, outPath: Uint8List.fromList([0xAA])), // wants 4
+      throwsA(isA<OtaTransferException>()),
+    );
+  });
+
+  test('completeNextExpected counts every op frame', () {
+    final ops = computeDelta(Uint8List(0), Uint8List.fromList([1, 2, 3])).ops;
+    final wire = wireOpsFor(ops);
+    expect(wire.completeNextExpected, wire.frames.length);
+  });
+
+  test('a node that acknowledges but never commits fails the window', () async {
+    final harness = _Harness();
+    final base = Uint8List(0);
+    final target = Uint8List.fromList(List<int>.generate(24, (i) => i));
+    harness.wire(base: base, target: target);
+    harness.node.commitPerAsk = 0; // applies the ops, watermark never moves
+    harness.link.binaryRequestHandler = (contact, reqData, tag) async {
+      if (reqData.length >= 2 && reqData[0] == reqTypeOta) {
+        final flen = reqData[1];
+        if (reqData.length < 2 + flen) return;
+        final frame = Uint8List.fromList(reqData.sublist(2, 2 + flen));
+        for (final response in harness.node.handlePacket(frame)) {
+          harness.link.simulatePush(binaryResponsePush(contact, tag, response));
+        }
+      }
+    };
+    harness.node.arm(
+      size: target.length,
+      sha256: _sha256Bytes(target),
+      token: 0xBADC0FFE,
+    );
+    final transfer = OtaTransfer(
+      link: harness.link,
+      contact: targetContact,
+      contract: OtaStartContract(
+        imageSize: target.length,
+        imageSha256: _sha256Bytes(target),
+        targetId: _testTargetId,
+        token: 0xBADC0FFE,
+      ),
+      ops: computeDelta(base, target).ops,
+      windowSize: 2,
+      askTimeout: const Duration(milliseconds: 50),
+      maxRetriesPerWindow: 8,
+      maxResendRounds: 2,
+      opSpacing: Duration.zero,
+      askSettle: Duration.zero,
+    );
+    await expectLater(
+      transfer.run(),
+      throwsA(isA<OtaTransferException>()
+          .having((e) => e.message, 'message', contains('stalled'))),
     );
   });
 
@@ -445,23 +584,22 @@ void main() {
       sha256: _sha256Bytes(target),
       token: 0xBADC0FFE,
     );
-    harness.link.txHandler = (packet, _) async {
-      final payload = _otaPayload(packet);
-      if (payload != null) {
-        for (final response in harness.node.handlePacket(payload)) {
-          harness.link.simulatePush(_logRxFrame(
-            PacketBuilder.createRawCustom(response, path: const []).writeTo(),
-          ));
+    harness.link.binaryRequestHandler = (contact, reqData, tag) async {
+      if (reqData.length >= 2 && reqData[0] == reqTypeOta) {
+        final flen = reqData[1];
+        if (reqData.length < 2 + flen) return;
+        final frame = Uint8List.fromList(reqData.sublist(2, 2 + flen));
+        for (final response in harness.node.handlePacket(frame)) {
+          harness.link.simulatePush(binaryResponsePush(contact, tag, response));
         }
       }
-      return true;
     };
 
     // Drop the link after a couple of windows: the node keeps what it got.
     var sent = 0;
     final partial = OtaTransfer(
       link: harness.link,
-      route: OtaRoute.zeroHop(),
+      contact: targetContact,
       contract: OtaStartContract(
         imageSize: target.length,
         imageSha256: _sha256Bytes(target),
@@ -485,16 +623,14 @@ void main() {
     expect(interrupted, isTrue);
     // The node commits on an ask, so ask once to learn where it actually is —
     // exactly what a reconnecting client must do.
-    await harness.link.sendRawPacket(
-        PacketBuilder.createRawCustom(buildAsk(retPathLen: 0)).writeTo());
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    final staged = harness.node.nextExpected;
-    expect(staged, greaterThan(1)); // the node kept the ops it applied
+    final staged = await _askOnce(harness);
+    expect(staged, isNotNull);
+    expect(staged!, greaterThan(1)); // the node kept the ops it applied
 
     // A resumed engine must not re-arm, and must finish from where it stopped.
     final resumed = OtaTransfer(
       link: harness.link,
-      route: OtaRoute.zeroHop(),
+      contact: targetContact,
       contract: OtaStartContract(
         imageSize: target.length,
         imageSha256: _sha256Bytes(target),
@@ -518,38 +654,30 @@ void main() {
     expect(harness.node.asks, greaterThan(0));
   });
 
-  test('every op frame fits the companion frame for its route', () {
+  test('every op frame fits a stock companion frame', () {
     final image = Uint8List.fromList(
         List<int>.generate(4096, (i) => (i * 31 + 7) & 0xFF));
-    for (final pathBytes in [0, 6, 16]) {
-      final route = OtaRoute(
-        path: Uint8List(pathBytes),
-        encodedPathLen: pathBytes == 0 ? 0 : 0x40 | pathBytes,
-        retPath: Uint8List(0),
-        retPathLen: 0,
-      );
-      final transfer = OtaTransfer(
-        link: FakeDeviceLink(snr: 6.0, rssi: -70),
-        route: route,
-        contract: OtaStartContract(
-          imageSize: image.length,
-          imageSha256: Uint8List(32),
-          targetId: 1,
-          token: 0x12345678,
-        ),
-        ops: computeDelta(Uint8List(0), image).ops,
-      );
-      for (final frame in transfer.wireOps.frames) {
-        // command + priority + header + path_len + frame bytes
-        final companionFrame = 2 + 1 + 1 + pathBytes + frame.length;
-        expect(companionFrame, lessThanOrEqualTo(otaStockCompanionFrameLimit),
-            reason: 'op frame too large for a $pathBytes-byte route');
-      }
-      // The image still transfers whole: chunks cover every byte once.
-      final literalBytes = transfer.wireOps.frames
-          .where((f) => f[2] == otaOpLiteral)
-          .fold<int>(0, (sum, f) => sum + (f[5] | (f[6] << 8)));
-      expect(literalBytes, image.length);
+    final transfer = OtaTransfer(
+      link: FakeDeviceLink(snr: 6.0, rssi: -70),
+      contact: targetContact,
+      contract: OtaStartContract(
+        imageSize: image.length,
+        imageSha256: Uint8List(32),
+        targetId: 1,
+        token: 0x12345678,
+      ),
+      ops: computeDelta(Uint8List(0), image).ops,
+    );
+    for (final frame in transfer.wireOps.frames) {
+      // command + pubkey(32) + REQ_TYPE_OTA + the op frame
+      final companionFrame = 1 + 32 + 1 + frame.length;
+      expect(companionFrame, lessThanOrEqualTo(otaStockCompanionFrameLimit),
+          reason: 'op frame too large for a stock companion');
     }
+    // The image still transfers whole: chunks cover every byte once.
+    final literalBytes = transfer.wireOps.frames
+        .where((f) => f[2] == otaOpLiteral)
+        .fold<int>(0, (sum, f) => sum + (f[5] | (f[6] << 8)));
+    expect(literalBytes, image.length);
   });
 }

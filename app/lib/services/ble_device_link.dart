@@ -573,6 +573,41 @@ class BleDeviceLink
   }
 
   @override
+  Future<BinaryRequestSent> sendBinaryRequest(
+      Contact contact, List<int> reqData) async {
+    // RESP_CODE_SENT carries the tag the companion wove into the request; the
+    // reply (if any) arrives later as PUSH_CODE_BINARY_RESPONSE with the same
+    // tag on `pushes`.
+    final frame = await _request(
+      DeviceFrames.binaryRequest(contact.publicKey, reqData),
+      {respCodeSent},
+    );
+    if (frame.length < 10) {
+      throw const DeviceCommandError.malformed(
+        message: 'truncated SENT reply from device',
+      );
+    }
+    return BinaryRequestSent(
+      tag: frame[2] | (frame[3] << 8) | (frame[4] << 16) | (frame[5] << 24),
+      flooded: frame[1] == 1,
+      estTimeoutMs:
+          frame[6] | (frame[7] << 8) | (frame[8] << 16) | (frame[9] << 24),
+    );
+  }
+
+  @override
+  Future<void> setContactPath(Contact contact,
+      {required List<int> path, required int encodedPathLen}) async {
+    // CMD_ADD_UPDATE_CONTACT with the path swapped in, mirroring the TCP
+    // link's behaviour — see TcpDeviceLink.
+    final patched = contact.clone()
+      ..outPath = Uint8List.fromList(path)
+      ..outPathLen = encodedPathLen;
+    await _requestOk(
+        DeviceFrames.addUpdateContact(patched.toCompanionFrameBody()));
+  }
+
+  @override
   Future<DeviceInfo> deviceInfo() async {
     final frame =
         await _request(DeviceFrames.deviceQuery(), {respCodeDeviceInfo});

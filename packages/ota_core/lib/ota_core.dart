@@ -1,5 +1,6 @@
 /// LoRa OTA domain logic for MeshCoreOTA. Frozen against the fork firmware's
-/// `OtaUpdate.h` (wire format v1, M0): any change here is a protocol change.
+/// `OtaUpdate.h` (wire format v2: ops ride inside REQ/RESPONSE datagrams):
+/// any change here is a protocol change.
 library;
 
 export 'src/wire.dart';

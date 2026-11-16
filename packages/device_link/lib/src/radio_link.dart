@@ -3,6 +3,27 @@ import 'dart:typed_data';
 
 import 'package:mesh_protocol/mesh_protocol.dart';
 
+/// Acknowledgement that the companion queued a `CMD_SEND_BINARY_REQ`:
+/// `RESP_CODE_SENT` (`[06][flooded(1)][tag(4)][est_timeout(4)]`).
+class BinaryRequestSent {
+  const BinaryRequestSent({
+    required this.tag,
+    required this.flooded,
+    required this.estTimeoutMs,
+  });
+
+  /// The tag the companion wove into the request datagram. The node echoes it
+  /// in its response; `PUSH_CODE_BINARY_RESPONSE` carries it back verbatim.
+  final int tag;
+
+  /// Whether the request went out as a flood (the contact had no stored
+  /// DIRECT path) rather than a direct route.
+  final bool flooded;
+
+  /// The companion's estimated round-trip window.
+  final int estTimeoutMs;
+}
+
 /// Device link connection state.
 enum LinkState { disconnected, connecting, connected }
 
@@ -18,6 +39,30 @@ abstract class RadioLink {
 
   /// Transmit an arbitrary MeshCore packet on air.
   Future<void> sendRawPacket(Uint8List packet, [int priority = 0]);
+
+  /// Send a custom binary request to a contact (`CMD_SEND_BINARY_REQ`).
+  ///
+  /// The companion encrypts `tag(4) | [reqData...]` as a REQ datagram to
+  /// [contact]'s public key, routes it like any other direct message (its
+  /// stored DIRECT path, or a flood when none is known — see [BinaryRequestSent.flooded]),
+  /// and answers `RESP_CODE_SENT` once the datagram is queued on the radio.
+  /// The reply, if the node sends one, arrives later as
+  /// `PUSH_CODE_BINARY_RESPONSE` (0x8C) on [pushes].
+  ///
+  /// This is the only way an app that does not hold the companion's private
+  /// key can reach a node over an encrypted request/response exchange.
+  Future<BinaryRequestSent> sendBinaryRequest(
+      Contact contact, List<int> reqData);
+
+  /// Overwrite [contact]'s stored DIRECT path in the companion, like the
+  /// `change_path` CLI in meshcli. Binary requests have no per-packet path
+  /// field, so this is the only lever for routing them when the path the
+  /// companion saved for the contact is wrong.
+  ///
+  /// [path] is the path bytes; [encodedPathLen] the wire path_len byte
+  /// (`PathUtils.encodePathLen`). 0xFF floods.
+  Future<void> setContactPath(Contact contact,
+      {required List<int> path, required int encodedPathLen});
 
   /// Register the callback for received raw frames.
   void setRawRxListener(RawRxListener? listener);
@@ -118,6 +163,18 @@ class DeviceFrames {
 
   static Uint8List sendRawPacket(Uint8List packet, [int priority = 0]) =>
       Uint8List.fromList([cmdSendRawPacket, priority, ...packet]);
+
+  /// `CMD_SEND_BINARY_REQ`: `[pub_key(32)][req_data...]`.
+  ///
+  /// The companion prepends its own tag and encrypts the result as a REQ
+  /// datagram to [pubKey].
+  static Uint8List binaryRequest(Uint8List pubKey, List<int> reqData) =>
+      Uint8List.fromList([cmdSendBinaryReq, ...pubKey, ...reqData]);
+
+  /// `CMD_ADD_UPDATE_CONTACT` around a `Contact` record body with the path
+  /// swapped in.
+  static Uint8List addUpdateContact(Uint8List recordBody) =>
+      Uint8List.fromList([cmdAddUpdateContact, ...recordBody]);
 
   static Uint8List setRadioParams(
     RadioParams params, {

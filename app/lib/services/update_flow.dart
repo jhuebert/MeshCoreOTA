@@ -81,6 +81,14 @@ class UpdateFlow {
   }
 
   /// Run the op-stream transfer against an armed node.
+  ///
+  /// The ops ride inside binary requests (`CMD_SEND_BINARY_REQ`): the
+  /// companion encrypts them as ordinary REQ datagrams and routes them to
+  /// [target] using its stored contact record. A hand-built [route] (the
+  /// review screen's path override) has no per-packet field to ride, so it is
+  /// pushed into the companion as the contact's path first — like `change_path`
+  /// in meshcli — and takes effect for this and later sessions until the
+  /// companion's record is changed again.
   Future<TransferResult> transfer({
     required Contact target,
     required OtaStartContract contract,
@@ -93,10 +101,19 @@ class UpdateFlow {
     Duration? opSpacing,
     bool Function()? shouldCancel,
   }) async {
+    if (route.manual) {
+      try {
+        await link.setContactPath(target,
+            path: route.path, encodedPathLen: route.encodedPathLen);
+      } catch (e) {
+        throw UpdateFlowException(
+            'could not set the manual path on the companion: $e');
+      }
+    }
     final spacing = opSpacing ?? await _pacing();
     final engine = OtaTransfer(
       link: link,
-      route: route,
+      contact: target,
       contract: contract,
       ops: ops,
       windowSize: windowSize,

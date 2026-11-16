@@ -38,16 +38,15 @@ Future<void> main() async {
   stdout.writeln('stage: $stage');
   if (arm == null) throw StateError('stage refused');
 
-  await link.sendRawPacket(PacketBuilder.createRawCustom(buildStart(
+  final start = buildStart(
     size: totalSize,
     sha256: sha,
     targetId: targetIdForEnvironment(env),
     token: arm.token,
-  )).writeTo());
-  await link.sendRawPacket(PacketBuilder.createRawCustom(buildLiteralChunk(
-    seq: 1,
-    data: image.sublist(0, 128),
-  )).writeTo());
+  );
+  await link.sendBinaryRequest(target, [reqTypeOta, start.length, ...start]);
+  final chunk = buildLiteralChunk(seq: 1, data: image.sublist(0, 128));
+  await link.sendBinaryRequest(target, [reqTypeOta, chunk.length, ...chunk]);
   await Future<void>.delayed(const Duration(seconds: 1));
   stdout.writeln(
       'staged before reboot: ${await client.remoteCli(target, 'ota status')}');

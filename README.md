@@ -4,21 +4,27 @@ Over-the-air firmware updates for **MeshCore repeaters** — from your phone,
 over LoRa, with no laptop at the tower and no mesh flood traffic.
 
 The app talks to a stock MeshCore companion device over BLE (Nordic UART
-Service) or TCP, and uses it purely as a raw radio. It sends DIRECT-routed
-`PAYLOAD_TYPE_RAW_CUSTOM` packets carrying a small op protocol to the
-repeater: the app picks the board, the version and the transfer parameters;
-the repeater only applies ops and verifies SHA-256. Everything else is
-app-side.
+Service) or TCP, and uses it purely as a radio. The OTA ops ride inside
+ordinary encrypted REQ/RESPONSE datagrams: each op goes out as a
+`CMD_SEND_BINARY_REQ` to the companion, which encrypts it and routes it to the
+repeater like any other request. Intermediate nodes only forward standard
+mesh traffic, so they do not need any custom firmware — only the target
+repeater runs the fork. The app picks the board, the version and the transfer
+parameters; the repeater only applies ops and verifies SHA-256. Everything
+else is app-side.
 
-**Status: pre-bench.** The fork firmware implementing the repeater side lives
-in `lora-ota` at [jhuebert/MeshCore](https://github.com/jhuebert/MeshCore);
-the protocol is frozen but has **not yet been exercised on hardware**. The
-Android UI has not been run on a phone. Treat every path as unproven until
-then — the whole flow is designed so mistakes cannot brick a node (see
-"Safety model" below), but nothing firmware-level here has flown yet.
+**Status: benched and working, pre-release.** The fork firmware implementing
+the repeater side lives in `lora-ota` at
+[jhuebert/MeshCore](https://github.com/jhuebert/MeshCore); the wire protocol
+is v2 (ops ride inside REQ/RESPONSE datagrams). The full flow has been
+exercised on hardware — stage, SHA gate, apply, automatic rollback — but treat
+every path as field-unproven until an update has flown to a node you did not
+assemble yourself. The whole flow is designed so mistakes cannot brick a node
+(see "Safety model" below).
 
-Android only. iOS is not supported and is not planned until there is hardware
-to test on. Desktop is not supported.
+Android is the release target. iOS is not supported and is not planned until
+there is hardware to test on. A Linux desktop build exists as a testing
+target (TCP companions only).
 
 ## What it does
 
@@ -33,8 +39,9 @@ to test on. Desktop is not supported.
      "field pack" (`.zip`) exported earlier. Works with no bars.
 5. Review: board, version, delta-vs-full transfer estimate with an airtime
    estimate at the companion's current radio config.
-6. Transfer: windowed DIRECT packets with `OP_ASK`/`OP_REPORT` recovery —
-   the node re-asks for exactly what it missed. No flood, ever.
+6. Transfer: windowed REQ/RESPONSE datagrams with `OP_ASK`/`OP_REPORT`
+   recovery — the node re-asks for exactly what it missed. Ops ride ordinary
+   mesh requests, so intermediate nodes forward them without custom firmware.
 7. Commit: `ota apply` flips the boot partition and reboots. The app re-logs
    in and checks `version`. A bad image flips itself back automatically in
    the fork firmware (boot health check).
@@ -55,9 +62,12 @@ node keeps the old image.
 - **New image boots, fails health check → flips back.** The fork firmware
   re-verifies LoRa init + one packet TX on the fresh boot; failure flips the
   boot partition back to the previous slot and reboots. No human intervention.
-- **DIRECT packets only.** No flood, no stray RF on the mesh.
+- **Ops travel as ordinary encrypted requests.** The transfer rides the same
+  REQ/RESPONSE path as a status request: direct along the companion's saved
+  route when it has one, flooded (like any ordinary request) when it does not.
+  No special payload type crosses the mesh, and relays need no custom code.
 - **The companion is stock.** No companion-firmware change; it is used exactly
-  as it ships (its raw-TX path, used exactly like meshcore-open uses it).
+  as it ships (its binary-request path, the same one status requests use).
 
 See also `SECURITY.md` for the threat model and the fork plan documents
 (`plans/2026-11-15-lora-ota-master-plan.md` in the MeshCore fork) for the

@@ -90,6 +90,79 @@ void main() {
     expect(frame, [cmdSetPathHashMode, 0, 2]);
   });
 
+  test('DeviceFrames.binaryRequest wraps pubkey and data', () {
+    final pub = Uint8List.fromList(List<int>.generate(32, (i) => i));
+    final frame = DeviceFrames.binaryRequest(pub, const [0x08, 0xAA, 0xBB]);
+    expect(frame[0], cmdSendBinaryReq);
+    expect(frame.sublist(1, 33), pub);
+    expect(frame.sublist(33), [0x08, 0xAA, 0xBB]);
+    expect(DeviceFrames.binaryRequest(pub, const []).length, 33);
+  });
+
+  test('DeviceFrames.addUpdateContact wraps the record body', () {
+    final body = Uint8List.fromList([1, 2, 3]);
+    final frame = DeviceFrames.addUpdateContact(body);
+    expect(frame, [cmdAddUpdateContact, 1, 2, 3]);
+  });
+
+  test('FakeDeviceLink binary request: handler sees data and returns a tag',
+      () async {
+    final link = FakeDeviceLink();
+    await link.connect();
+    final contact = Contact(
+      publicKey: Uint8List.fromList(List<int>.generate(32, (i) => i + 1)),
+      name: 'tower-1',
+      advType: advTypeRepeater,
+    );
+    final seen = <({List<int> data, int tag})>[];
+    link.binaryRequestHandler = (c, data, tag) async {
+      seen.add((data: data, tag: tag));
+    };
+    final sent = await link.sendBinaryRequest(contact, const [0x08, 0x01]);
+    expect(seen, hasLength(1));
+    expect(seen.single.data, [0x08, 0x01]);
+    expect(seen.single.tag, isNonZero);
+    expect(sent.tag, seen.single.tag);
+    expect(link.calls.where((c) => c == 'sendBinaryRequest'), hasLength(1));
+  });
+
+  test('FakeDeviceLink binary request: loss is invisible at the command layer',
+      () async {
+    final link = FakeDeviceLink();
+    await link.connect();
+    final contact = Contact(
+      publicKey: Uint8List.fromList(List<int>.generate(32, (i) => i + 1)),
+      name: 'tower-1',
+      advType: advTypeRepeater,
+    );
+    link.dropEveryNthTx = 1; // every send is lost
+    var handlerCalls = 0;
+    link.binaryRequestHandler = (c, data, tag) async {
+      handlerCalls += 1;
+    };
+    final sent = await link.sendBinaryRequest(contact, const [0x08]);
+    expect(sent.tag, isNonZero); // the companion still queues the datagram
+    expect(handlerCalls, 0); // …but the node never sees it
+    expect(link.calls, contains('sendBinaryRequest-dropped'));
+  });
+
+  test('FakeDeviceLink records setContactPath writes', () async {
+    final link = FakeDeviceLink();
+    await link.connect();
+    final contact = Contact(
+      publicKey: Uint8List.fromList(List<int>.generate(32, (i) => i + 1)),
+      name: 'tower-1',
+      advType: advTypeRepeater,
+    );
+    await link.setContactPath(contact,
+        path: const [0xC0, 0xFF], encodedPathLen: 0x41);
+    expect(link.contactPathWrites, hasLength(1));
+    final write = link.contactPathWrites.single;
+    expect(write.path, [0xC0, 0xFF]);
+    expect(write.encodedPathLen, 0x41);
+    expect(contact.outPath, isEmpty); // the passed model is not rewritten
+  });
+
   test('FakeDeviceLink records tuning, path-hash mode, and CLI commands',
       () async {
     final link = FakeDeviceLink();

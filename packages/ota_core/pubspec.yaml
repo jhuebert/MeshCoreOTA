@@ -3,7 +3,8 @@ description: >-
   LoRa OTA domain logic for MeshCoreOTA: the repeater's frozen wire format
   (op frames, CRCs), the frozen `ota status` CLI contract parsing, the delta
   engine (rolling-hash op stream), and the windowed transfer engine with
-  OP_ASK/OP_REPORT recovery. Pure Dart, no Flutter imports.
+  OP_ASK/OP_REPORT recovery over REQ/RESPONSE (binary requests). Pure Dart,
+  no Flutter imports.
 version: 0.1.0
 publish_to: none
 

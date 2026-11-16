@@ -1,6 +1,6 @@
-// Wire probe: arm staging over the CLI, send one raw OP_START, and dump every
-// raw RX push the companion reports, so a silent repeater can be told apart
-// from a repeater whose replies we simply fail to parse.
+// Wire probe: arm staging over the CLI, send one OP_START inside a binary
+// request, and dump every RX push the companion reports, so a silent repeater
+// can be told apart from a repeater whose replies we simply fail to parse.
 //
 //   dart run bin/probe.dart --host 192.168.1.165 --password password \
 //     --contact XiaoS3 --env Xiao_S3_WIO_repeater_observer \
@@ -80,7 +80,7 @@ Future<void> main(List<String> argv) async {
   print(
       'sending OP_START ${start.length} B, target=${targetIdForEnvironment(env)} '
       '(0x${targetIdForEnvironment(env).toRadixString(16)})');
-  await link.sendRawPacket(PacketBuilder.createRawCustom(start).writeTo());
+  await link.sendBinaryRequest(target, [reqTypeOta, start.length, ...start]);
 
   await Future<void>.delayed(const Duration(seconds: 6));
   final status = await client.remoteCli(target, 'ota status');

@@ -6,6 +6,12 @@ import 'package:mesh_protocol/mesh_protocol.dart';
 import 'package:test/test.dart';
 
 void main() {
+  Contact viewContact() => Contact(
+        publicKey: Uint8List.fromList(List<int>.generate(32, (i) => i + 1)),
+        name: 'tower-1',
+        advType: advTypeRepeater,
+      );
+
   late FakeDeviceLink base;
   late SharedRadioHub hub;
 
@@ -182,6 +188,9 @@ void main() {
     await a.setPathHashMode(2);
     await a.runCliCommand('ver');
     await a.getAllowedRepeatFreq();
+    await a.sendBinaryRequest(viewContact(), const [0x08]);
+    await a.setContactPath(viewContact(),
+        path: const [0xC0, 0xFF], encodedPathLen: 0x41);
 
     expect(a.state, isA<Stream<LinkState>>());
     expect(a.currentState, base.currentState);
@@ -190,6 +199,9 @@ void main() {
     expect(base.rebootRequests, 1);
     expect(base.shutdownRequests, 1);
     expect(base.cliCommands, containsAll(['ver', 'poweroff']));
+    expect(base.calls, contains('sendBinaryRequest'));
+    expect(base.calls, contains('setContactPath'));
+    expect(base.contactPathWrites, hasLength(1));
   });
 
   test('a failed shared transmission rejects only that caller', () async {
