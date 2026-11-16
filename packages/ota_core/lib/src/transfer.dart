@@ -254,6 +254,7 @@ class OtaTransfer {
     this.askTimeout = const Duration(seconds: 10),
     this.maxRetriesPerWindow = 12,
     this.opSpacing = const Duration(milliseconds: 25),
+    this.resumeFrom = 1,
     this.askSettle = const Duration(milliseconds: 250),
     this.maxReasks = 1,
     this.maxResendRounds = 12,
@@ -262,7 +263,22 @@ class OtaTransfer {
   })  : assert(windowSize >= 1),
         wireOps = wireOpsFor(ops,
             literalChunk: otaLiteralChunkForCompanion(
-                pathBytes: route.path.length, frameLimit: companionFrameLimit));
+                pathBytes: route.path.length,
+                frameLimit: companionFrameLimit)) {
+    if (resumeFrom > 1) {
+      // Include the already-sent prefix in the cumulative transfer metrics.
+      // The session is still the same update: those bytes went out before the
+      // link dropped and must count toward amplification.
+      packetsSent = resumeFrom;
+      final prefixEnd = (resumeFrom - 1).clamp(0, wireOps.frames.length);
+      for (var i = 0; i < prefixEnd; i++) {
+        final frame = wireOps.frames[i];
+        if (frame.length >= 7 && frame[2] == otaOpLiteral) {
+          literalBytesSent += frame[5] | (frame[6] << 8);
+        }
+      }
+    }
+  }
 
   final RadioLink link;
   final OtaRoute route;
@@ -291,6 +307,14 @@ class OtaTransfer {
   /// Re-broadcast rounds per window before the transfer gives up. Each round
   /// re-sends only what the node reports missing.
   final int maxResendRounds;
+
+  /// First op sequence to send, when resuming a session the node already has.
+  ///
+  /// The node reports `next_expected` and applies ops strictly in order, so a
+  /// transfer interrupted by a lost link (a phone's BLE drop, a TCP reset)
+  /// resumes by continuing from that seq — no re-arming, no re-sending what
+  /// already landed. 1 means "start from the beginning".
+  final int resumeFrom;
 
   /// How long to let the tail of a window finish transmitting and committing
   /// before the first ask. Asking too early is not an error — the node just
@@ -338,17 +362,25 @@ class OtaTransfer {
       ..start();
     _reportSub = link.pushes.listen(_onPush);
     try {
+      if (resumeFrom > 1) {
+        // Resuming: the node keeps its staged bytes and its arm is consumed.
+        _emitProgress(
+          phase: TransferPhase.sending,
+          opsApplied: resumeFrom - 1,
+          literalBytes: literalBytesSent,
+        );
+      }
       final start = buildStart(
         size: contract.imageSize,
         sha256: contract.imageSha256,
         targetId: contract.targetId,
         token: contract.token,
       );
-      await _sendOp(start);
+      if (resumeFrom <= 1) await _sendOp(start);
 
       // Send the stream in windows; after each window, ask for the report and
       // re-send from next_expected on any gap.
-      var cursor = 0;
+      var cursor = (resumeFrom - 1).clamp(0, wireOps.frames.length);
       while (cursor < wireOps.frames.length) {
         _throwIfCancelled();
         final windowEnd = (cursor + windowSize).clamp(0, wireOps.frames.length);

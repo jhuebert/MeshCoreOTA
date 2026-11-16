@@ -13,6 +13,19 @@ import 'package:ota_core/ota_core.dart';
 /// whole OTA path: login → probe → stage → wire transfer → ready → apply →
 /// post-reboot verify. Stateful like the real node, including SHA-gated
 /// apply.
+class _RebootReplyLostClient extends CompanionClient {
+  _RebootReplyLostClient(super.link);
+
+  @override
+  Future<String> remoteCli(Contact target, String command,
+      {Duration timeout = const Duration(seconds: 45)}) async {
+    if (command == 'ota apply' || command == 'ota rollback') {
+      throw CompanionTimeoutException('reboot raced the CLI reply');
+    }
+    return super.remoteCli(target, command, timeout: timeout);
+  }
+}
+
 class _FakeCompanion {
   _FakeCompanion() {
     _running = _pattern(0x11, 8192);
@@ -328,6 +341,13 @@ void main() {
     fake = _FakeCompanion();
     await fake.boot();
     flow = UpdateFlow(client: CompanionClient(fake.link), link: fake.link);
+  });
+
+  test('apply and rollback tolerate a lost reply from the reboot', () async {
+    final rebootClient = _RebootReplyLostClient(fake.link);
+    final rebootFlow = UpdateFlow(client: rebootClient, link: fake.link);
+    await expectLater(rebootFlow.apply(fake.target), completes);
+    await expectLater(rebootFlow.rollback(fake.target), completes);
   });
 
   test('probe logs in and parses ota status', () async {

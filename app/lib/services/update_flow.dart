@@ -162,7 +162,18 @@ class UpdateFlow {
   /// `ota apply` — boot the verified image. The node reboots; the app link
   /// to the companion is unaffected.
   Future<void> apply(Contact target) async {
-    final reply = await _cli(target, 'ota apply');
+    String reply;
+    try {
+      reply = await _cli(target, 'ota apply');
+    } catch (_) {
+      // A successful apply reboots the repeater immediately. On a busy mesh,
+      // the reboot can race the encrypted CLI reply: hardware testing observed
+      // the node running the new image even though this reply timed out. Treat
+      // transport loss as an unknown outcome; applyAndVerify() decides by
+      // re-logging in and checking the version. A textual Err reply remains a
+      // definite refusal.
+      return;
+    }
     if (!isApplyReply(reply)) {
       throw UpdateFlowException('apply refused', deviceReply: reply);
     }
@@ -173,7 +184,14 @@ class UpdateFlow {
 
   /// Roll back to the previous partition. The node reboots.
   Future<void> rollback(Contact target) async {
-    final reply = await _cli(target, 'ota rollback');
+    String reply;
+    try {
+      reply = await _cli(target, 'ota rollback');
+    } catch (_) {
+      // The rollback command reboots the node too; the reply can be lost for
+      // the same reason as `ota apply`. The caller verifies that it came back.
+      return;
+    }
     if (!isRollbackReply(reply)) {
       throw UpdateFlowException('rollback refused', deviceReply: reply);
     }

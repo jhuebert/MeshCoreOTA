@@ -434,6 +434,90 @@ void main() {
     expect(result.uniqueLiteralBytes, greaterThan(0));
   });
 
+  test('a dropped link resumes from the node next_expected', () async {
+    final harness = _Harness();
+    final base = Uint8List.fromList(
+        List<int>.generate(8192, (i) => (i * 23 + 9) & 0xFF));
+    final target = _mutate(base, Random(0x5EED));
+    harness.wire(base: base, target: target);
+    harness.node.arm(
+      size: target.length,
+      sha256: _sha256Bytes(target),
+      token: 0xBADC0FFE,
+    );
+    harness.link.txHandler = (packet, _) async {
+      final payload = _otaPayload(packet);
+      if (payload != null) {
+        for (final response in harness.node.handlePacket(payload)) {
+          harness.link.simulatePush(_logRxFrame(
+            PacketBuilder.createRawCustom(response, path: const []).writeTo(),
+          ));
+        }
+      }
+      return true;
+    };
+
+    // Drop the link after a couple of windows: the node keeps what it got.
+    var sent = 0;
+    final partial = OtaTransfer(
+      link: harness.link,
+      route: OtaRoute.zeroHop(),
+      contract: OtaStartContract(
+        imageSize: target.length,
+        imageSha256: _sha256Bytes(target),
+        targetId: _testTargetId,
+        token: 0xBADC0FFE,
+      ),
+      ops: computeDelta(base, target).ops,
+      windowSize: 2,
+      askTimeout: const Duration(milliseconds: 200),
+      maxRetriesPerWindow: 8,
+      opSpacing: Duration.zero,
+      askSettle: Duration.zero,
+      shouldCancel: () => ++sent > 3,
+    );
+    var interrupted = false;
+    try {
+      await partial.run();
+    } on OtaTransferException {
+      interrupted = true;
+    }
+    expect(interrupted, isTrue);
+    // The node commits on an ask, so ask once to learn where it actually is —
+    // exactly what a reconnecting client must do.
+    await harness.link.sendRawPacket(
+        PacketBuilder.createRawCustom(buildAsk(retPathLen: 0)).writeTo());
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final staged = harness.node.nextExpected;
+    expect(staged, greaterThan(1)); // the node kept the ops it applied
+
+    // A resumed engine must not re-arm, and must finish from where it stopped.
+    final resumed = OtaTransfer(
+      link: harness.link,
+      route: OtaRoute.zeroHop(),
+      contract: OtaStartContract(
+        imageSize: target.length,
+        imageSha256: _sha256Bytes(target),
+        targetId: _testTargetId,
+        token: 0xBADC0FFE,
+      ),
+      ops: computeDelta(base, target).ops,
+      windowSize: 2,
+      askTimeout: const Duration(milliseconds: 200),
+      maxRetriesPerWindow: 32,
+      opSpacing: Duration.zero,
+      askSettle: Duration.zero,
+      resumeFrom: staged,
+    );
+    final result = await resumed.run();
+    expect(harness.node.stagedImage, target);
+    expect(result.uniqueOps, greaterThan(0));
+    expect(result.amplification, 1.0);
+    expect(result.opAmplification, 1.0);
+    // The arm was consumed by the first attempt: nothing re-armed it.
+    expect(harness.node.asks, greaterThan(0));
+  });
+
   test('every op frame fits the companion frame for its route', () {
     final image = Uint8List.fromList(
         List<int>.generate(4096, (i) => (i * 31 + 7) & 0xFF));

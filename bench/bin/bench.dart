@@ -189,6 +189,30 @@ class Bench {
 
   OtaRoute get route => OtaRoute.zeroHop();
 
+  /// Ask the node for its `next_expected` (an OP_REPORT). Null on no answer.
+  Future<int?> nextExpected() async {
+    final done = Completer<int?>();
+    late StreamSubscription<Uint8List> sub;
+    sub = link.pushes.listen((frame) {
+      if (frame.isEmpty || frame[0] != pushCodeLogRxData) return;
+      final raw = RawRxFrame.parse(frame);
+      final pkt = raw == null ? null : Packet.readFrom(raw.raw);
+      if (pkt == null || pkt.payloadType != payloadTypeRawCustom) return;
+      final report = parseReport(pkt.payload);
+      if (report != null && !done.isCompleted)
+        done.complete(report.nextExpected);
+    });
+    try {
+      await link.sendRawPacket(
+          PacketBuilder.createRawCustom(buildAsk(retPathLen: 0)).writeTo());
+      return await done.future.timeout(const Duration(seconds: 15));
+    } catch (_) {
+      return null;
+    } finally {
+      await sub.cancel();
+    }
+  }
+
   /// Re-open the TCP link after a drop and re-establish admin access.
   Future<void> reconnect() async {
     link = TcpDeviceLink(host: host, port: port);
@@ -200,6 +224,11 @@ class Bench {
   }
 
   /// Run one stage+transfer and return the measured numbers.
+  ///
+  /// A long transfer outlives the companion's TCP session, so a dropped link is
+  /// not a failure: reconnect, ask the node where it got to, and resume from
+  /// there. The node keeps its staged bytes and its arm is already consumed, so
+  /// nothing is re-armed and nothing already written is sent again.
   Future<({TransferResult result, DeltaResult delta, OtaStageReply arm})>
       stageAndTransfer(
     Uint8List image, {
@@ -225,33 +254,67 @@ class Bench {
     info('  ops=${delta.opCount} literal=${delta.literalBytes}B '
         'copy=${delta.copyBytes}B');
 
-    final engine = OtaTransfer(
-      link: link,
-      route: route,
-      contract: OtaStartContract(
-        imageSize: image.length,
-        imageSha256: _sha256(image),
-        targetId: targetIdForEnvironment(env),
-        token: arm.token,
-      ),
-      ops: delta.ops,
-      windowSize: windowSize,
-      askTimeout: askTimeout ?? const Duration(seconds: 10),
-      maxRetriesPerWindow: maxRetries ?? 12,
-      opSpacing: spacing,
-      shouldCancel: shouldCancel,
+    final contract = OtaStartContract(
+      imageSize: image.length,
+      imageSha256: _sha256(image),
+      targetId: targetIdForEnvironment(env),
+      token: arm.token,
     );
-    late TransferResult result;
+    var packets = 0;
+    var retries = 0;
+
     final t1 = DateTime.now();
-    result = await engine.run(onProgress: (p) {
-      if (p.opsApplied != null && p.opsApplied! % 200 == 0) {
-        stdout.write('\r  progress ${p.opsApplied}/${p.opsTotal} ops    ');
+    var resumeFrom = 1;
+    TransferResult? result;
+    for (var attempt = 0; result == null; attempt++) {
+      if (attempt > 0) {
+        if (attempt > 6) throw StateError('link kept dropping; gave up');
+        info('  ! link dropped mid-transfer — reconnecting and resuming');
+        try {
+          await link.disconnect();
+        } catch (_) {}
+        await reconnect();
+        final next = await nextExpected();
+        if (next == null) {
+          info('  ! node did not report its position; aborting the session');
+          await cli('ota abort');
+          throw StateError('node lost its session');
+        }
+        info('  resuming from op $next (${(next - 1)} of '
+            '${delta.opCount} ops already written)');
+        resumeFrom = next;
       }
-    });
+      final engine = OtaTransfer(
+        link: link,
+        route: route,
+        contract: contract,
+        ops: delta.ops,
+        windowSize: windowSize,
+        askTimeout: askTimeout ?? const Duration(seconds: 10),
+        maxRetriesPerWindow: maxRetries ?? 12,
+        opSpacing: spacing,
+        resumeFrom: resumeFrom,
+        shouldCancel: shouldCancel,
+      );
+      try {
+        result = await engine.run(onProgress: (p) {
+          if (p.opsApplied != null && p.opsApplied! % 200 == 0) {
+            stdout.write('\r  progress ${p.opsApplied}/${p.opsTotal} ops    ');
+          }
+        });
+      } on OtaTransferException catch (e) {
+        // A cancelled transfer must propagate; a link/ack failure is resumable.
+        if (shouldCancel?.call() ?? false) rethrow;
+        info('  ! transfer attempt failed: ${e.message}');
+        if (attempt > 6) rethrow;
+      }
+      packets += engine.packetsSent;
+      retries += engine.retries;
+    }
     stdout.writeln('');
     final wall = DateTime.now().difference(t1);
-    info('  transfer: ${_secs(wall)} wall, ${result.packetsSent} packets, '
-        '${result.retries} retries, engine ${_secs(result.elapsed)}');
+    info('  transfer: ${_secs(wall)} wall, $packets packets, '
+        '$retries retries, engine ${_secs(result.elapsed)}');
     info('  amplification: ${result.amplificationLabel} literal bytes '
         '(${result.literalBytesSent}B sent for ${result.uniqueLiteralBytes}B '
         'of image), ops ${result.opAmplification.toStringAsFixed(2)}x '
@@ -328,7 +391,7 @@ Future<void> scenarioUpdate(Bench b, Uint8List image,
       '${run.delta.literalBytes}B literal, ${run.delta.copyBytes}B reused');
 }
 
-Future<void> scenarioReject(Bench b, Uint8List image) async {
+Future<void> scenarioReject(Bench b, Uint8List image, {Uint8List? base}) async {
   info('\n== reject: failure modes ==');
 
   // 1) arm, then START with a wrong token → node must refuse the arm.
@@ -361,7 +424,11 @@ Future<void> scenarioReject(Bench b, Uint8List image) async {
   for (var i = 0; i < 64 && i < corrupt.length; i++) {
     corrupt[corrupt.length - 1 - i] ^= 0xFF;
   }
-  final ops = computeDelta(Uint8List(0), image).ops;
+  // A delta base keeps the tamper test to a few hundred packets; the SHA gate
+  // covers the whole staged image however the bytes got there.
+  final ops = base == null
+      ? computeDelta(Uint8List(0), image).ops
+      : computeDelta(base, image).ops;
   // Send real ops, but corrupt the literal bytes on the wire.
   final tampered = _tamperLiterals(ops, corrupt);
   final tamperEngine = OtaTransfer(
@@ -407,7 +474,7 @@ Future<void> scenarioReject(Bench b, Uint8List image) async {
         targetId: targetIdForEnvironment(b.env),
         token: arm2.token,
       ),
-      ops: computeDelta(Uint8List(0), image).ops,
+      ops: ops,
       windowSize: b.windowSize,
       opSpacing: b.spacing,
       shouldCancel: () => ++seen > 3,
@@ -471,6 +538,172 @@ Future<void> scenarioMeasure(Bench b, Uint8List image,
   info('  MEASURE $label: ${_secs(total)} wall, '
       '${run.delta.literalBytes}B literal, ${run.result.packetsSent} packets, '
       '${run.result.retries} retries, ${kbps.toStringAsFixed(2)} KiB/s literal');
+}
+
+/// A correctly-formed OP_START aimed at another board must be refused (err=1),
+/// and the pending arm must survive so the right node can still use it.
+Future<void> scenarioWrongTarget(Bench b, Uint8List image) async {
+  info('\n== wrong target id ==');
+  final shaHex = _hex(_sha256(image));
+  final armReply = await b.cli('ota stage ${image.length} $shaHex wrongtarget');
+  final arm = parseStageReply(armReply);
+  check('arm for wrong-target test', arm != null, armReply);
+  if (arm == null) return;
+  final otherId = targetIdForEnvironment('Some_Other_Board_env');
+  await b.link.sendRawPacket(PacketBuilder.createRawCustom(buildStart(
+    size: image.length,
+    sha256: _sha256(image),
+    targetId: otherId,
+    token: arm.token,
+  )).writeTo());
+  await Future<void>.delayed(const Duration(seconds: 3));
+  var st = await b.status();
+  check(
+      'wrong target refused with err=1',
+      st?.state == OtaPhase.idle && st?.err == otaErrTarget,
+      'state=${st?.state.name} err=${st?.err}');
+  // The arm is single-use but not consumed by a stranger's START.
+  await b.link.sendRawPacket(PacketBuilder.createRawCustom(buildStart(
+    size: image.length,
+    sha256: _sha256(image),
+    targetId: targetIdForEnvironment(b.env),
+    token: arm.token,
+  )).writeTo());
+  await Future<void>.delayed(const Duration(seconds: 3));
+  st = await b.status();
+  check('the real target is still accepted afterwards',
+      st?.state == OtaPhase.staging, 'state=${st?.state.name} err=${st?.err}');
+  await b.cli('ota abort');
+}
+
+/// An arm older than OTA_PENDING_TTL_MS must be refused (err=7).
+Future<void> scenarioExpiredArm(Bench b, Uint8List image) async {
+  info('\n== expired arm (this waits out the 120 s TTL) ==');
+  final shaHex = _hex(_sha256(image));
+  final armReply = await b.cli('ota stage ${image.length} $shaHex expired');
+  final arm = parseStageReply(armReply);
+  check('arm for expiry test', arm != null, armReply);
+  if (arm == null) return;
+  info('  waiting 125 s for the arm to expire');
+  await Future<void>.delayed(const Duration(seconds: 125));
+  await b.link.sendRawPacket(PacketBuilder.createRawCustom(buildStart(
+    size: image.length,
+    sha256: _sha256(image),
+    targetId: targetIdForEnvironment(b.env),
+    token: arm.token,
+  )).writeTo());
+  await Future<void>.delayed(const Duration(seconds: 3));
+  final st = await b.status();
+  check(
+      'expired arm refused with err=7',
+      st?.state == OtaPhase.idle && st?.err == otaErrToken,
+      'state=${st?.state.name} err=${st?.err}');
+  await b.cli('ota abort');
+}
+
+/// Cancel a transfer mid-flight, then confirm the node discards the slot and
+/// accepts a fresh update afterwards.
+Future<void> scenarioCancel(Bench b, Uint8List image, {Uint8List? base}) async {
+  info('\n== cancel mid-transfer ==');
+  final ver = 'cancel-${_hex(_sha256(image)).substring(0, 6)}';
+  final stageReply =
+      await b.cli('ota stage ${image.length} ${_hex(_sha256(image))} $ver');
+  final arm = parseStageReply(stageReply);
+  check('arm for cancel test', arm != null, stageReply);
+  if (arm == null) return;
+  var ops = 0;
+  final engine = OtaTransfer(
+    link: b.link,
+    route: b.route,
+    contract: OtaStartContract(
+      imageSize: image.length,
+      imageSha256: _sha256(image),
+      targetId: targetIdForEnvironment(b.env),
+      token: arm.token,
+    ),
+    ops: base == null
+        ? computeDelta(Uint8List(0), image).ops
+        : computeDelta(base, image).ops,
+    windowSize: b.windowSize,
+    opSpacing: b.spacing,
+    shouldCancel: () => ops++ > 12, // a few windows in
+  );
+  var cancelled = false;
+  try {
+    await engine.run();
+  } on OtaTransferException {
+    cancelled = true;
+  }
+  check('transfer stops on cancel', cancelled);
+  final abortReply = await b.cli('ota abort');
+  info('  abort: $abortReply');
+  var st = await b.status();
+  check(
+      'node is idle after abort',
+      st?.state == OtaPhase.idle && st?.offset == 0,
+      'state=${st?.state.name} off=${st?.offset}');
+  // The slot was half-written: a fresh update must still work.
+  final again =
+      await b.cli('ota stage ${image.length} ${_hex(_sha256(image))} re$ver');
+  check('a fresh arm is accepted after a cancelled transfer',
+      parseStageReply(again) != null, again);
+  await b.cli('ota abort');
+  st = await b.status();
+  check('node back to idle', st?.state == OtaPhase.idle,
+      'state=${st?.state.name}');
+}
+
+/// Resume an already-staged full image after the driver process or transport
+/// was interrupted. The OTA session is node-side and survives the companion
+/// disconnect; ask its watermark and continue from there.
+Future<void> scenarioResumeFull(Bench b, Uint8List image) async {
+  info('\n== resume existing full-image stage ==');
+  final st = await b.status();
+  if (st == null || st.state != OtaPhase.staging || st.size != image.length) {
+    throw StateError('no matching staged image to resume: $st');
+  }
+  final next = await b.nextExpected();
+  if (next == null || next < 1) {
+    throw StateError('node did not report next_expected');
+  }
+  info(
+      '  resuming at op $next, node has written ${st.offset}/${st.size} bytes');
+  final delta = computeDelta(Uint8List(0), image);
+  final engine = OtaTransfer(
+    link: b.link,
+    route: b.route,
+    contract: OtaStartContract(
+      imageSize: image.length,
+      imageSha256: _sha256(image),
+      targetId: targetIdForEnvironment(b.env),
+      token: 0, // unused when resumeFrom > 1; OP_START is not re-sent
+    ),
+    ops: delta.ops,
+    windowSize: b.windowSize,
+    opSpacing: b.spacing,
+    resumeFrom: next,
+  );
+  final t = DateTime.now();
+  final result = await engine.run(onProgress: (p) {
+    if (p.opsApplied != null && p.opsApplied! % 200 == 0) {
+      stdout.write('\\r  progress ${p.opsApplied}/${p.opsTotal} ops    ');
+    }
+  });
+  stdout.writeln('');
+  info('  resumed transfer ${_secs(DateTime.now().difference(t))}, '
+      '${result.packetsSent} packets, amplification ${result.amplificationLabel}');
+  final ready = await b.status();
+  check(
+      'resumed full image reached ready',
+      ready?.state == OtaPhase.ready && ready?.err == 0,
+      'state=${ready?.state.name} off=${ready?.offset}/${ready?.size} err=${ready?.err}');
+  if (ready?.state != OtaPhase.ready) return;
+  final apply = await b.cli('ota apply');
+  check('resumed image apply accepted', isApplyReply(apply), apply);
+  await b.waitRebootAndLogin();
+  final version = await b.cli('version');
+  info('  running after apply: $version');
+  check('node boots after full-image apply', version.isNotEmpty, version);
 }
 
 Future<void> scenarioRollback(Bench b) async {
@@ -540,11 +773,23 @@ Future<void> main(List<String> argv) async {
             await scenarioUpdate(b, image, base: base, label: 'delta');
           case 'reject':
             if (image == null) throw StateError('reject needs --image');
-            await scenarioReject(b, image);
+            await scenarioReject(b, image, base: base);
           case 'measure':
             if (image == null) throw StateError('measure needs --image');
             await scenarioMeasure(b, image,
                 base: base, label: args['label'] ?? 'image');
+          case 'wrongtarget':
+            if (image == null) throw StateError('wrongtarget needs --image');
+            await scenarioWrongTarget(b, image);
+          case 'expiry':
+            if (image == null) throw StateError('expiry needs --image');
+            await scenarioExpiredArm(b, image);
+          case 'cancel':
+            if (image == null) throw StateError('cancel needs --image');
+            await scenarioCancel(b, image, base: base);
+          case 'resume':
+            if (image == null) throw StateError('resume needs --image');
+            await scenarioResumeFull(b, image);
           case 'rollback':
             await scenarioRollback(b);
           case '':

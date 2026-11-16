@@ -23,6 +23,17 @@ dart run bin/bench.dart ... --image big.bin --base running.bin --scenario measur
 # failure modes: bad token, corrupted literal stream, mid-transfer abort
 dart run bin/bench.dart ... --image new.bin --scenario reject
 
+# resume a full-image stage after the bench process was interrupted
+# --image must be the exact image already staged on the node
+dart run bin/bench.dart ... --image staged.bin --scenario resume
+
+# wrong target and expired arm (expiry waits 125 s)
+dart run bin/bench.dart ... --image new.bin --scenario wrongtarget
+dart run bin/bench.dart ... --image new.bin --scenario expiry
+
+# cancel a partial transfer, abort, and confirm a fresh arm works
+dart run bin/bench.dart ... --image new.bin --scenario cancel
+
 # partition flip back after an applied update
 dart run bin/bench.dart ... --scenario rollback
 ```
