@@ -72,7 +72,8 @@ void main() {
     });
 
     test('buildAsk carries no body', () {
-      // v2: the OP_REPORT comes back through the stock REQ reply routing.
+      // The OP_REPORT comes back through the stock REQ reply routing, not
+      // inside the ask.
       final ask = buildAsk();
       final unwrapped = unwrapFrame(ask)!;
       expect(unwrapped.length, 3 + 0);

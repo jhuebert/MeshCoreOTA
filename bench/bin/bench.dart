@@ -196,9 +196,6 @@ class Bench {
     throw StateError('node did not come back within ${timeout.inSeconds}s');
   }
 
-  /// Push the `--path` override into the companion's contact record, like
-  /// meshcli's `change_path`. Binary requests carry no per-packet path, so the
-  /// companion's stored record is the only handle for splitting a route.
   /// Delay between queued writes, derived from the radio's airtime when
   /// `--spacing` was not given (mirrors the app's pacing rule).
   Future<Duration> spacingFor() async {
@@ -218,6 +215,9 @@ class Bench {
         : const Duration(milliseconds: 150);
   }
 
+  /// Push the `--path` override into the companion's contact record, like
+  /// meshcli's `change_path`. Binary requests carry no per-packet path, so the
+  /// companion's stored record is the only handle for splitting a route.
   Future<void> applyRouteOverride() async {
     final entered = routePath.trim();
     if (entered.isEmpty) return;
@@ -228,6 +228,32 @@ class Bench {
   }
 
   /// Ask the node for its `next_expected` (an OP_REPORT). Null on no answer.
+  /// Ask the node for its `OP_INFO_REPORT`. Null on no answer.
+  Future<OtaNodeInfo?> nodeInfo() async {
+    final done = Completer<OtaNodeInfo?>();
+    int? askTag;
+    late StreamSubscription<Uint8List> sub;
+    sub = link.pushes.listen((frame) {
+      if (frame.isEmpty || frame[0] != pushCodeBinaryResponse) return;
+      final payload = binaryResponseReport(frame,
+          contactPubKey: target.publicKey, askTag: askTag);
+      if (payload == null) return;
+      final parsed = parseInfoReport(payload);
+      if (parsed != null && !done.isCompleted) done.complete(parsed);
+    });
+    try {
+      final info = buildInfo();
+      final sent = await link
+          .sendBinaryRequest(target, [reqTypeOta, info.length, ...info]);
+      askTag = sent.tag;
+      return await done.future.timeout(const Duration(seconds: 10));
+    } catch (_) {
+      return null;
+    } finally {
+      await sub.cancel();
+    }
+  }
+
   Future<int?> nextExpected() async {
     final done = Completer<int?>();
     int? askTag;
@@ -371,6 +397,20 @@ Future<void> scenarioProbe(Bench b) async {
   info('  version: $version');
   final radio = await b.cli('get radio');
   info('  radio:   $radio');
+
+  // OP_INFO handshake: the node's capabilities, target id, running version
+  // and full running-slot SHA-256.
+  final nodeInfo = await b.nodeInfo();
+  if (nodeInfo == null) {
+    info('  info: node did not answer (pre-handshake firmware, or unreachable)');
+  } else {
+    info(
+        '  info: wire=${nodeInfo.wireVersion} target=0x${nodeInfo.targetId.toRadixString(16)}'
+        ' slot=${nodeInfo.slotSize} max_literal=${nodeInfo.maxLiteral}'
+        ' delta=${nodeInfo.supportsDelta} apply=${nodeInfo.supportsApply}');
+    info('  info: running="${nodeInfo.runningVersion}" sha=${_hex(nodeInfo.runningSha256).substring(0, 16)}…');
+  }
+
   final st = await b.status();
   if (st == null) {
     check('firmware speaks the ota CLI', false, 'no parsable ota status');

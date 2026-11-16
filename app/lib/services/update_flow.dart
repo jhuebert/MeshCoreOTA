@@ -64,13 +64,39 @@ class UpdateFlow {
   Future<bool> supportsOta(Contact target, String password) async =>
       await probe(target, password) != null;
 
+  /// Best-effort `OP_INFO` handshake. Returns null when the node does not
+  /// answer (e.g. firmware older than the handshake) — the caller treats
+  /// null as "unknown, proceed".
+  Future<OtaNodeInfo?> tryNodeInfo(Contact target) async {
+    try {
+      return await queryNodeInfo(link, target,
+          timeout: const Duration(seconds: 2));
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Arm the node with the exact image to stage. Returns the parsed arm
   /// contract (size + token) to hand to the transfer.
+  ///
+  /// When [expectedTargetId] is set, the node is first asked for its
+  /// capabilities: a definitive board mismatch aborts *before* a pending arm
+  /// is registered. A node that does not answer `OP_INFO` is treated as
+  /// unknown and the arm proceeds as before (the SHA gate catches it later).
   Future<OtaStageReply> stage(
     Contact target,
     Uint8List image, {
     required String version,
+    int? expectedTargetId,
   }) async {
+    if (expectedTargetId != null) {
+      final info = await tryNodeInfo(target);
+      if (info != null && info.targetId != expectedTargetId) {
+        throw UpdateFlowException(
+            'node is board ${info.targetId.toRadixString(16).padLeft(8, '0')}…, '
+            'image is for ${expectedTargetId.toRadixString(16).padLeft(8, '0')}…');
+      }
+    }
     final sha = sha256.convert(image).toString();
     final reply = await _cli(target, 'ota stage ${image.length} $sha $version');
     final parsed = parseStageReply(reply);

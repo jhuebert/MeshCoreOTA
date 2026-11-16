@@ -15,12 +15,12 @@ else is app-side.
 
 **Status: benched and working, pre-release.** The fork firmware implementing
 the repeater side lives in `lora-ota` at
-[jhuebert/MeshCore](https://github.com/jhuebert/MeshCore); the wire protocol
-is v2 (ops ride inside REQ/RESPONSE datagrams). The full flow has been
-exercised on hardware — stage, SHA gate, apply, automatic rollback — but treat
-every path as field-unproven until an update has flown to a node you did not
-assemble yourself. The whole flow is designed so mistakes cannot brick a node
-(see "Safety model" below).
+[jhuebert/MeshCore](https://github.com/jhuebert/MeshCore); the wire contract
+ops ride inside ordinary encrypted REQ/RESPONSE datagrams. The full flow has
+been exercised on hardware — stage, SHA gate, apply, automatic rollback — but
+treat every path as field-unproven until an update has flown to a node you
+did not assemble yourself. The whole flow is designed so mistakes cannot
+brick a node (see "Safety model" below).
 
 Android is the release target. iOS is not supported and is not planned until
 there is hardware to test on. A Linux desktop build exists as a testing
@@ -126,6 +126,32 @@ packages/ota_core/       wire format, `ota status` contract, delta engine,
 The `mesh_protocol`/`device_link`/`test_support` packages are reused from
 [MeshChameleon](https://github.com/jhuebert/MeshChameleon) via `git subtree`
 (history preserved). See [ATTRIBUTION.md](ATTRIBUTION.md).
+
+## The OTA wire contract
+
+The app and the fork's repeater firmware (`meshcore/MeshCore`, branch
+`lora-ota`, `examples/simple_repeater/OtaUpdate.h`) speak a frozen,
+append-only contract. Its shape, in one line:
+
+`CMD_SEND_BINARY_REQ` → companion encrypts → ordinary REQ datagram → node
+decrypts → `OTA` op frame → reply inside the RESPONSE as
+`PUSH_CODE_BINARY_RESPONSE` → only the target applies anything.
+
+- Ops are inert until an operator arms with `ota stage` + a single-use token;
+  nothing reaches flash before the SHA-256 gate at `OP_END` passes.
+- `OP_INFO` (0x07) is the capability handshake, answered in every state; the
+  node replies with `OP_INFO_REPORT` (0x08): wire version, target id, slot
+  size, `max_literal`, feature bits (`supportsDelta`, `supportsApply`), the
+  running firmware version and the **full running-slot SHA-256**.
+- New features only ever add op codes or report bits; op meaning, field order,
+  field sizes, CRC and the SEQ rules are frozen. Any hard break is a new REQ
+  code, never a silent redefinition.
+- The frame CRC (CRC-16/CCITT-FALSE) guards flash writes, not the transport
+  (the AES-MAC does); packets carry zero padding from the crypto layer and
+  `frame_len` in the REQ envelope says exactly how much of it is the frame.
+
+`bench/` is the hardware front door for the same contract: `dart run
+bin/bench.dart --scenario probe|delta|full|…` drives the real path end to end.
 
 ## Contributing
 

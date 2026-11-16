@@ -7,9 +7,12 @@ suites: it needs two radios on a desk, so it is never run in CI.
 cd bench
 dart pub get
 
-# read-only health check through a TCP companion
+# read-only health check through a TCP companion (also prints OP_INFO)
 dart run bin/bench.dart --host 192.168.1.165 --password password \
   --contact XiaoS3 --env Xiao_S3_WIO_repeater_observer --scenario probe
+
+# just the OP_INFO negotiation handshake
+dart run bin/bench.dart ... --scenario probe
 
 # full-image update, then commit and verify after reboot
 dart run bin/bench.dart ... --image new.bin --scenario full

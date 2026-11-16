@@ -3,8 +3,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 // --- wire format (mirrors examples/simple_repeater/OtaUpdate.h) ------------
-// v2: the op stream rides inside REQ/RESPONSE datagrams. The app ships each
-// op as a CMD_SEND_BINARY_REQ (`[pub_key][REQ_TYPE_OTA][frame_len][op frame]`)
+// The op stream rides inside REQ/RESPONSE datagrams. The app ships each op as
+// a CMD_SEND_BINARY_REQ (`[pub_key][REQ_TYPE_OTA][frame_len][op frame]`)
 // to the companion, which encrypts it as an ordinary REQ datagram to the
 // node; the plaintext is padded by the crypto layer to a 16-byte block, so
 // the length byte is what the node uses to slice the frame back out. The
@@ -195,8 +195,9 @@ OtaReport? parseReport(List<int> payload) {
 /// checked against [contactPubKey]. The tag is checked against [askTag] when
 /// known (the ask is always the newest in-flight request, so a well-formed
 /// report for this contact while an ask is out is the answer either way).
-/// Returns the REPORT when the push parses, else null.
-OtaReport? parseBinaryResponse(Uint8List frame,
+/// Returns the RESPONSE payload (frame bytes, zero padding stripped by the
+/// caller), or null when the push does not parse.
+Uint8List? binaryResponseReport(Uint8List frame,
     {required Uint8List contactPubKey, int? askTag}) {
   if (frame.isEmpty || frame[0] != 0x8C) return null;
   // Candidate frame layouts: tag at 2 (no pubkey prefix) or tag at 8.
@@ -217,10 +218,28 @@ OtaReport? parseBinaryResponse(Uint8List frame,
         (frame[tagAt + 2] << 16) |
         (frame[tagAt + 3] << 24);
     if (askTag != null && tag != askTag) continue;
-    final report = parseReport(frame.sublist(tagAt + 4));
-    if (report != null) return report;
+    final payload = Uint8List.fromList(frame.sublist(tagAt + 4));
+    // The tag-at-2 layout is ambiguous: the first candidate must still
+    // unwrap as a well-formed OTA frame (magic + CRC) before we accept it;
+    // otherwise fall through to the pubkey-prefix layout.
+    if (unwrapFrame(payload) == null) continue;
+    return payload;
   }
   return null;
+}
+
+/// `PUSH_CODE_BINARY_RESPONSE` (0x8C), emitted by the companion when the
+/// target of our `CMD_SEND_BINARY_REQ` answers with a RESPONSE.
+///
+/// Verifies the companion record layout (pubkey prefix when present, and the
+/// tag when known) and parses the OP_REPORT inside. Returns the report when
+/// the push parses, else null.
+OtaReport? parseBinaryResponse(Uint8List frame,
+    {required Uint8List contactPubKey, int? askTag}) {
+  final payload =
+      binaryResponseReport(frame, contactPubKey: contactPubKey, askTag: askTag);
+  if (payload == null) return null;
+  return parseReport(payload);
 }
 
 /// `targetIdForEnvironment` for a build environment: `sha256(pio_env)[0..3]`

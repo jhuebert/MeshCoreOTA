@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:companion_client/companion_client.dart';
@@ -51,6 +52,13 @@ class _FakeCompanion {
   int _armSize = 0;
   List<int> _armSha = const [];
   int _armToken = 0;
+
+  /// Test seam: override the target id the fake node reports in OP_INFO;
+  /// 0 = report the Xiao_S3_WIO_repeater id (the default).
+  int infoTargetOverride = 0;
+
+  /// Test seam: drop OP_INFO requests silently (pre-handshake firmware).
+  bool infoSilent = false;
 
   // op-interpreter state
   int _expect = 1;
@@ -251,10 +259,42 @@ class _FakeCompanion {
     }
   }
 
+  Uint8List _handleInfoRequest() {
+    // Canned node matching the Xiao_S3_WIO_repeater target id the flow
+    // tests select.
+    const maxLiteral = 175; // OTA_MAX_LITERAL in the firmware
+    final sha = sha256.convert(_running).bytes;
+    final body = <int>[
+      otaWireVersion,
+      ..._le32(infoTargetOverride != 0 ? infoTargetOverride : _targetIdForTest),
+      ..._le32(0x200000), // slot size
+      ..._le16(maxLiteral),
+      ..._le32(otaFeatDelta | otaFeatApply),
+      ..._padded32(utf8.encode(_nodeVersion)),
+      ...sha,
+    ];
+    return buildOp(otaOpInfoReport, body: body);
+  }
+
+  static List<int> _le16(int v) => [v & 0xFF, (v >> 8) & 0xFF];
+
+  static List<int> _le32(int v) =>
+      [v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF];
+
+  static List<int> _padded32(List<int> bytes) {
+    final out = Uint8List(32);
+    out.setRange(0, bytes.length > 32 ? 32 : bytes.length, bytes);
+    return out;
+  }
+
+  static const int _targetIdForTest = 0x9F19BCD1; // Xiao_S3_WIO_repeater
+
   List<Uint8List> _handleOtaFrame(Uint8List frame) {
     final body = unwrapFrame(frame);
     if (body == null) return const [];
     final op = body[2];
+
+    if (op == otaOpInfo) return infoSilent ? const [] : [_handleInfoRequest()];
 
     if (op == otaOpAsk) {
       if (!_stagingArmed) return const [];
@@ -359,6 +399,39 @@ void main() {
     expect(status!.running, 'v1.17.0-filter-aaaaaaaaaaaa');
     expect(status.state, OtaPhase.idle);
     expect(status.ok, isTrue);
+  });
+
+  test('stage refuses a board that does not match the image', () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    fake.infoTargetOverride = 0xDEADBEEF; // node is a "different board"
+    final image = Uint8List.fromList(_FakeCompanion._pattern(0x5C, 32));
+    await expectLater(
+      flow.stage(fake.target, image,
+          version: 'v1.18.0-r4', expectedTargetId: targetIdForEnvironment(env)),
+      throwsA(isA<UpdateFlowException>()),
+    );
+    // The node was never asked to arm anything.
+    final status = await flow.probe(fake.target, 'hunter2');
+    expect(status!.state, OtaPhase.idle);
+  });
+
+  test('stage proceeds when the node does not answer OP_INFO (old firmware)',
+      () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    fake.infoSilent = true;
+    final image = Uint8List.fromList(_FakeCompanion._pattern(0x5C, 32));
+    final stage = await flow.stage(fake.target, image,
+        version: 'v1.18.0-r4', expectedTargetId: targetIdForEnvironment(env));
+    expect(stage.size, image.length);
+  });
+
+  test('stage with a matching board reports the parsed arm', () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    final image = Uint8List.fromList(_FakeCompanion._pattern(0x5C, 32));
+    final stage = await flow.stage(fake.target, image,
+        version: 'v1.18.0-r4', expectedTargetId: targetIdForEnvironment(env));
+    expect(stage.size, image.length);
+    expect(stage.token, isNonZero);
   });
 
   test('pacing is derived from the radio and never below the floor', () async {

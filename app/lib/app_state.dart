@@ -506,7 +506,9 @@ class AppState extends ChangeNotifier {
     log_('arming: ${image.length} bytes, version $version');
     notifyListeners();
 
-    final stage = await flow.stage(t, image, version: version);
+    final targetId = targetIdForEnvironment(env);
+    final stage = await flow.stage(t, image,
+        version: version, expectedTargetId: targetId);
     log_(
         'armed: size=${stage.size} token=${stage.token.toRadixString(16).padLeft(8, '0')}');
 
@@ -522,7 +524,6 @@ class AppState extends ChangeNotifier {
       log_('full image: ${image.length} bytes');
     }
 
-    final targetId = targetIdForEnvironment(env);
     final sha = sha256List(image);
     updatePhase = UpdatePhase.transferring;
     cancelRequested = false;

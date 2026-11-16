@@ -6,20 +6,39 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **OP_INFO handshake.** The app now asks the node for its capabilities
+  before arming: wire version, board target id, slot size, `max_literal`,
+  and the feature bits (`supportsDelta`, `supportsApply`), plus the running
+  firmware version and full running-slot SHA-256 (`OtaNodeInfo`,
+  `queryNodeInfo`). `UpdateFlow.stage` takes an optional `expectedTargetId`
+  and refuses a definitive board mismatch before registering an arm; a node
+  that does not answer is treated as unknown and proceeds as before (the
+  SHA gate still protects the flash). `bench --scenario probe` prints the
+  handshake too.
+- **Board-mismatch fast fail.** `runUpdate` passes the selected environment's
+  target id into `stage()`; a node reporting a different board id aborts
+  staging with `UpdateFlowException` before any arm is registered.
+
 ### Changed
 
-- **OTA transport v2: ops now ride ordinary REQ/RESPONSE datagrams.** Each op
-  is sent as `CMD_SEND_BINARY_REQ` (`[pub_key][REQ_TYPE_OTA][op frame]`) to
-  the companion, which encrypts it as an ordinary direct REQ to the node; the
+- **The OTA wire contract: ops now ride ordinary REQ/RESPONSE datagrams.**
+  Each op is sent as `CMD_SEND_BINARY_REQ`
+  (`[pub_key][REQ_TYPE_OTA][frame_len][op frame]`) to the companion, which
+  encrypts it as an ordinary direct REQ to the node; the
   OP_REPORT comes back inside the RESPONSE as `PUSH_CODE_BINARY_RESPONSE`.
   Intermediate nodes forward them without any custom firmware. **Requires the
-  matching v2 fork firmware** — nodes running the earlier raw-custom build are
+  matching fork firmware** — nodes running the earlier raw-custom build are
   not compatible with this app version.
-- `OP_ASK` no longer carries a return path; the report rides the standard REQ
-  reply routing. Transfer engine requires a `contact` (binary requests are
-  addressed to the companion's saved record for it).
-- Literal chunk size for stock companions is 133 bytes (the frame limit less
-  the binary-request envelope).
+- `OP_ASK` carries no body; the report rides the standard REQ reply routing.
+  The transfer engine requires a `contact` (binary requests are addressed to
+  the companion's saved record for it).
+- Literal chunk size for stock companions is 132 bytes (the frame limit less
+  the binary-request envelope and the `frame_len` byte).
+- `parseBinaryResponse` is now shared between transfer/resume code and the
+  new handshake; the two `PUSH_CODE_BINARY_RESPONSE` layouts seen in the
+  field (old tag-first, current pubkey-then-tag) both parse.
 - The bench's `--path` flag now pushes the path into the companion's contact
   record (like `change_path`), since binary requests carry no per-packet path.
   The app's DIRECT-path override does the same when an update starts.
