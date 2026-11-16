@@ -26,10 +26,21 @@ class TransferForegroundService {
     }
   }
 
-  static Future<void> update(String text) =>
-      FlutterForegroundTask.updateService(
-        notificationText: text,
-      );
+  static Future<void> update(String text) async {
+    if (!supported) return;
+    try {
+      await FlutterForegroundTask.updateService(notificationText: text);
+    } catch (_) {
+      // A notification update is cosmetic; never fail the transfer for it.
+    }
+  }
 
-  static Future<void> stop() => FlutterForegroundTask.stopService();
+  static Future<void> stop() async {
+    if (!supported) return;
+    try {
+      await FlutterForegroundTask.stopService();
+    } catch (_) {
+      // Sibling of start(): a service that never started must not throw here.
+    }
+  }
 }
