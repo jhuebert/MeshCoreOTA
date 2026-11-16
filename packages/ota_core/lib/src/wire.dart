@@ -30,8 +30,10 @@ const otaFrameOverhead = 2 + 1 + 2 + 2;
 /// Maximum on-air payload (`MAX_PACKET_PAYLOAD` in the firmware).
 const otaMaxPayload = 184;
 
-/// LITERAL data bytes that fit one op packet.
-const otaLiteralChunk = otaMaxPayload - otaFrameOverhead - 2;
+/// LITERAL data bytes that fit one op packet, counting the two envelope bytes
+/// the op rides behind (`REQ_TYPE_OTA`, `frame_len`). This is what the node
+/// advertises as `max_literal`.
+const otaLiteralChunk = otaMaxPayload - 2 - otaFrameOverhead - 2;
 
 /// The stock companion's transport frame limit (`MAX_FRAME_SIZE` in the
 /// firmware's BaseSerialInterface.h), measured after the 3-byte serial header:

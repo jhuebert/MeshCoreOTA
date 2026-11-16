@@ -202,7 +202,7 @@ class Bench {
     if (spacingOverride != null) return spacingOverride!;
     final params = await link.radioParams();
     final airtime = loraTimeOnAirMicros(
-      payloadBytes: 175,
+      payloadBytes: otaMaxPayload,
       spreadingFactor: params.spreadingFactor,
       bandwidthHz: params.bandwidthHz,
       codingRate: params.codingRate,
@@ -423,14 +423,14 @@ Future<void> scenarioProbe(Bench b) async {
 
   final params = await b.link.radioParams();
   final airtime = loraTimeOnAirMicros(
-    payloadBytes: 175,
+    payloadBytes: otaMaxPayload,
     spreadingFactor: params.spreadingFactor,
     bandwidthHz: params.bandwidthHz,
     codingRate: params.codingRate,
   );
   info('  companion radio: ${params.frequencyHz / 1e6} MHz '
       'BW${params.bandwidthHz ~/ 1000} SF${params.spreadingFactor} CR${params.codingRate}');
-  info('  one 175B packet ≈ ${(airtime / 1000).toStringAsFixed(0)} ms airtime');
+  info('  one ${otaMaxPayload}B packet ≈ ${(airtime / 1000).toStringAsFixed(0)} ms airtime');
 }
 
 Future<void> scenarioUpdate(Bench b, Uint8List image,

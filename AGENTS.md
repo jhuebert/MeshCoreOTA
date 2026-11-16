@@ -53,6 +53,9 @@ upstream there (via subtree) rather than diverging.
   hardware id. Flashing a node with another variant of the same board (e.g.
   `_observer` ↔ plain) is refused by the node and by `stage()` — switch
   variants over USB/Wi-Fi, not OTA.
+- `max_literal` counts the REQ envelope: `REQ_TYPE_OTA` + `frame_len` + the op
+  frame overhead + the literal's length word all come out of one
+  `MAX_PACKET_PAYLOAD` datagram (173 bytes with the current 184-byte payload).
 - `PUSH_CODE_BINARY_RESPONSE` (0x8C) payloads arrive zero-padded to a 16-byte
   block; `unpadFrame()` trims them by CRC, so a report whose CRC ends in `0x00`
   still parses. Two record layouts exist (tag first, or pubkey prefix then

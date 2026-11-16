@@ -1,5 +1,5 @@
 // The frozen `ota` CLI contract (fork firmware, OtaUpdate.cpp). The line
-// formats here are M0-frozen; parse failures mean "not an OTA firmware" or a
+// format here is frozen; parse failures mean "not an OTA firmware" or a
 // hand-corrupted reply, and are surfaced as null by the parsers.
 
 /// The phase reported by `ota status`.
@@ -67,7 +67,7 @@ const otaErrSha = 4;
 const otaErrIo = 5;
 const otaErrBounds = 6;
 const otaErrToken = 7;
-const otaErrEnd = 9;
+const otaErrEnd = 8;
 
 /// Human labels for the `err=` codes (for display only).
 String otaErrLabel(int err) => switch (err) {

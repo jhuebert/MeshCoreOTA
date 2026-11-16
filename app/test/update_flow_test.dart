@@ -262,7 +262,7 @@ class _FakeCompanion {
   Uint8List _handleInfoRequest() {
     // Canned node matching the Xiao_S3_WIO_repeater target id the flow
     // tests select.
-    const maxLiteral = 175; // OTA_MAX_LITERAL in the firmware
+    const maxLiteral = 173; // OTA_MAX_LITERAL in the firmware
     final sha = sha256.convert(_running).bytes;
     final body = <int>[
       otaWireVersion,

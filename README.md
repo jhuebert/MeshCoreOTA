@@ -69,9 +69,9 @@ node keeps the old image.
 - **The companion is stock.** No companion-firmware change; it is used exactly
   as it ships (its binary-request path, the same one status requests use).
 
-See also `SECURITY.md` for the threat model and the fork plan documents
-(`plans/2026-11-15-lora-ota-master-plan.md` in the MeshCore fork) for the
-firmware side.
+See also `SECURITY.md` for the threat model; the firmware side of the
+contract is specified in the fork's
+[`examples/simple_repeater/OtaUpdate.h`](https://github.com/jhuebert/MeshCore/blob/lora-ota/examples/simple_repeater/OtaUpdate.h).
 
 ## Building
 
