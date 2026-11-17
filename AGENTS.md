@@ -29,7 +29,7 @@ accurate.
    changing anything that touches the wire contract.
 4. The offline library and settings are persisted user data. A layout change
    must migrate the previous format and be tested with old-format fixtures;
-   never silently discard images, field packs or the offline flag.
+   never silently discard images or the offline flag.
 
 ## Repository layout
 
@@ -166,8 +166,14 @@ below the fold on the current one.
   `OP_INFO` target id, and the GitHub listing is scoped by it. Stable and dev
   are separate tabs, each newest-first. The version save action downloads
   **all** assets of a release; the Offline tab shows only downloaded
-  versions. The offline switch is persisted and must prevent every GitHub
-  request (catalog included).
+  versions — one row per version, with per-.bin and per-version deletes.
+  Imported `.bin` files are listed separately on the Imported tab — one row
+  per file — and match like any other entry by SHA-256 (delta base and
+  update image alike). The **Firmware library** on the main screen is this
+  same screen in manager mode (`FirmwareScreen(updateMode: false)`): taps
+  download or inspect instead of selecting, there is no wizard bar or Review
+  button, and images/versions can be deleted from it. The offline switch is
+  persisted and must prevent every GitHub request (catalog included).
 - **Review**: three radio plans (live mesh with the path override, temporary
   private preset on both ends, or the repeater's radio2) and before/after
   image selection. Off-mesh modes are implicit zero-hop. Show the plan's

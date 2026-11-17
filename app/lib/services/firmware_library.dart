@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
@@ -32,7 +31,7 @@ class LibraryEntry {
   final String env;
   final String version;
 
-  /// 'github' | 'import' | 'fieldpack'
+  /// 'github' | 'import' — anything not 'github' is a local import.
   final String origin;
 
   final int size;
@@ -45,7 +44,7 @@ class LibraryEntry {
 /// delta bases by matching the node's reported running image SHA-256 (the
 /// `OP_INFO` handshake), falling back to the `running=` version stamp; and
 /// never uploads anything to this directory implicitly — images land here
-/// only from an explicit download, import, or pack restore.
+/// only from an explicit download or an explicit .bin import.
 class FirmwareLibrary {
   FirmwareLibrary(this.directory);
 
@@ -134,108 +133,6 @@ class FirmwareLibrary {
   Future<void> delete(LibraryEntry entry) async {
     await _deleteQuietly(File(p.join(directory.path, '${entry.id}.bin')));
     await _deleteQuietly(File(p.join(directory.path, '${entry.id}.json')));
-  }
-
-  /// Delete every image for [env] older than [keep] newest entries.
-  Future<int> pruneEnvironment(String env, {int keep = 3}) async {
-    final entries = (await list()).where((e) => e.env == env).toList()
-      ..sort((a, b) => b.added.compareTo(a.added));
-    var removed = 0;
-    for (var i = keep; i < entries.length; i++) {
-      await delete(entries[i]);
-      removed++;
-    }
-    return removed;
-  }
-
-  int get totalBytes {
-    var total = 0;
-    try {
-      for (final f in directory.listSync()) {
-        if (f is File) total += f.lengthSync();
-      }
-    } catch (_) {}
-    return total;
-  }
-
-  // --- field pack (zip) export / import -----------------------------------
-
-  /// A field pack is one zip with `images/<fileName>` + `catalog.json`, meant
-  /// for preparing offline updates without connectivity.
-  Future<Uint8List> exportPack({Iterable<LibraryEntry>? only}) async {
-    final archive = Archive();
-    final entries = (only ?? await list()).toList();
-    final catalog = <Map<String, dynamic>>[];
-    for (final entry in entries) {
-      final bytes = await read(entry);
-      archive.addFile(
-          ArchiveFile('images/${entry.fileName}', bytes.length, bytes));
-      catalog.add({
-        'fileName': entry.fileName,
-        'env': entry.env,
-        'version': entry.version,
-        'origin': entry.origin,
-        'size': entry.size,
-        'sha256': entry.sha256,
-        'added': entry.added.toIso8601String(),
-      });
-    }
-    final indexJson = jsonEncode({'packVersion': 1, 'images': catalog});
-    archive.addFile(ArchiveFile(
-      'catalog.json',
-      utf8.encode(indexJson).length,
-      utf8.encode(indexJson),
-    ));
-    final zipped = ZipEncoder().encode(archive);
-    return Uint8List.fromList(zipped);
-  }
-
-  /// Import a field pack. Every image's bytes are re-hashed and must match
-  /// the catalog entry before it lands; corrupt entries are skipped and
-  /// counted. Returns the number imported.
-  Future<int> importPack(Uint8List zipBytes,
-      {bool Function(LibraryEntry)? filter}) async {
-    final archive = ZipDecoder().decodeBytes(zipBytes);
-    Map<String, dynamic>? catalog;
-    final images = <String, Uint8List>{};
-    for (final file in archive) {
-      if (!file.isFile) continue;
-      if (file.name == 'catalog.json') {
-        catalog = jsonDecode(utf8.decode(file.content as List<int>))
-            as Map<String, dynamic>;
-      } else if (file.name.startsWith('images/')) {
-        images[p.basename(file.name)] =
-            Uint8List.fromList(file.content as List<int>);
-      }
-    }
-    var imported = 0;
-    final entries = (catalog?['images'] as List?) ?? const [];
-    for (final e in entries.whereType<Map>()) {
-      final fileName = e['fileName'] as String? ?? '';
-      final bytes = images[fileName];
-      if (bytes == null) continue;
-      final expected = (e['sha256'] as String? ?? '').toLowerCase();
-      final actual = sha256.convert(bytes).toString();
-      if (expected.isEmpty || expected != actual) continue; // corrupt: skip
-      final entry = LibraryEntry(
-        id: actual,
-        fileName: fileName,
-        env: e['env'] as String? ?? 'unknown',
-        version: e['version'] as String? ?? 'unknown',
-        origin: 'fieldpack',
-        size: bytes.length,
-        sha256: actual,
-        added: DateTime.tryParse(e['added'] as String? ?? '') ?? DateTime.now(),
-      );
-      if (filter != null && !filter(entry)) continue;
-      final binFile = File(p.join(directory.path, '$actual.bin'));
-      if (!await binFile.exists()) {
-        await binFile.writeAsBytes(bytes, flush: true);
-      }
-      await _writeEntry(entry);
-      imported++;
-    }
-    return imported;
   }
 
   // --- internals -----------------------------------------------------------

@@ -10,7 +10,7 @@ import '../services/ble_device_link.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/wizard.dart';
-import 'library_screen.dart';
+import 'firmware_screen.dart';
 import 'target_screen.dart';
 
 /// Step 1: pick the companion the phone talks to. The companion is used as
@@ -127,8 +127,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
                     color: OtaTheme.accent),
                 title: const Text('Firmware library'),
                 subtitle: const Text(
-                  'Download images ahead of time, import a custom build, or '
-                  'prepare an offline field pack.',
+                  'Download versions for offline use, import a .bin, or '
+                  'delete what you no longer need.',
                   style: TextStyle(color: OtaTheme.textMuted, fontSize: 11),
                 ),
                 trailing:
@@ -137,7 +137,9 @@ class _ConnectScreenState extends State<ConnectScreen> {
                   await app.refreshLibrary();
                   if (!context.mounted) return;
                   Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const LibraryScreen()),
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            const FirmwareScreen(updateMode: false)),
                   );
                 },
               ),

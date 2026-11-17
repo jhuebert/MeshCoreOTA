@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ota_core/ota_core.dart';
 
@@ -199,6 +200,126 @@ void main() {
 
     app.setRadioMode(RadioMode.radio2);
     expect(app.radioPlan.mode, RadioMode.radio2);
+  });
+
+  test('an imported .bin is auto-matched as the delta base by hash', () async {
+    final app = AppState();
+    final lib = FakeLibrary();
+    final running = Uint8List.fromList(List.filled(64, 9));
+    final imported = lib.addImage(running,
+        env: 'custom',
+        version: 'custom',
+        fileName: 'my-build.bin',
+        origin: 'import');
+    final updateImage = Uint8List.fromList(List.filled(64, 4));
+    final update = lib.addImage(updateImage,
+        env: _board,
+        version: 'v1.1.0-rc5',
+        fileName: '$_board-v1.1.0-rc5-abc1234.bin');
+    app.library = lib;
+    app.libraryEntries = await lib.list();
+    app.nodeStatus = nodeStatus();
+    app.nodeInfo = nodeInfo(
+        runningSha256: Uint8List.fromList(sha256.convert(running).bytes));
+
+    await app.selectLibraryEntryForUpdate(update);
+
+    expect(app.autoBaseEntry?.id, imported.id);
+  });
+
+  test('a downloaded image is auto-matched as the delta base by hash',
+      () async {
+    final app = AppState();
+    final lib = FakeLibrary();
+    final running = Uint8List.fromList(List.filled(64, 6));
+    final downloaded = lib.addImage(running,
+        env: _board,
+        version: 'v1.1.0-rc4',
+        fileName: '$_board-v1.1.0-rc4-abc1234.bin');
+    final updateImage = Uint8List.fromList(List.filled(64, 4));
+    final update = lib.addImage(updateImage,
+        env: _board,
+        version: 'v1.1.0-rc5',
+        fileName: '$_board-v1.1.0-rc5-abc1234.bin');
+    app.library = lib;
+    app.libraryEntries = await lib.list();
+    app.nodeStatus = nodeStatus();
+    app.nodeInfo = nodeInfo(
+        runningSha256: Uint8List.fromList(sha256.convert(running).bytes));
+
+    await app.selectLibraryEntryForUpdate(update);
+
+    expect(app.autoBaseEntry?.id, downloaded.id);
+  });
+
+  test('downloaded versions exclude imported bins', () async {
+    final app = AppState();
+    final lib = FakeLibrary();
+    lib.addImage(Uint8List.fromList(List.filled(16, 1)),
+        env: _board,
+        version: 'v1.1.0-rc5',
+        fileName: '$_board-v1.1.0-rc5-abc1234.bin');
+    lib.addImage(Uint8List.fromList(List.filled(16, 2)),
+        env: 'custom',
+        version: 'custom',
+        fileName: 'mine.bin',
+        origin: 'import');
+    app.library = lib;
+    app.libraryEntries = await lib.list();
+
+    expect(app.offlineVersions.map((v) => v.version), ['v1.1.0-rc5']);
+    expect(app.importedEntries.map((e) => e.fileName), ['mine.bin']);
+  });
+
+  test('deleting the selected image and delta base clears both', () async {
+    final app = AppState();
+    final lib = FakeLibrary();
+    final running = Uint8List.fromList(List.filled(64, 9));
+    final base = lib.addImage(running,
+        env: 'custom',
+        version: 'custom',
+        fileName: 'running.bin',
+        origin: 'import');
+    lib.addImage(Uint8List.fromList(List.filled(64, 4)),
+        env: _board,
+        version: 'v1.1.0-rc5',
+        fileName: '$_board-v1.1.0-rc5-abc1234.bin');
+    app.library = lib;
+    app.libraryEntries = await lib.list();
+    app.nodeStatus = nodeStatus();
+    app.nodeInfo = nodeInfo(
+        runningSha256: Uint8List.fromList(sha256.convert(running).bytes));
+
+    final update = app.libraryEntries.firstWhere((e) => e.version != 'custom');
+    await app.selectLibraryEntryForUpdate(update);
+    expect(app.autoBaseEntry?.id, base.id);
+    await app.setBaseOverride(base);
+    expect(app.baseOverride?.id, base.id);
+
+    await app.deleteLibraryEntries([base, update]);
+
+    expect(app.libraryEntries, isEmpty);
+    expect(app.baseOverride, isNull);
+    expect(app.selectedLibraryEntry, isNull);
+    expect(app.selectedImage, isNull);
+    expect(app.autoBaseEntry, isNull);
+  });
+
+  test('downloadAssetToLibrary refuses outside a connection', () async {
+    final app = AppState();
+    app.offlineMode = true;
+    final saved = await app.downloadAssetToLibrary(asset(_board, 'v1.1.0-rc5'));
+    expect(saved, 0);
+
+    // Already saved: no network touched either.
+    final lib = FakeLibrary();
+    final target = asset(_board, 'v1.1.0-rc5');
+    lib.addImage(Uint8List.fromList(List.filled(16, 7)),
+        env: _board, version: 'v1.1.0-rc5', fileName: target.name);
+    app.offlineMode = false;
+    app.library = lib;
+    app.libraryEntries = await lib.list();
+    expect(await app.downloadAssetToLibrary(target), 0);
   });
 
   test('estimate label distinguishes full and delta', () {

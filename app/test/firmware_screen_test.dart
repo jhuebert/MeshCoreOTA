@@ -119,16 +119,17 @@ void main() {
     _bigView(tester);
     final app = _app();
     final lib = app.library as FakeLibrary;
-    final entry = lib.addImage(Uint8List.fromList(List.filled(64, 3)),
+    lib.addImage(Uint8List.fromList(List.filled(64, 3)),
         env: _board, version: 'v1.1.0-rc5-cd72e1a2');
     app.libraryEntries = await lib.list();
 
     await tester.pumpWidget(wrap(app, const FirmwareScreen()));
     await tester.pump();
-    await tester.tap(find.text('Library'));
+    await tester.tap(find.text('Offline'));
     await tester.pumpAndSettle();
-
-    await tester.tap(find.text(entry.fileName));
+    await tester.tap(find.text('v1.1.0-rc5-cd72e1a2'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_board));
     await tester.pumpAndSettle();
 
     expect(app.selectedImage, isNotNull);

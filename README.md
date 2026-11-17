@@ -64,8 +64,10 @@ Pick **Bluetooth** on a phone, or **TCP / Wi-Fi** on a computer (or a phone
 talking to a Wi-Fi companion). Tap a discovered companion, or enter its
 `host:port`.
 
-The **Firmware library** is available here before you connect. Use it to
-download a release while you still have Wi-Fi, or to import a custom image.
+The **Firmware library** is available here before you connect. It is the
+same screen as step 4, used for managing your files instead of picking one:
+download GitHub release versions, import `.bin` files, or delete images you
+no longer need.
 
 ### 2. Pick a repeater
 
@@ -95,9 +97,11 @@ repeater reported, so you cannot accidentally pick another board's image.
 - Tapping an image **selects** it for this update.
 - The download button on a release saves **that whole version** (every
   board's image) on your device for offline use.
-- **Offline** shows only the versions you have already saved.
-- **Library** is every image on the device; import a `.bin` here for custom
-  firmware.
+- **Offline** shows the versions you have already saved — one row per
+  version, expandable to each board's image. A release can also be deleted
+  here as a unit.
+- **Imported** shows your imported `.bin` files — one row per file — and is
+  where you import a custom build.
 
 ### 5. Review
 
@@ -159,17 +163,35 @@ across restarts. Switch it back on when you have a connection.
 To prepare: while on Wi-Fi, open **Choose firmware → GitHub**, pick the
 version you want, and press the download button on that release. Every image
 of that version is saved. Do the same for the version the repeater currently
-runs; that second image is what makes a small delta possible. You can also
-export or import a **field pack** (`.zip`) from the library screen to move a
-set of images between devices.
+runs; that second image is what makes a small delta possible. The **Firmware
+library** on the main screen manages what is stored: download versions,
+delete ones you no longer need, and see downloaded versions (one row per
+version) and imported `.bin` files (one row per file) separately.
+
+## The firmware library
+
+**Firmware library** on the main screen is the same screen as step 4, outside
+the update flow. Use the **GitHub** tab to download a release version (or a
+single board's image), the **Offline** tab to see and delete saved versions
+(one row per version, with a *delete this version* action), and the
+**Imported** tab to import a custom `.bin` and delete files you no longer
+need — one row per file. Deleting an image the app had selected for an
+update simply clears that selection.
+
+Imported files and downloaded versions are listed separately on purpose:
+downloaded images come from releases (they carry the release's board and
+version), while an imported `.bin` is identified by its hash alone. When the
+repeater reports its running image's SHA-256, the app uses the matching
+image — imported or downloaded — as the delta base automatically.
 
 ## Custom firmware
 
 Custom builds work exactly like releases:
 
 1. Build your firmware (the repeater side needs the OTA feature).
-2. **Firmware library → Import a .bin firmware file**, on any platform.
-3. Select it on the **Library** or **Offline** tab.
+2. **Firmware library → Imported tab → Import a .bin**, on any platform.
+3. Select it on the **Imported** tab (or the **Offline** tab for a downloaded
+   version).
 4. On the review screen, choose the file the repeater already runs as the
    **base** — or send the full image.
 

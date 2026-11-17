@@ -1,4 +1,8 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
@@ -7,18 +11,27 @@ import '../services/github_source.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/wizard.dart';
-import 'library_screen.dart';
 import 'review_screen.dart';
 
-/// Step 4: pick what to install.
+/// Step 4: pick what to install — or the standalone library manager.
 ///
-/// The GitHub listing is scoped to the board the node reported, so an image
-/// for a different board cannot be picked by accident, and both release
-/// channels are tabs sorted newest-first. Versions are saved for offline use
-/// whole (every board), and the Offline tab shows only what this device
-/// holds — the app never reaches GitHub while the offline switch is on.
+/// The same screen serves both contexts. Inside an update
+/// ([updateMode] true) it is wizard step 4 and tapping an image selects it
+/// for the update. From the main screen ([updateMode] false) it is a file
+/// manager for the library: download GitHub release versions, import `.bin`
+/// files, delete what is no longer needed — taps never select an update.
+///
+/// The GitHub listing is scoped to the board the node reported (all boards
+/// when there is no node), and both release channels are tabs sorted
+/// newest-first. Versions are saved for offline use whole (every board);
+/// downloaded versions appear one row per version, imported `.bin` files one
+/// row per file — separately, because they are different things.
 class FirmwareScreen extends StatefulWidget {
-  const FirmwareScreen({super.key});
+  const FirmwareScreen({super.key, this.updateMode = true});
+
+  /// true: wizard step 4 (tapping picks the image). false: the standalone
+  /// library manager reached from the main screen (taps download/inspect).
+  final bool updateMode;
 
   @override
   State<FirmwareScreen> createState() => _FirmwareScreenState();
@@ -47,13 +60,16 @@ class _FirmwareScreenState extends State<FirmwareScreen>
     super.dispose();
   }
 
+  static final _mobile = Platform.isAndroid || Platform.isIOS;
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final update = widget.updateMode;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Choose firmware'),
+        title: Text(update ? 'Choose firmware' : 'Firmware library'),
         actions: [
           IconButton(
             tooltip: app.offlineMode
@@ -73,13 +89,13 @@ class _FirmwareScreenState extends State<FirmwareScreen>
           tabs: const [
             Tab(text: 'GitHub'),
             Tab(text: 'Offline'),
-            Tab(text: 'Library'),
+            Tab(text: 'Imported'),
           ],
         ),
       ),
       body: Column(
         children: [
-          const WizardBar(step: 4, label: 'Choose the image'),
+          if (update) const WizardBar(step: 4, label: 'Choose the image'),
           if (app.offlineMode)
             Container(
               margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
@@ -111,15 +127,17 @@ class _FirmwareScreenState extends State<FirmwareScreen>
               children: [
                 _buildGitHubTab(app),
                 _buildOfflineTab(app),
-                _buildLibraryTab(app),
+                _buildImportedTab(app),
               ],
             ),
           ),
         ],
       ),
-      bottomNavigationBar: _buildSelectionBar(context, app),
+      bottomNavigationBar: update ? _buildSelectionBar(context, app) : null,
     );
   }
+
+  // ---------------------------------------------------------------- GitHub
 
   Widget _buildGitHubTab(AppState app) {
     if (app.offlineMode) {
@@ -141,6 +159,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
     final releases = app.visibleReleases;
     final board = app.selectedBoard;
     final detected = app.detectedBoard;
+    final update = widget.updateMode;
 
     return Column(
       children: [
@@ -187,12 +206,17 @@ class _FirmwareScreenState extends State<FirmwareScreen>
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
           child: Text(
-            detected == null
-                ? (board == null
-                    ? 'The node did not report a known board — pick one, or '
-                        'import a custom .bin in the library.'
-                    : 'Scoped to $board. The node did not report a board.')
-                : 'Detected from the node: $detected',
+            update
+                ? (detected == null
+                    ? (board == null
+                        ? 'The node did not report a known board — pick one, or '
+                            'import a custom .bin in the Imported tab.'
+                        : 'Scoped to $board. The node did not report a board.')
+                    : 'Detected from the node: $detected')
+                : (board == null
+                    ? 'Not connected to a node — showing every board. Pick one '
+                        'to scope the list.'
+                    : 'Showing images for $board only.'),
             style: const TextStyle(
                 color: OtaTheme.textMuted, fontSize: 11, height: 1.35),
           ),
@@ -242,7 +266,10 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                     padding: const EdgeInsets.only(bottom: 12),
                     children: [
                       for (final release in releases)
-                        _ReleaseSection(release: release),
+                        _ReleaseSection(
+                          release: release,
+                          updateMode: widget.updateMode,
+                        ),
                     ],
                   ),
           ),
@@ -250,15 +277,18 @@ class _FirmwareScreenState extends State<FirmwareScreen>
     );
   }
 
+  // --------------------------------------------------------------- Offline
+
   Widget _buildOfflineTab(AppState app) {
     final versions = app.offlineVersions;
     if (versions.isEmpty) {
       return _offlineEmpty(
         icon: Icons.cloud_download_outlined,
-        title: 'Nothing saved for offline use yet',
+        title: 'No versions saved for offline use yet',
         body: 'On the GitHub tab, save a version with the download button. '
-            'Every board\'s image for that version is stored on this device, '
-            'so you can update in the field with no signal.',
+            'Every board\u2019s image for that version is stored on this device, '
+            'so you can update in the field with no signal. Custom builds can '
+            'be imported on the Imported tab — they work offline too.',
         action: app.offlineMode
             ? FilledButton.icon(
                 onPressed: () => app.setOfflineMode(false),
@@ -268,6 +298,8 @@ class _FirmwareScreenState extends State<FirmwareScreen>
             : null,
       );
     }
+    final totalBytes = versions.fold<int>(
+        0, (sum, v) => sum + v.entries.fold<int>(0, (s, e) => s + e.size));
     return ListView(
       padding: const EdgeInsets.only(bottom: 12),
       children: [
@@ -275,7 +307,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: Text(
             '${versions.length} version(s) on this device · '
-            '${(app.libraryEntries.fold<int>(0, (sum, e) => sum + e.size) / (1024 * 1024)).toStringAsFixed(1)} MB',
+            '${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
             style: const TextStyle(color: OtaTheme.textMuted, fontSize: 12),
           ),
         ),
@@ -314,13 +346,58 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                       style: const TextStyle(
                           color: OtaTheme.textMuted, fontSize: 10.5),
                     ),
-                    trailing: identical(entry, app.selectedLibraryEntry)
-                        ? const Icon(Icons.check, color: OtaTheme.accent)
-                        : null,
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.updateMode &&
+                            identical(entry, app.selectedLibraryEntry))
+                          const Icon(Icons.check, color: OtaTheme.accent),
+                        IconButton(
+                          tooltip: 'Delete ${entry.env}',
+                          icon: const Icon(Icons.delete_outline,
+                              color: OtaTheme.textMuted, size: 20),
+                          onPressed: () => _deleteEntries(
+                            app,
+                            [entry],
+                            title: 'Delete image?',
+                            body: '${entry.fileName}\n\n'
+                                'This cannot be undone.',
+                          ),
+                        ),
+                      ],
+                    ),
                     onTap: app.imageLoading
                         ? null
-                        : () => app.selectLibraryEntryForUpdate(entry),
+                        : () => widget.updateMode
+                            ? app.selectLibraryEntryForUpdate(entry)
+                            : _inspectEntry(entry),
                   ),
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.delete_outline,
+                      color: OtaTheme.bad, size: 20),
+                  title: Text(
+                    'Delete this version',
+                    style: const TextStyle(
+                        color: OtaTheme.bad,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    'Removes all ${version.entries.length} image(s) — '
+                    '${((version.entries.fold<int>(0, (s, e) => s + e.size)) / (1024 * 1024)).toStringAsFixed(1)} MB',
+                    style: const TextStyle(
+                        color: OtaTheme.textMuted, fontSize: 10.5),
+                  ),
+                  onTap: () => _deleteEntries(
+                    app,
+                    version.entries,
+                    title: 'Delete ${version.version}?',
+                    body: 'This removes all ${version.entries.length} image(s) '
+                        'of ${version.version} from this device.\n\n'
+                        'This cannot be undone.',
+                  ),
+                ),
               ],
             ),
           ),
@@ -328,7 +405,13 @@ class _FirmwareScreenState extends State<FirmwareScreen>
     );
   }
 
-  Widget _buildLibraryTab(AppState app) {
+  // -------------------------------------------------------------- Imported
+
+  Widget _buildImportedTab(AppState app) {
+    final entries = app.importedEntries;
+    final totalBytes = entries.fold<int>(0, (sum, e) => sum + e.size);
+    final update = widget.updateMode;
+
     return Column(
       children: [
         Padding(
@@ -337,49 +420,57 @@ class _FirmwareScreenState extends State<FirmwareScreen>
             children: [
               Expanded(
                 child: Text(
-                  '${app.libraryEntries.length} image(s) · '
-                  '${(app.libraryEntries.fold<int>(0, (sum, e) => sum + e.size) / (1024 * 1024)).toStringAsFixed(1)} MB',
+                  entries.isEmpty
+                      ? 'No imported .bin files yet'
+                      : '${entries.length} file(s) · '
+                          '${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
                   style:
                       const TextStyle(color: OtaTheme.textMuted, fontSize: 12),
                 ),
               ),
               TextButton.icon(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const LibraryScreen()),
-                ),
-                icon: const Icon(Icons.inventory_2_outlined, size: 18),
-                label: const Text('Manage'),
+                onPressed: () => _importBin(app),
+                icon: const Icon(Icons.upload_file_outlined, size: 18),
+                label: const Text('Import a .bin'),
               ),
             ],
           ),
         ),
         Expanded(
-          child: app.libraryEntries.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text(
-                    'Library is empty. Save a version on the GitHub tab (all '
-                    'of its images are cached here), or import a .bin file '
-                    'from the library screen.',
-                    style: TextStyle(
-                        color: OtaTheme.textMuted, fontSize: 12, height: 1.5),
+          child: entries.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: Text(
+                      'Imported .bin files are custom or local builds. An '
+                      'imported image is matched by its SHA-256 — the same '
+                      'bytes are the same delta base or update image, whatever '
+                      'its file name says.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          color: OtaTheme.textMuted, fontSize: 12, height: 1.5),
+                    ),
                   ),
                 )
               : ListView(
+                  padding: const EdgeInsets.only(bottom: 12),
                   children: [
-                    for (final entry in app.libraryEntries)
+                    for (final entry in entries)
                       Card(
-                        color: identical(entry, app.selectedLibraryEntry)
-                            ? OtaTheme.surfaceHigh
-                            : null,
+                        color:
+                            update && identical(entry, app.selectedLibraryEntry)
+                                ? OtaTheme.surfaceHigh
+                                : null,
                         child: ListTile(
+                          dense: true,
                           leading:
                               const Icon(Icons.memory, color: OtaTheme.accent),
                           title: Text(entry.fileName,
                               style: const TextStyle(
                                   fontFamily: 'monospace', fontSize: 12)),
                           subtitle: Text(
-                            '${entry.env} · ${entry.version} · ${(entry.size / (1024 * 1024)).toStringAsFixed(2)} MB',
+                            '${entry.env} · ${entry.version} · '
+                            '${(entry.size / (1024 * 1024)).toStringAsFixed(2)} MB',
                             style: const TextStyle(
                                 color: OtaTheme.textMuted, fontSize: 11),
                           ),
@@ -391,10 +482,41 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                                   child:
                                       CircularProgressIndicator(strokeWidth: 2),
                                 )
-                              : null,
+                              : PopupMenuButton<String>(
+                                  icon: const Icon(Icons.more_vert,
+                                      color: OtaTheme.textMuted),
+                                  onSelected: (value) =>
+                                      _importedMenuAction(app, entry, value),
+                                  itemBuilder: (_) => update
+                                      ? const [
+                                          PopupMenuItem(
+                                              value: 'install',
+                                              child:
+                                                  Text('Use for the update')),
+                                          PopupMenuItem(
+                                              value: 'base',
+                                              child: Text('Use as delta base')),
+                                          PopupMenuItem(
+                                              value: 'details',
+                                              child: Text('Details')),
+                                          PopupMenuItem(
+                                              value: 'delete',
+                                              child: Text('Delete')),
+                                        ]
+                                      : const [
+                                          PopupMenuItem(
+                                              value: 'details',
+                                              child: Text('Details')),
+                                          PopupMenuItem(
+                                              value: 'delete',
+                                              child: Text('Delete')),
+                                        ],
+                                ),
                           onTap: app.imageLoading
                               ? null
-                              : () => app.selectLibraryEntryForUpdate(entry),
+                              : () => update
+                                  ? app.selectLibraryEntryForUpdate(entry)
+                                  : _inspectEntry(entry),
                         ),
                       ),
                   ],
@@ -402,6 +524,170 @@ class _FirmwareScreenState extends State<FirmwareScreen>
         ),
       ],
     );
+  }
+
+  Future<void> _importedMenuAction(
+      AppState app, LibraryEntry entry, String value) async {
+    switch (value) {
+      case 'install':
+        await app.selectLibraryEntryForUpdate(entry);
+      case 'base':
+        await app.setBaseOverride(entry);
+        _showSnack('Delta base set to ${entry.fileName}');
+      case 'details':
+        _inspectEntry(entry);
+      case 'delete':
+        await _deleteEntries(
+          app,
+          [entry],
+          title: 'Delete image?',
+          body: '${entry.fileName}\n\nThis cannot be undone.',
+        );
+    }
+  }
+
+  // -------------------------------------------------------------- actions
+
+  Future<void> _importBin(AppState app) async {
+    try {
+      final path = await _pickBinFile();
+      if (path == null) return;
+      final bytes = await File(path).readAsBytes();
+      final fileName = path.split(RegExp(r'[/\\]')).last;
+      final parsed = FirmwareAsset.parse(
+        name: fileName,
+        size: bytes.length,
+        downloadUrl: '',
+      );
+      await app.importLocalImage(
+        bytes,
+        fileName: fileName,
+        env: parsed?.env,
+        version: parsed?.version,
+      );
+      _showSnack(parsed == null
+          ? 'Imported $fileName as a custom image'
+          : 'Imported ${parsed.env} ${parsed.displayVersion}');
+    } catch (e) {
+      _showSnack('Import failed: $e');
+    }
+  }
+
+  /// The platform's file picker. `flutter_file_dialog` is the Android/iOS
+  /// document picker; desktop (Linux/Windows/macOS) uses `file_selector`.
+  Future<String?> _pickBinFile() async {
+    if (_mobile) {
+      return FlutterFileDialog.pickFile(
+        params: OpenFileDialogParams(
+          dialogType: OpenFileDialogType.document,
+          fileExtensionsFilter: const ['bin'],
+        ),
+      );
+    }
+    final file = await openFile(acceptedTypeGroups: [
+      XTypeGroup(label: 'BIN', extensions: const ['bin']),
+    ]);
+    return file?.path;
+  }
+
+  /// Confirm, delete, and report. The delta base and any selected image are
+  /// repaired inside [AppState.deleteLibraryEntries].
+  Future<void> _deleteEntries(
+    AppState app,
+    Iterable<LibraryEntry> entries, {
+    required String title,
+    required String body,
+  }) async {
+    final list = entries.toList();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await app.deleteLibraryEntries(list);
+    _showSnack(list.length == 1
+        ? 'Deleted ${list.single.fileName}'
+        : 'Deleted ${list.length} image(s)');
+  }
+
+  void _inspectEntry(LibraryEntry entry) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(entry.fileName,
+            style: const TextStyle(
+                fontFamily: 'monospace', fontSize: 13, height: 1.4)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _inspectRow('Board', entry.env),
+            _inspectRow('Version', entry.version),
+            _inspectRow('Origin', entry.origin),
+            _inspectRow('Size',
+                '${(entry.size / (1024 * 1024)).toStringAsFixed(2)} MB'),
+            _inspectRow('Added', _shortDate(entry.added)),
+            const SizedBox(height: 8),
+            const Text('SHA-256',
+                style: TextStyle(color: OtaTheme.textMuted, fontSize: 11)),
+            const SizedBox(height: 2),
+            SelectableText(entry.sha256,
+                style: const TextStyle(
+                    fontFamily: 'monospace', fontSize: 11, height: 1.4)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _shortDate(DateTime d) {
+    final local = d.toLocal();
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-'
+        '${local.day.toString().padLeft(2, '0')}';
+  }
+
+  Widget _inspectRow(String label, String value) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 56,
+              child: Text(label,
+                  style:
+                      const TextStyle(color: OtaTheme.textMuted, fontSize: 11)),
+            ),
+            Expanded(
+              child: Text(value,
+                  style: const TextStyle(fontSize: 12),
+                  overflow: TextOverflow.ellipsis),
+            ),
+          ],
+        ),
+      );
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _offlineEmpty({
@@ -522,9 +808,10 @@ class _FirmwareScreenState extends State<FirmwareScreen>
 }
 
 class _ReleaseSection extends StatelessWidget {
-  const _ReleaseSection({required this.release});
+  const _ReleaseSection({required this.release, required this.updateMode});
 
   final FirmwareRelease release;
+  final bool updateMode;
 
   @override
   Widget build(BuildContext context) {
@@ -614,8 +901,9 @@ class _ReleaseSection extends StatelessWidget {
         ),
         ...images.map((asset) {
           final selected = app.selectedAsset?.name == asset.name;
+          final cached = app.libraryEntryForAsset(asset);
           return Card(
-            color: selected ? OtaTheme.surfaceHigh : null,
+            color: updateMode && selected ? OtaTheme.surfaceHigh : null,
             child: ListTile(
               dense: true,
               title: Text(asset.env, style: const TextStyle(fontSize: 12)),
@@ -631,19 +919,36 @@ class _ReleaseSection extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : Icon(
-                      app.libraryEntryForAsset(asset) != null
+                      cached != null
                           ? Icons.offline_pin
                           : Icons.download_outlined,
-                      color: app.libraryEntryForAsset(asset) != null
-                          ? OtaTheme.ok
-                          : OtaTheme.textMuted,
+                      color: cached != null ? OtaTheme.ok : OtaTheme.textMuted,
                       size: 18,
                     ),
-              onTap: app.imageLoading ? null : () => app.selectAsset(asset),
+              onTap: app.imageLoading
+                  ? null
+                  : () => updateMode
+                      ? app.selectAsset(asset)
+                      : _downloadAsset(context, app, asset),
             ),
           );
         }),
       ],
+    );
+  }
+
+  Future<void> _downloadAsset(
+      BuildContext context, AppState app, FirmwareAsset asset) async {
+    final saved = await app.downloadAssetToLibrary(asset);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(saved == 1
+            ? 'Saved ${asset.name} to the library'
+            : (app.libraryEntryForAsset(asset) != null
+                ? '${asset.name} is already in the library'
+                : 'Could not save ${asset.name}')),
+      ),
     );
   }
 

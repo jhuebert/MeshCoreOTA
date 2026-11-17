@@ -8,6 +8,19 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Added
 
+- **The firmware library is now the firmware picker, usable on its own.**
+  The screen reached from the main screen is the same one as step 4: the
+  **GitHub** tab downloads a release version (or a single board's image),
+  the **Offline** tab lists saved versions with a per-version *Delete this
+  version* action, and the **Imported** tab holds imported `.bin` files —
+  one row per file — with an import button. Downloaded versions and imported
+  files are always separate. In the standalone view, taps download or inspect
+  instead of selecting an update; inside an update they still pick the image.
+- **Per-.bin and per-version deletes.** Every image can be deleted from its
+  row, and a saved version can be deleted as a unit (all boards). Deleting
+  the selected image or delta base clears it.
+
+
 - **A guided seven-step flow.** Connect → Repeater → Admin → Firmware →
   Review → Transfer → Verify, with the same step bar and bottom action on
   every screen. The admin login moved to its own step, and the repeater list
@@ -70,6 +83,12 @@ All notable changes to MeshCoreOTA are documented here. The format follows
   broke reports whose CRC ends in `0x00`, and every report larger than one
   block, including `OP_INFO_REPORT`).
 
+### Removed
+
+- **The field pack.** The library screen's `.zip` import/export is gone. Move
+  images between devices by importing the `.bin` files directly (one at a
+  time, on any platform, including desktop) or by re-downloading the version.
+
 ### Changed
 
 - **The OTA wire contract: ops now ride ordinary REQ/RESPONSE datagrams.**
@@ -101,13 +120,12 @@ All notable changes to MeshCoreOTA are documented here. The format follows
   requests with contact-path override (binary framing and the companion's
   `CMD_ADD_UPDATE_CONTACT` record write).
 - Linux desktop build (testing target): the full OTA flow over TCP against a
-  WiFi/Ethernet companion or simulator; BLE stays mobile-only, field-pack
-  import/export is mobile-only (library browse/delete work everywhere), no
-  foreground service on desktop.
+  WiFi/Ethernet companion or simulator; BLE stays mobile-only (library
+  browse/delete/import work everywhere), no foreground service on desktop.
 - Repeater picker: companion contacts (repeater-filtered, manual pubkey
   entry), admin login, `ota status` probe.
 - Firmware sources: fork GitHub releases (stable + dev track) with optional
-  SHA256SUMS verification; offline library with field-pack export/import.
+  SHA256SUMS verification; offline library of downloaded versions.
 - Delta updates by default (rolling-hash matcher, full-position index);
   full-image fallback; airtime estimate at the companion's radio config.
 - Windowed op-stream transfer with OP_ASK/OP_REPORT recovery; cancel =

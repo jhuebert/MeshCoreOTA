@@ -696,11 +696,15 @@ class AppState extends ChangeNotifier {
     return saved;
   }
 
-  /// Downloaded versions, newest first: the offline view. A version is
-  /// "complete" when the catalog says every asset of that release is here.
+  /// Downloaded GitHub versions, newest first: the offline view. Imported
+  /// `.bin` files are deliberately not grouped here — they are their own
+  /// list ([importedEntries]); only images fetched from releases appear.
+  /// A version is "complete" when the catalog says every asset of that
+  /// release is here.
   List<OfflineVersion> get offlineVersions {
     final byVersion = <String, List<LibraryEntry>>{};
     for (final entry in libraryEntries) {
+      if (entry.origin != 'github') continue;
       byVersion.putIfAbsent(entry.version, () => []).add(entry);
     }
     final releasesByVersion = <String, FirmwareRelease>{};
@@ -725,6 +729,65 @@ class AppState extends ChangeNotifier {
     }
     out.sort((a, b) => b.entries.first.added.compareTo(a.entries.first.added));
     return out;
+  }
+
+  /// Imported `.bin` files, newest first — the custom/local half of the
+  /// library. Identity is the SHA-256, so an imported image is a delta base
+  /// or an update candidate exactly like a downloaded one.
+  List<LibraryEntry> get importedEntries =>
+      libraryEntries.where((e) => e.origin != 'github').toList()
+        ..sort((a, b) => b.added.compareTo(a.added));
+
+  /// Save just [asset] to the library (the standalone library manager's
+  /// download). Returns 1 when newly saved, 0 when already present,
+  /// refused (offline) or failed.
+  Future<int> downloadAssetToLibrary(FirmwareAsset asset) async {
+    if (offlineMode) return 0;
+    if (downloadingReleaseTag != null) return 0;
+    if (libraryEntryForAsset(asset) != null) return 0;
+    try {
+      final source = await _openSource();
+      final bytes = await source.downloadAsset(asset);
+      await _importImage(
+        bytes,
+        env: asset.env,
+        version: asset.version,
+        origin: 'github',
+        fileName: asset.name,
+      );
+      return 1;
+    } catch (e) {
+      log_('saving ${asset.name} failed: $e');
+      return 0;
+    }
+  }
+
+  /// Delete [entries] from the library and repair any selection that pointed
+  /// at them: the image, the explicit delta base and the forced-full-image
+  /// choice are all dropped rather than left dangling.
+  Future<void> deleteLibraryEntries(Iterable<LibraryEntry> entries) async {
+    final list = entries.toList();
+    if (list.isEmpty) return;
+    final removed = list.map((e) => e.id).toSet();
+    final lib = await _openLibrary();
+    for (final entry in list) {
+      await lib.delete(entry);
+    }
+    if (selectedLibraryEntry != null &&
+        removed.contains(selectedLibraryEntry!.id)) {
+      selectedLibraryEntry = null;
+      selectedAsset = null;
+      _selectedImage = null;
+      deltaResult = null;
+      imageError = null;
+    }
+    if (baseOverride != null && removed.contains(baseOverride!.id)) {
+      baseOverride = null;
+    }
+    await refreshLibrary();
+    await _matchBase();
+    await _refreshRadioDuration();
+    notifyListeners();
   }
 
   Future<LibraryEntry> _importImage(
@@ -1314,9 +1377,10 @@ class AppState extends ChangeNotifier {
 /// A firmware version this device has images for — the offline view's unit.
 ///
 /// Versions are downloaded whole (every board's image), so the operator picks
-/// a version, not a device. [complete] is only meaningful when the catalog
-/// still knows the release ([known]); an imported field pack can be partial
-/// because the release is unknown.
+/// a version, not a device. Imported `.bin` files are not versions — they
+/// have no release to be complete against — so only GitHub downloads appear
+/// here. [complete] is meaningful when the catalog still knows the release
+/// ([known]).
 class OfflineVersion {
   const OfflineVersion({
     required this.version,

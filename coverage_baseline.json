@@ -2,32 +2,36 @@
   "format": 1,
   "files": {
     "app/lib/app_state.dart": {
-      "covered": 1,
-      "total": 307
+      "covered": 290,
+      "total": 673
     },
     "app/lib/main.dart": {
       "covered": 4,
       "total": 14
     },
     "app/lib/screens/connect_screen.dart": {
-      "covered": 40,
-      "total": 113
+      "covered": 44,
+      "total": 123
     },
     "app/lib/screens/firmware_screen.dart": {
-      "covered": 1,
-      "total": 131
+      "covered": 308,
+      "total": 392
     },
-    "app/lib/screens/library_screen.dart": {
-      "covered": 1,
-      "total": 95
+    "app/lib/screens/login_screen.dart": {
+      "covered": 61,
+      "total": 70
+    },
+    "app/lib/screens/radio_settings_screen.dart": {
+      "covered": 174,
+      "total": 186
     },
     "app/lib/screens/review_screen.dart": {
-      "covered": 1,
-      "total": 55
+      "covered": 151,
+      "total": 191
     },
     "app/lib/screens/target_screen.dart": {
-      "covered": 1,
-      "total": 93
+      "covered": 74,
+      "total": 77
     },
     "app/lib/screens/transfer_screen.dart": {
       "covered": 1,
@@ -39,35 +43,43 @@
     },
     "app/lib/services/ble_device_link.dart": {
       "covered": 0,
-      "total": 317
+      "total": 332
     },
     "app/lib/services/firmware_library.dart": {
-      "covered": 102,
-      "total": 118
+      "covered": 63,
+      "total": 63
     },
     "app/lib/services/foreground.dart": {
-      "covered": 0,
-      "total": 9
+      "covered": 7,
+      "total": 12
     },
     "app/lib/services/github_source.dart": {
-      "covered": 127,
-      "total": 145
+      "covered": 128,
+      "total": 146
+    },
+    "app/lib/services/radio_plan.dart": {
+      "covered": 78,
+      "total": 79
     },
     "app/lib/services/update_flow.dart": {
-      "covered": 34,
-      "total": 56
+      "covered": 54,
+      "total": 78
     },
     "app/lib/theme.dart": {
       "covered": 6,
       "total": 6
     },
     "app/lib/widgets/common.dart": {
-      "covered": 5,
+      "covered": 40,
       "total": 40
     },
+    "app/lib/widgets/wizard.dart": {
+      "covered": 34,
+      "total": 34
+    },
     "packages/companion_client/lib/src/companion_client.dart": {
-      "covered": 125,
-      "total": 137
+      "covered": 132,
+      "total": 142
     },
     "packages/device_link/lib/src/backoff.dart": {
       "covered": 15,
@@ -78,24 +90,24 @@
       "total": 27
     },
     "packages/device_link/lib/src/fake_device_link.dart": {
-      "covered": 149,
-      "total": 160
+      "covered": 165,
+      "total": 177
     },
     "packages/device_link/lib/src/link_metrics.dart": {
-      "covered": 104,
-      "total": 109
+      "covered": 113,
+      "total": 118
     },
     "packages/device_link/lib/src/radio_link.dart": {
-      "covered": 69,
-      "total": 70
+      "covered": 74,
+      "total": 75
     },
     "packages/device_link/lib/src/shared_radio_link.dart": {
-      "covered": 101,
-      "total": 121
+      "covered": 106,
+      "total": 126
     },
     "packages/device_link/lib/src/tcp_device_link.dart": {
-      "covered": 210,
-      "total": 234
+      "covered": 225,
+      "total": 249
     },
     "packages/mesh_protocol/lib/src/airtime.dart": {
       "covered": 14,
@@ -169,17 +181,21 @@
       "covered": 118,
       "total": 126
     },
+    "packages/ota_core/lib/src/node_info.dart": {
+      "covered": 38,
+      "total": 38
+    },
     "packages/ota_core/lib/src/ota_status.dart": {
       "covered": 42,
       "total": 42
     },
     "packages/ota_core/lib/src/transfer.dart": {
-      "covered": 135,
-      "total": 140
+      "covered": 198,
+      "total": 200
     },
     "packages/ota_core/lib/src/wire.dart": {
-      "covered": 57,
-      "total": 57
+      "covered": 91,
+      "total": 91
     },
     "packages/test_support/lib/fake_scheduler.dart": {
       "covered": 29,

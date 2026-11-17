@@ -101,7 +101,8 @@ Future<FirmwareLibrary> tempLibrary() async {
 Widget wrap(AppState app, Widget child) =>
     ChangeNotifierProvider<AppState>.value(
       value: app,
-      child: MaterialApp(theme: OtaTheme.dark, home: child),
+      child: MaterialApp(
+          theme: OtaTheme.dark, debugShowCheckedModeBanner: false, home: child),
     );
 
 /// An in-memory library: widget tests drive the real selection/delete paths
@@ -162,16 +163,4 @@ class FakeLibrary extends FirmwareLibrary {
   }) async =>
       addImage(bytes,
           env: env, version: version, origin: origin, fileName: fileName);
-
-  @override
-  Future<int> pruneEnvironment(String env, {int keep = 3}) async => 0;
-
-  @override
-  Future<Uint8List> exportPack({Iterable<LibraryEntry>? only}) async =>
-      Uint8List(0);
-
-  @override
-  Future<int> importPack(Uint8List zipBytes,
-          {bool Function(LibraryEntry)? filter}) async =>
-      0;
 }
