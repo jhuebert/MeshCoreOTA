@@ -41,7 +41,6 @@ void main() {
       spreadingFactor: 7,
       codingRate: 5,
     );
-    app.selectedBoard = _board;
     app.radio2Enabled = true;
     app.manualRoutePath = 'c0ff';
     app.baseOverride = LibraryEntry(
@@ -61,19 +60,33 @@ void main() {
     expect(app.nodeStatus, isNull);
     expect(app.nodeInfo, isNull);
     expect(app.nodePreset, isNull);
-    expect(app.selectedBoard, isNull);
     expect(app.radio2Enabled, isNull);
     expect(app.baseOverride, isNull);
     expect(app.manualRoutePath, isEmpty);
   });
 
-  test('selecting a board drops an image for another board', () {
+  test('the version picker only ever offers the node-board image', () {
     final app = AppState();
-    app.selectedAsset = asset(_board, 'v1.1.0-rc5');
-    app.selectedBoard = _board;
-    app.setSelectedBoard('RAK_4631_repeater');
-    expect(app.selectedAsset, isNull);
-    expect(app.selectedBoard, 'RAK_4631_repeater');
+    app.catalog = catalog([
+      release('filter-v1.1.0-rc5', images: [
+        asset(_board, 'v1.1.0-rc5'),
+        asset('RAK_4631_repeater', 'v1.1.0-rc5'),
+      ]),
+      release('filter-v1.0.0-old', images: [
+        asset('RAK_4631_repeater', 'v1.0.0-old'),
+      ]),
+    ]);
+
+    final visible = app.visibleReleasesFor(_board);
+    expect(visible.map((r) => r.tag), ['filter-v1.1.0-rc5']);
+    expect(app.assetForEnvironment(visible.single, _board)?.env, _board);
+    expect(app.assetForEnvironment(visible.single, 'ARM_unknown'), isNull);
+    app.nodeInfo = nodeInfo(targetId: _targetId);
+    expect(visible.single.appImages.any((a) => a.env == 'RAK_4631_repeater'),
+        isTrue);
+    // Releases with no image for this board are hidden entirely.
+    expect(app.visibleReleasesFor('RAK_4631_repeater').map((r) => r.tag),
+        ['filter-v1.1.0-rc5', 'filter-v1.0.0-old']);
   });
 
   test('a cached asset is selected without any network access', () async {

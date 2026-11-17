@@ -90,16 +90,19 @@ in the repeater's access list.
 
 ![Choose firmware](docs/images/04-firmware.png)
 
-The **GitHub** tab lists the fork's releases, newest first. **Stable** and
-**Dev builds** are separate tabs. The list is scoped to the board the
-repeater reported, so you cannot accidentally pick another board's image.
+The **GitHub** tab lists the fork's releases as **versions** — one row per
+version, newest first. **Stable** and **Dev builds** are separate tabs. The
+list only shows versions that have an image for the repeater's board, and the
+app picks that image for you — there is no board picker and no per-device
+list to manage.
 
-- Tapping an image **selects** it for this update.
-- The download button on a release saves **that whole version** (every
-  board's image) on your device for offline use.
-- **Offline** shows the versions you have already saved — one row per
-  version, expandable to each board's image. A release can also be deleted
-  here as a unit.
+- Tapping a version downloads **its image for your board** (if it is not
+  already on the device) and selects it for this update.
+- The **cloud button** on a version saves **that whole version** (every
+  board's image) on your device for offline use. The cloud icon tells the
+  state: outlined = not downloaded, filled = partially saved, done = saved.
+- A saved version is marked on its row, and a trash icon deletes the version
+  and all of its images.
 - **Imported** shows your imported `.bin` files — one row per file — and is
   where you import a custom build.
 
@@ -154,29 +157,30 @@ manually at any time with **Roll back to previous firmware**.
 
 The **cloud** button on the firmware screen (and the **Work offline** switch on the review screen) switches the app offline. In
 offline mode it never contacts GitHub — not for the release list, not for an
-image. The **Offline** tab shows the versions already saved on the device,
-like a music app's downloaded list.
+image. The **GitHub** tab then shows exactly the versions saved on this
+device — like a music app's downloaded list. **Imported** is available in
+both modes.
 
 The setting is remembered, so a device that goes into the field stays offline
 across restarts. Switch it back on when you have a connection.
 
-To prepare: while on Wi-Fi, open **Choose firmware → GitHub**, pick the
-version you want, and press the download button on that release. Every image
-of that version is saved. Do the same for the version the repeater currently
-runs; that second image is what makes a small delta possible. The **Firmware
-library** on the main screen manages what is stored: download versions,
-delete ones you no longer need, and see downloaded versions (one row per
-version) and imported `.bin` files (one row per file) separately.
+To prepare: while on Wi-Fi, open **Choose firmware → GitHub**, and tap the
+cloud button on the version you want. Every image of that version is saved.
+Do the same for the version the repeater currently runs; that second image is
+what makes a small delta possible. The **Firmware library** on the main
+screen manages what is stored: download versions, delete ones you no longer
+need, and see downloaded versions (one row per version) and imported `.bin`
+files (one row per file) separately.
 
 ## The firmware library
 
 **Firmware library** on the main screen is the same screen as step 4, outside
-the update flow. Use the **GitHub** tab to download a release version (or a
-single board's image), the **Offline** tab to see and delete saved versions
-(one row per version, with a *delete this version* action), and the
-**Imported** tab to import a custom `.bin` and delete files you no longer
-need — one row per file. Deleting an image the app had selected for an
-update simply clears that selection.
+the update flow. Use the **GitHub** tab to download release versions (tapping
+a version downloads all of its missing images), see saved versions in offline
+mode (one row per version), and delete a version with the trash icon on its
+row. Use the **Imported** tab to import a custom `.bin` (one row per file)
+and delete imported files you no longer need. Deleting an image the app had
+selected for an update simply clears that selection.
 
 Imported files and downloaded versions are listed separately on purpose:
 downloaded images come from releases (they carry the release's board and
@@ -190,8 +194,8 @@ Custom builds work exactly like releases:
 
 1. Build your firmware (the repeater side needs the OTA feature).
 2. **Firmware library → Imported tab → Import a .bin**, on any platform.
-3. Select it on the **Imported** tab (or the **Offline** tab for a downloaded
-   version).
+3. Select it on the **Imported** tab (or a saved version on the **GitHub**
+   tab, in either mode).
 4. On the review screen, choose the file the repeater already runs as the
    **base** — or send the full image.
 
@@ -232,7 +236,7 @@ and still verifies the hash, so a wrong file cannot be bricked into place.
 
 ## Screenshots
 
-| Firmware picker | Offline versions |
+| Firmware picker | Offline view |
 |---|---|
 | ![Firmware](docs/images/04-firmware.png) | ![Offline](docs/images/08-offline.png) |
 

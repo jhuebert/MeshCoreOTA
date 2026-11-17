@@ -115,7 +115,6 @@ class AppState extends ChangeNotifier {
   /// The board (build environment) the firmware picker is scoped to. It is
   /// pre-filled from the node's `OP_INFO` target id as soon as the catalog or
   /// library knows that environment's name.
-  String? selectedBoard;
 
   FirmwareLibrary? library;
   List<LibraryEntry> libraryEntries = const [];
@@ -320,7 +319,6 @@ class AppState extends ChangeNotifier {
     radio2Status = null;
     companionName = '';
     companionPreset = null;
-    selectedBoard = null;
     manualRoutePath = '';
   }
 
@@ -382,7 +380,6 @@ class AppState extends ChangeNotifier {
     nodePreset = null;
     radio2Enabled = null;
     radio2Status = null;
-    selectedBoard = null;
     baseOverride = null;
     autoBaseEntry = null;
     forceFullImage = false;
@@ -436,7 +433,6 @@ class AppState extends ChangeNotifier {
                 : radio2.startsWith('off')
                     ? false
                     : null);
-        _adoptDetectedBoard();
         _prefillRadioPlan();
         // A new node's running image is a different delta base; re-match it
         // (the old node's base would silently fail the SHA gate). A library
@@ -485,13 +481,13 @@ class AppState extends ChangeNotifier {
         cacheOnly: offlineMode,
       );
       catalogFromCache = catalog!.fromCache;
-      _adoptDetectedBoard();
     } catch (e) {
-      // Offline with no cache is not an error: the offline tab is the view.
+      // Offline with no cache is not an error: the GitHub tab shows what
+      // this device holds.
       if (!offlineMode) catalog = null;
       catalogError = offlineMode
-          ? 'Offline — no cached release list. Downloaded versions are in '
-              'the Offline tab.'
+          ? 'Offline — no cached release list. Downloaded versions are '
+              'shown in the GitHub tab.'
           : '$e';
     } finally {
       catalogLoading = false;
@@ -541,55 +537,40 @@ class AppState extends ChangeNotifier {
     return environmentForTargetId(info.targetId);
   }
 
-  void _adoptDetectedBoard() {
-    final detected = detectedBoard;
-    if (detected != null && selectedBoard == null) selectedBoard = detected;
-  }
-
-  void setSelectedBoard(String? env) {
-    if (selectedBoard == env) return;
-    selectedBoard = env;
-    // A selection made for another board is no longer installable.
-    if (selectedAsset != null && selectedAsset!.env != env) {
-      selectedAsset = null;
-      _selectedImage = null;
-      deltaResult = null;
-      autoBaseEntry = null;
-    }
-    baseOverride = null;
-    notifyListeners();
-  }
-
   Future<void> refreshLibrary() async {
     libraryLoading = true;
     notifyListeners();
     try {
       final lib = await _openLibrary();
       libraryEntries = await lib.list();
-      _adoptDetectedBoard();
     } finally {
       libraryLoading = false;
       notifyListeners();
     }
   }
 
-  /// The releases for the selected track, newest first. Board filtering is
-  /// applied per asset by the picker so a release with no image for this
-  /// board is hidden rather than empty.
-  List<FirmwareRelease> get visibleReleases {
+  /// The releases for the selected track with an image built for [env], newest
+  /// first. Null [env] shows everything — used when there is no node to scope
+  /// against (the standalone library). A release with no image for the node's
+  /// board is hidden rather than shown and refused later.
+  List<FirmwareRelease> visibleReleasesFor(String? env) {
     final dev = releaseTrack == ReleaseTrack.dev;
     final out = (catalog?.releases ?? const <FirmwareRelease>[])
         .where((r) => r.isDevTrack == dev)
-        .where((r) => r.appImages.any((a) => assetMatchesBoard(a)))
+        .where((r) => env == null || r.appImages.any((a) => a.env == env))
         .toList()
       ..sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
     return out;
   }
 
-  /// Whether [asset] is built for the board the picker is scoped to. With no
-  /// board chosen every asset is shown (the prune before a board is known).
-  bool assetMatchesBoard(FirmwareAsset asset) =>
-      selectedBoard == null || asset.env == selectedBoard;
+  /// The image of [release] built for [env], or null when it has none.
+  FirmwareAsset? assetForEnvironment(FirmwareRelease release, String? env) {
+    if (env == null) return null;
+    for (final asset in release.appImages) {
+      if (asset.env == env) return asset;
+    }
+    return null;
+  }
 
   /// Select a GitHub asset and load (download) its bytes.
   Future<void> selectAsset(FirmwareAsset asset) async {
@@ -664,6 +645,10 @@ class AppState extends ChangeNotifier {
     final missing = release.appImages
         .where((a) => libraryEntryForAsset(a) == null)
         .toList();
+    if (missing.isEmpty) {
+      log_('${release.tag} was already saved for offline use');
+      return 0;
+    }
     downloadingReleaseTag = release.tag;
     releaseDownloadProgress = (total - missing.length) / total;
     notifyListeners();
@@ -721,10 +706,12 @@ class AppState extends ChangeNotifier {
           release.appImages.every((a) => libraryEntryForAsset(a) != null);
       out.add(OfflineVersion(
         version: group.key,
+        tag: release?.tag,
         entries: entries,
         complete: complete,
         known: release != null,
         isDev: release?.isDevTrack ?? group.key.contains('-dev.'),
+        totalAssets: release?.appImages.length ?? entries.length,
       ));
     }
     out.sort((a, b) => b.entries.first.added.compareTo(a.entries.first.added));
@@ -806,7 +793,7 @@ class AppState extends ChangeNotifier {
       fileName: fileName,
     );
     libraryEntries = await lib.list();
-    _adoptDetectedBoard();
+    notifyListeners();
     return entry;
   }
 
@@ -1384,15 +1371,25 @@ class AppState extends ChangeNotifier {
 class OfflineVersion {
   const OfflineVersion({
     required this.version,
+    this.tag,
     required this.entries,
     required this.complete,
     required this.known,
     required this.isDev,
+    required this.totalAssets,
   });
 
   final String version;
+
+  /// The release tag (e.g. `filter-v1.1.0-rc5`) when the catalog knows it;
+  /// versions are the unit the user thinks in. Null without a catalog.
+  final String? tag;
   final List<LibraryEntry> entries;
   final bool complete;
   final bool known;
   final bool isDev;
+
+  /// How many images the whole version has; equal to [entries.length] when
+  /// the catalog is unavailable.
+  final int totalAssets;
 }

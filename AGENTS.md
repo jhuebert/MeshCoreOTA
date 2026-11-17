@@ -162,17 +162,20 @@ below the fold on the current one.
   contact lists must never hide the key field or the admin login.
 - **Admin**: the password is optional (see parity above), and `Check node`
   must always be tappable; do not gate it on a non-empty password.
-- **Firmware**: the board dropdown is alpha-sorted, prefilled from the node's
-  `OP_INFO` target id, and the GitHub listing is scoped by it. Stable and dev
-  are separate tabs, each newest-first. The version save action downloads
-  **all** assets of a release; the Offline tab shows only downloaded
-  versions — one row per version, with per-.bin and per-version deletes.
-  Imported `.bin` files are listed separately on the Imported tab — one row
-  per file — and match like any other entry by SHA-256 (delta base and
-  update image alike). The **Firmware library** on the main screen is this
-  same screen in manager mode (`FirmwareScreen(updateMode: false)`): taps
-  download or inspect instead of selecting, there is no wizard bar or Review
-  button, and images/versions can be deleted from it. The offline switch is
+- **Firmware**: versions are the unit. The GitHub tab shows one row per
+  version — no board dropdown, no per-device rows; the app detects the
+  node's board and downloads that board's image just-in-time when a version
+  is tapped. Releases with no image for the detected board are hidden. The
+  save button downloads **all** assets of a release (every board); the cloud
+  icon shows the version's save state (not saved / partial / saved) and a
+  trash icon deletes the whole version (the delta base and any selected
+  image are repaired). There is no Offline tab: offline mode shows only
+  saved versions in the GitHub tab. Imported `.bin` files live on the
+  Imported tab — one row per file — and match by SHA-256 like any other
+  entry (delta base and update image alike). The **Firmware library** on
+  the main screen is this same screen in manager mode
+  (`FirmwareScreen(updateMode: false)`): tapping a version downloads the
+  whole version instead of selecting an update. The offline switch is
   persisted and must prevent every GitHub request (catalog included).
 - **Review**: three radio plans (live mesh with the path override, temporary
   private preset on both ends, or the repeater's radio2) and before/after

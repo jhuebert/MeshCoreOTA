@@ -10,15 +10,14 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 - **The firmware library is now the firmware picker, usable on its own.**
   The screen reached from the main screen is the same one as step 4: the
-  **GitHub** tab downloads a release version (or a single board's image),
-  the **Offline** tab lists saved versions with a per-version *Delete this
-  version* action, and the **Imported** tab holds imported `.bin` files —
-  one row per file — with an import button. Downloaded versions and imported
-  files are always separate. In the standalone view, taps download or inspect
-  instead of selecting an update; inside an update they still pick the image.
-- **Per-.bin and per-version deletes.** Every image can be deleted from its
-  row, and a saved version can be deleted as a unit (all boards). Deleting
-  the selected image or delta base clears it.
+  **GitHub** tab lists release versions one row each (with the cloud icons
+  showing what is saved for offline use, and a trash icon per version), and
+  the **Imported** tab holds imported `.bin` files — one row per file —
+  with an import button. In the standalone view, tapping a version downloads
+  all of its missing images; inside an update, tapping a version downloads
+  only the image for this node's board and selects it. Deleting a version
+  (all boards) or the selected image/delta base is repaired automatically.
+  Downloaded versions and imported files are always separate.
 
 
 - **A guided seven-step flow.** Connect → Repeater → Admin → Firmware →
@@ -30,15 +29,16 @@ All notable changes to MeshCoreOTA are documented here. The format follows
   whether the companion's key is already an admin in its ACL, so no password
   is needed for a provisioned companion. `Check node` is never disabled for
   an empty password.
-- **Board-scoped version picker.** The node's `OP_INFO` target id is mapped
-  back to its build environment; the board dropdown is alpha-sorted, prefilled
-  from that, and the GitHub listing only shows images for the chosen board.
+- **Board-matched version picker.** The node's `OP_INFO` target id is mapped
+  back to its build environment, the GitHub listing shows only versions with
+  an image for that board, and the app downloads that board's image for you —
+  there is no board picker.
 - **Stable and dev are separate tabs**, each newest-first with release dates
   (dev builds used to be a switch under one long list).
 - **Version-based offline library.** Saving a version downloads every board's
-  image of that release, and the Offline tab lists only saved versions (with
-  a complete/partial marker). A persistent **Go offline** switch on the
-  firmware screen prevents *every* GitHub request, including the catalog.
+  image of that release. A persistent **Go offline** switch on the firmware
+  screen prevents *every* GitHub request, including the catalog, and shows
+  only the saved versions.
 - **Three radio plans.** Live mesh with the DIRECT path override; a temporary
   private preset on both the repeater and the companion; or the repeater's
   radio2 preset while the live mesh keeps running. Off-mesh modes are zero-hop,
@@ -82,6 +82,24 @@ All notable changes to MeshCoreOTA are documented here. The format follows
   CRCs instead of assuming the frame ends at the last non-zero byte (which
   broke reports whose CRC ends in `0x00`, and every report larger than one
   block, including `OP_INFO_REPORT`).
+
+### Changed
+
+- **The firmware picker lists versions, not boards.** The board dropdown is
+  gone; a version row, its save state and its trash icon are the whole
+  interaction. Releases with no image for the board the node reported are
+  hidden. In an update, tapping a version downloads only the image this node
+  needs (just-in-time, from disk when already saved); the cloud button
+  downloads every board's image of the version. Offline mode shows just the
+  versions saved on the device in the GitHub tab — there is no separate
+  Offline tab. Imported `.bin` files are unchanged.
+
+### Fixed
+
+- **An imported or downloaded image now appears immediately.** The library
+  updated its in-memory list without notifying listeners, so newly imported
+  files did not show until the app was restarted; the screen rebuilds
+  immediately now (pinned by a widget test).
 
 ### Removed
 

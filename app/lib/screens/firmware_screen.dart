@@ -16,16 +16,19 @@ import 'review_screen.dart';
 /// Step 4: pick what to install — or the standalone library manager.
 ///
 /// The same screen serves both contexts. Inside an update
-/// ([updateMode] true) it is wizard step 4 and tapping an image selects it
-/// for the update. From the main screen ([updateMode] false) it is a file
-/// manager for the library: download GitHub release versions, import `.bin`
-/// files, delete what is no longer needed — taps never select an update.
+/// ([updateMode] true) it is wizard step 4 and tapping a version selects its
+/// image for this node's board. From the main screen ([updateMode] false) it
+/// is a file manager for the library: download GitHub release versions,
+/// import `.bin` files, delete what is no longer needed — taps never select
+/// an update.
 ///
-/// The GitHub listing is scoped to the board the node reported (all boards
-/// when there is no node), and both release channels are tabs sorted
-/// newest-first. Versions are saved for offline use whole (every board);
-/// downloaded versions appear one row per version, imported `.bin` files one
-/// row per file — separately, because they are different things.
+/// Versions are treated as a unit everywhere: the GitHub listing shows one
+/// row per version (cloud icons show whether it is saved for offline use),
+/// saving a version stores every board's image, and tapping a version in an
+/// update downloads only this node's image. In update mode the list holds
+/// only versions with an image for the board the node reported; in offline
+/// mode it holds only versions saved on this device. Imported `.bin` files
+/// are the separate Imported tab — one row per file.
 class FirmwareScreen extends StatefulWidget {
   const FirmwareScreen({super.key, this.updateMode = true});
 
@@ -44,7 +47,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final app = context.read<AppState>();
       if (!app.offlineMode && app.catalog == null && !app.catalogLoading) {
@@ -88,7 +91,6 @@ class _FirmwareScreenState extends State<FirmwareScreen>
           indicatorColor: OtaTheme.accent,
           tabs: const [
             Tab(text: 'GitHub'),
-            Tab(text: 'Offline'),
             Tab(text: 'Imported'),
           ],
         ),
@@ -112,8 +114,8 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Offline — no GitHub requests. Versions saved on this '
-                      'device are in the Offline tab.',
+                      'Offline — no GitHub requests. This tab shows only '
+                      'the versions saved on this device.',
                       style: TextStyle(
                           color: OtaTheme.warn, fontSize: 12, height: 1.35),
                     ),
@@ -126,7 +128,6 @@ class _FirmwareScreenState extends State<FirmwareScreen>
               controller: _tabs,
               children: [
                 _buildGitHubTab(app),
-                _buildOfflineTab(app),
                 _buildImportedTab(app),
               ],
             ),
@@ -140,59 +141,46 @@ class _FirmwareScreenState extends State<FirmwareScreen>
   // ---------------------------------------------------------------- GitHub
 
   Widget _buildGitHubTab(AppState app) {
-    if (app.offlineMode) {
+    final update = widget.updateMode;
+    final detected = app.detectedBoard;
+
+    if (update && detected == null && app.nodeInfo != null) {
+      // The node answered, but the app cannot name its build environment, so
+      // no release can be matched to it.
       return _offlineEmpty(
-        icon: Icons.cloud_off,
-        title: 'You are offline',
-        body: 'The app is not contacting GitHub. Switch back online to browse '
-            'releases and save a version for the field, or pick a version from '
-            'the Offline tab.',
-        action: FilledButton.icon(
-          onPressed: () => app.setOfflineMode(false),
-          icon: const Icon(Icons.cloud_queue),
-          label: const Text('Go online'),
-        ),
+        icon: Icons.help_outline,
+        title: 'This node\'s board is not recognized',
+        body: 'The node reported a build id the app does not know, so no '
+            'release can be matched to it. Import the image in the Imported '
+            'tab instead.',
       );
     }
 
-    final envs = app.knownEnvironments.toList()..sort();
-    final releases = app.visibleReleases;
-    final board = app.selectedBoard;
-    final detected = app.detectedBoard;
-    final update = widget.updateMode;
+    if (app.offlineMode) {
+      return _buildDownloadedVersions(app, detected);
+    }
+
+    final releases = app.visibleReleasesFor(update ? detected : null);
+    final track = app.releaseTrack == ReleaseTrack.dev ? 'dev ' : '';
 
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
           child: Row(
             children: [
               Expanded(
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: 'Board',
-                    isDense: true,
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: board ?? '',
-                      isDense: true,
-                      isExpanded: true,
-                      items: [
-                        const DropdownMenuItem(
-                            value: '', child: Text('All boards')),
-                        for (final env in envs)
-                          DropdownMenuItem(value: env, child: Text(env)),
-                      ],
-                      onChanged: (value) => app.setSelectedBoard(
-                          value == null || value.isEmpty ? null : value),
-                    ),
-                  ),
+                child: Text(
+                  update
+                      ? 'Showing versions with an image for your board '
+                          '($detected). Tap a version to download its image '
+                          'for this update.'
+                      : 'Versions are treated as a unit. Tapping a version '
+                          'downloads every board\'s image for it.',
+                  style: const TextStyle(
+                      color: OtaTheme.textMuted, fontSize: 11, height: 1.35),
                 ),
               ),
-              const SizedBox(width: 8),
               IconButton(
                 tooltip: 'Refresh releases',
                 onPressed: app.catalogLoading
@@ -204,25 +192,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-          child: Text(
-            update
-                ? (detected == null
-                    ? (board == null
-                        ? 'The node did not report a known board — pick one, or '
-                            'import a custom .bin in the Imported tab.'
-                        : 'Scoped to $board. The node did not report a board.')
-                    : 'Detected from the node: $detected')
-                : (board == null
-                    ? 'Not connected to a node — showing every board. Pick one '
-                        'to scope the list.'
-                    : 'Showing images for $board only.'),
-            style: const TextStyle(
-                color: OtaTheme.textMuted, fontSize: 11, height: 1.35),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+          padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
           child: SegmentedButton<ReleaseTrack>(
             segments: const [
               ButtonSegment(value: ReleaseTrack.stable, label: Text('Stable')),
@@ -253,10 +223,8 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                     child: Padding(
                       padding: const EdgeInsets.all(24),
                       child: Text(
-                        board == null
-                            ? 'No releases match this board.'
-                            : 'No ${app.releaseTrack == ReleaseTrack.dev ? 'dev ' : ''}'
-                                'releases with an image for $board.',
+                        'No ${track}releases${update ? ' with an image for '
+                            '$detected' : ''}.',
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: OtaTheme.textMuted),
                       ),
@@ -266,10 +234,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                     padding: const EdgeInsets.only(bottom: 12),
                     children: [
                       for (final release in releases)
-                        _ReleaseSection(
-                          release: release,
-                          updateMode: widget.updateMode,
-                        ),
+                        _releaseCard(context, app, release, detected),
                     ],
                   ),
           ),
@@ -277,130 +242,61 @@ class _FirmwareScreenState extends State<FirmwareScreen>
     );
   }
 
-  // --------------------------------------------------------------- Offline
-
-  Widget _buildOfflineTab(AppState app) {
+  /// Offline mode: the GitHub view holds only what this device has saved.
+  Widget _buildDownloadedVersions(AppState app, String? detected) {
+    final update = widget.updateMode;
     final versions = app.offlineVersions;
-    if (versions.isEmpty) {
+    // In update mode the list holds only what this node can run, here too.
+    final shown = update
+        ? versions
+            .where((v) => v.entries.any((e) => e.env == detected))
+            .toList()
+        : versions;
+
+    if (shown.isEmpty) {
+      if (update && versions.isNotEmpty) {
+        return _offlineEmpty(
+          icon: Icons.help_outline,
+          title: 'Nothing saved for your board',
+          body: 'The versions on this device do not have an image for '
+              '$detected. Go online to save one, or import a .bin in the '
+              'Imported tab.',
+          action: FilledButton.icon(
+            onPressed: () => app.setOfflineMode(false),
+            icon: const Icon(Icons.cloud_queue),
+            label: const Text('Go online'),
+          ),
+        );
+      }
       return _offlineEmpty(
         icon: Icons.cloud_download_outlined,
         title: 'No versions saved for offline use yet',
-        body: 'On the GitHub tab, save a version with the download button. '
-            'Every board\u2019s image for that version is stored on this device, '
-            'so you can update in the field with no signal. Custom builds can '
-            'be imported on the Imported tab — they work offline too.',
-        action: app.offlineMode
-            ? FilledButton.icon(
-                onPressed: () => app.setOfflineMode(false),
-                icon: const Icon(Icons.cloud_queue),
-                label: const Text('Go online'),
-              )
-            : null,
+        body: 'On a connection, open this tab and save a version with the '
+            'cloud button. Every board\'s image for that version is stored '
+            'on this device, so you can update in the field with no signal.',
+        action: FilledButton.icon(
+          onPressed: () => app.setOfflineMode(false),
+          icon: const Icon(Icons.cloud_queue),
+          label: const Text('Go online'),
+        ),
       );
     }
-    final totalBytes = versions.fold<int>(
+
+    final totalBytes = shown.fold<int>(
         0, (sum, v) => sum + v.entries.fold<int>(0, (s, e) => s + e.size));
     return ListView(
       padding: const EdgeInsets.only(bottom: 12),
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Text(
-            '${versions.length} version(s) on this device · '
-            '${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
+            '${shown.length} version(s) on this device · '
+            '${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB · offline',
             style: const TextStyle(color: OtaTheme.textMuted, fontSize: 12),
           ),
         ),
-        for (final version in versions)
-          Card(
-            child: ExpansionTile(
-              leading: Icon(
-                version.complete || !version.known
-                    ? Icons.offline_pin
-                    : Icons.rule,
-                color: version.complete || !version.known
-                    ? OtaTheme.ok
-                    : OtaTheme.warn,
-              ),
-              title: Text(
-                version.version,
-                style:
-                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                '${version.entries.length} image(s)'
-                '${version.known ? (version.complete ? ' · complete version' : ' · partial') : ''}',
-                style: const TextStyle(color: OtaTheme.textMuted, fontSize: 11),
-              ),
-              children: [
-                for (final entry in version.entries)
-                  ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.memory,
-                        color: OtaTheme.accent, size: 20),
-                    title:
-                        Text(entry.env, style: const TextStyle(fontSize: 12)),
-                    subtitle: Text(
-                      '${(entry.size / (1024 * 1024)).toStringAsFixed(2)} MB · '
-                      '${entry.fileName}',
-                      style: const TextStyle(
-                          color: OtaTheme.textMuted, fontSize: 10.5),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (widget.updateMode &&
-                            identical(entry, app.selectedLibraryEntry))
-                          const Icon(Icons.check, color: OtaTheme.accent),
-                        IconButton(
-                          tooltip: 'Delete ${entry.env}',
-                          icon: const Icon(Icons.delete_outline,
-                              color: OtaTheme.textMuted, size: 20),
-                          onPressed: () => _deleteEntries(
-                            app,
-                            [entry],
-                            title: 'Delete image?',
-                            body: '${entry.fileName}\n\n'
-                                'This cannot be undone.',
-                          ),
-                        ),
-                      ],
-                    ),
-                    onTap: app.imageLoading
-                        ? null
-                        : () => widget.updateMode
-                            ? app.selectLibraryEntryForUpdate(entry)
-                            : _inspectEntry(entry),
-                  ),
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.delete_outline,
-                      color: OtaTheme.bad, size: 20),
-                  title: Text(
-                    'Delete this version',
-                    style: const TextStyle(
-                        color: OtaTheme.bad,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    'Removes all ${version.entries.length} image(s) — '
-                    '${((version.entries.fold<int>(0, (s, e) => s + e.size)) / (1024 * 1024)).toStringAsFixed(1)} MB',
-                    style: const TextStyle(
-                        color: OtaTheme.textMuted, fontSize: 10.5),
-                  ),
-                  onTap: () => _deleteEntries(
-                    app,
-                    version.entries,
-                    title: 'Delete ${version.version}?',
-                    body: 'This removes all ${version.entries.length} image(s) '
-                        'of ${version.version} from this device.\n\n'
-                        'This cannot be undone.',
-                  ),
-                ),
-              ],
-            ),
-          ),
+        for (final version in shown)
+          _offlineVersionCard(context, app, version, detected),
       ],
     );
   }
@@ -544,6 +440,97 @@ class _FirmwareScreenState extends State<FirmwareScreen>
           body: '${entry.fileName}\n\nThis cannot be undone.',
         );
     }
+  }
+
+  /// The row for a catalog release, wired to the update or manager context.
+  Widget _releaseCard(BuildContext context, AppState app,
+      FirmwareRelease release, String? detected) {
+    final update = widget.updateMode;
+    final entries = release.appImages
+        .map(app.libraryEntryForAsset)
+        .whereType<LibraryEntry>()
+        .toList();
+    final asset = update ? app.assetForEnvironment(release, detected) : null;
+    final selected = asset != null &&
+        (app.selectedAsset?.name == asset.name ||
+            (app.selectedLibraryEntry?.env == asset.env &&
+                app.selectedLibraryEntry?.version == asset.version));
+
+    return _VersionCard(
+      version: release.tag,
+      dateLabel: _VersionCard._date(release.publishedAt),
+      isDev: release.isDevTrack,
+      savedCount: entries.length,
+      totalCount: release.appImages.length,
+      selected: selected,
+      offline: false,
+      onTap: update
+          ? (asset == null ? null : () => app.selectAsset(asset))
+          : () => _saveRelease(context, app, release),
+      onSave: () => _saveRelease(context, app, release),
+      onDelete: entries.isEmpty
+          ? null
+          : () => _deleteEntries(
+                app,
+                entries,
+                title: 'Delete ${release.tag}?',
+                body: 'This removes all ${entries.length} saved image(s) of '
+                    '${release.tag} from this device.\n\n'
+                    'This cannot be undone.',
+              ),
+    );
+  }
+
+  /// The row for a version saved on this device (offline mode).
+  Widget _offlineVersionCard(BuildContext context, AppState app,
+      OfflineVersion version, String? detected) {
+    final update = widget.updateMode;
+    final entries = version.entries;
+    final entry = entryForBoard(entries, detected);
+    final selected =
+        update && entry != null && app.selectedLibraryEntry?.id == entry.id;
+    final savedAt =
+        entries.map((e) => e.added).reduce((a, b) => a.isAfter(b) ? a : b);
+
+    return _VersionCard(
+      version: version.tag ?? version.version,
+      dateLabel: _VersionCard._date(savedAt.toIso8601String()),
+      isDev: version.isDev,
+      savedCount: entries.length,
+      totalCount: version.totalAssets,
+      selected: selected,
+      offline: true,
+      onTap: update
+          ? (entry == null
+              ? null
+              : () => app.selectLibraryEntryForUpdate(entry))
+          : () => _showSnack('Offline — nothing new to download for this '
+              'version'),
+      onSave: null,
+      onDelete: () => _deleteEntries(
+        app,
+        entries,
+        title: 'Delete ${version.tag ?? version.version}?',
+        body: 'This removes all ${entries.length} saved image(s) of '
+            '${version.tag ?? version.version} from this device.\n\n'
+            'This cannot be undone.',
+      ),
+    );
+  }
+
+  /// Save every missing image of the release; used by the row tap in the
+  /// library manager and by the cloud button everywhere online.
+  Future<void> _saveRelease(
+      BuildContext context, AppState app, FirmwareRelease release) async {
+    final saved = await app.downloadReleaseToLibrary(release);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(saved == 0
+            ? '${release.tag} is already saved'
+            : 'Saved ${release.tag} — $saved image(s) for offline use'),
+      ),
+    );
   }
 
   // -------------------------------------------------------------- actions
@@ -807,150 +794,44 @@ class _FirmwareScreenState extends State<FirmwareScreen>
   }
 }
 
-class _ReleaseSection extends StatelessWidget {
-  const _ReleaseSection({required this.release, required this.updateMode});
-
-  final FirmwareRelease release;
-  final bool updateMode;
-
-  @override
-  Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
-    final images = release.appImages.where(app.assetMatchesBoard).toList()
-      ..sort((a, b) => a.env.compareTo(b.env));
-    if (images.isEmpty) return const SizedBox.shrink();
-    final savedCount = release.appImages
-        .where((a) => app.libraryEntryForAsset(a) != null)
-        .length;
-    final allSaved = savedCount == release.appImages.length;
-    final downloading = app.downloadingReleaseTag == release.tag;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 12, 6),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      release.tag,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 13),
-                    ),
-                    Text(
-                      _date(release.publishedAt),
-                      style: const TextStyle(
-                          color: OtaTheme.textMuted, fontSize: 11),
-                    ),
-                  ],
-                ),
-              ),
-              StatusPill(
-                release.isDevTrack ? 'DEV' : 'STABLE',
-                color: release.isDevTrack ? OtaTheme.warn : OtaTheme.ok,
-              ),
-              const SizedBox(width: 4),
-              if (downloading)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      value: app.releaseDownloadProgress,
-                    ),
-                  ),
-                )
-              else
-                IconButton(
-                  tooltip: allSaved
-                      ? 'Saved for offline use'
-                      : 'Save every image of this version for offline use',
-                  onPressed: allSaved
-                      ? null
-                      : () async {
-                          final saved =
-                              await app.downloadReleaseToLibrary(release);
-                          if (!context.mounted) return;
-                          final complete = release.appImages.every(
-                              (a) => app.libraryEntryForAsset(a) != null);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(saved == 0
-                                  ? (complete
-                                      ? '${release.tag} is already saved'
-                                      : 'Nothing new to save for ${release.tag}')
-                                  : 'Saved ${release.tag} — $saved image(s) for offline use'),
-                            ),
-                          );
-                        },
-                  icon: Icon(
-                    allSaved
-                        ? Icons.offline_pin
-                        : Icons.cloud_download_outlined,
-                    color: allSaved ? OtaTheme.ok : OtaTheme.accent,
-                  ),
-                ),
-            ],
-          ),
-        ),
-        ...images.map((asset) {
-          final selected = app.selectedAsset?.name == asset.name;
-          final cached = app.libraryEntryForAsset(asset);
-          return Card(
-            color: updateMode && selected ? OtaTheme.surfaceHigh : null,
-            child: ListTile(
-              dense: true,
-              title: Text(asset.env, style: const TextStyle(fontSize: 12)),
-              subtitle: Text(
-                '${asset.version} · ${(asset.size / (1024 * 1024)).toStringAsFixed(2)} MB'
-                '${asset.hasSha256 ? ' · sha256 ✓' : ' · no sha256'}',
-                style: const TextStyle(color: OtaTheme.textMuted, fontSize: 11),
-              ),
-              trailing: app.imageLoading && selected
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Icon(
-                      cached != null
-                          ? Icons.offline_pin
-                          : Icons.download_outlined,
-                      color: cached != null ? OtaTheme.ok : OtaTheme.textMuted,
-                      size: 18,
-                    ),
-              onTap: app.imageLoading
-                  ? null
-                  : () => updateMode
-                      ? app.selectAsset(asset)
-                      : _downloadAsset(context, app, asset),
-            ),
-          );
-        }),
-      ],
-    );
+/// The entry built for [env] within [entries], or null.
+LibraryEntry? entryForBoard(List<LibraryEntry> entries, String? env) {
+  if (env == null) return null;
+  for (final entry in entries) {
+    if (entry.env == env) return entry;
   }
+  return null;
+}
 
-  Future<void> _downloadAsset(
-      BuildContext context, AppState app, FirmwareAsset asset) async {
-    final saved = await app.downloadAssetToLibrary(asset);
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(saved == 1
-            ? 'Saved ${asset.name} to the library'
-            : (app.libraryEntryForAsset(asset) != null
-                ? '${asset.name} is already in the library'
-                : 'Could not save ${asset.name}')),
-      ),
-    );
-  }
+/// One row per version — the unit the user asked for. The trailing cloud
+/// icon carries the save state (not saved / partial / saved); the trash icon
+/// deletes the whole version. Tapping does what fits the context: in an
+/// update it selects the image built for this node's board; in the library
+/// manager it downloads every missing board's image.
+class _VersionCard extends StatelessWidget {
+  const _VersionCard({
+    required this.version,
+    required this.dateLabel,
+    required this.isDev,
+    required this.savedCount,
+    required this.totalCount,
+    required this.selected,
+    required this.offline,
+    required this.onTap,
+    required this.onSave,
+    required this.onDelete,
+  });
+
+  final String version;
+  final String dateLabel;
+  final bool isDev;
+  final int savedCount;
+  final int totalCount;
+  final bool selected;
+  final bool offline;
+  final VoidCallback? onTap;
+  final VoidCallback? onSave;
+  final VoidCallback? onDelete;
 
   static String _date(String iso) {
     final parsed = DateTime.tryParse(iso);
@@ -958,5 +839,87 @@ class _ReleaseSection extends StatelessWidget {
     final local = parsed.toLocal();
     return '${local.year}-${local.month.toString().padLeft(2, '0')}-'
         '${local.day.toString().padLeft(2, '0')}';
+  }
+
+  bool get _complete => totalCount > 0 && savedCount >= totalCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
+    final state = _complete
+        ? (savedCount == 0 ? 'not downloaded' : 'saved for offline use')
+        : savedCount == 0
+            ? 'not downloaded'
+            : '$savedCount of $totalCount images saved';
+
+    return Card(
+      color: selected ? OtaTheme.surfaceHigh : null,
+      child: ListTile(
+        dense: true,
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(
+                version,
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 6),
+            StatusPill(
+              isDev ? 'DEV' : 'STABLE',
+              color: isDev ? OtaTheme.warn : OtaTheme.ok,
+            ),
+          ],
+        ),
+        subtitle: Text(
+          '$dateLabel · $state',
+          style: const TextStyle(color: OtaTheme.textMuted, fontSize: 11),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (selected) ...[
+              const Icon(Icons.check, color: OtaTheme.accent),
+              const SizedBox(width: 8),
+            ],
+            IconButton(
+              tooltip: offline
+                  ? (_complete
+                      ? 'Saved for offline use'
+                      : 'Missing images can only be downloaded on a connection')
+                  : _complete
+                      ? 'Saved for offline use'
+                      : 'Save every image of this version for offline use',
+              // A complete version has nothing to download; a partial one
+              // can always fetch the rest on a connection.
+              onPressed: offline || _complete ? null : onSave,
+              icon: Icon(
+                _complete
+                    ? Icons.cloud_done
+                    : savedCount == 0
+                        ? Icons.cloud_download_outlined
+                        : Icons.cloud_download,
+                color: _complete
+                    ? OtaTheme.ok
+                    : savedCount == 0
+                        ? OtaTheme.accent
+                        : OtaTheme.warn,
+                size: 20,
+              ),
+            ),
+            if (onDelete != null)
+              IconButton(
+                tooltip: 'Delete this version ($savedCount image(s))',
+                icon: const Icon(Icons.delete_outline,
+                    color: OtaTheme.textMuted, size: 20),
+                onPressed: onDelete,
+              ),
+          ],
+        ),
+        onTap: app.imageLoading ? null : onTap,
+      ),
+    );
   }
 }
