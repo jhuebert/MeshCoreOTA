@@ -68,6 +68,15 @@ class _FakeCompanion {
   /// times, then answer normally.
   int garbageStatusReads = 0;
 
+  /// Test seam: make the `ota status` CLI throw (link failure), ignoring
+  /// [garbageStatusReads].
+  bool statusCommandThrows = false;
+
+  /// Test seam: abort() invocations.
+  int abortCount = 0;
+
+  bool get isStaging => _staging != null;
+
   // op-interpreter state
   int _expect = 1;
   int _written = 0;
@@ -77,6 +86,26 @@ class _FakeCompanion {
 
   /// err= code for the CLI replies; 4 = SHA gate refused the staged image.
   int _error = 0;
+
+  /// Test seam: leave the node in a stranded partial staging.
+  void forceStaging({int size = 1452512, int off = 933485}) {
+    _staging = Uint8List(size);
+    _size = size;
+    _written = off;
+    _expect = 5086;
+    _ready = false;
+    _error = 0;
+  }
+
+  /// Test seam: leave the node holding a verified staging nobody applied.
+  void forceReady() {
+    _staging = Uint8List(100);
+    _size = 100;
+    _written = 100;
+    _expect = 2;
+    _ready = true;
+    _error = 0;
+  }
 
   final FakeDeviceLink link = FakeDeviceLink(snr: 6.0, rssi: -70);
 
@@ -151,6 +180,13 @@ class _FakeCompanion {
   String? _pendingReply;
 
   void _enqueueCliReply(String command) {
+    if (statusCommandThrows && command == 'ota status') {
+      // The companion answers the CLI request with an error frame; the
+      // caller sees the failure exactly as a refused/timeout CLI would
+      // surface it.
+      link.simulatePush(Uint8List.fromList([respCodeErr, 0x01]));
+      return;
+    }
     _pendingReply = _cliReply(command);
     link.simulatePush(Uint8List.fromList([pushCodeMsgWaiting]));
   }
@@ -208,6 +244,7 @@ class _FakeCompanion {
     }
     if (command == 'version') return '$_nodeVersion (Build: Nov 11 2026)';
     if (command == 'ota abort') {
+      abortCount++;
       _resetStaging();
       return 'OK - aborted';
     }
@@ -619,6 +656,84 @@ void main() {
       throwsA(isA<UpdateFlowException>()
           .having((e) => e.message, 'message', contains('unparseable'))),
     );
+  });
+
+  group('clearStaleStaging', () {
+    test('returns idle and does not abort a clean node', () async {
+      expect(await flow.clearStaleStaging(fake.target), OtaPhase.idle);
+      expect(fake.abortCount, 0);
+    });
+
+    test('clears a stranded partial staging', () async {
+      fake.forceStaging(size: 1452512, off: 933485);
+      final messages = <String>[];
+      final loggingFlow = UpdateFlow(
+          client: CompanionClient(fake.link),
+          link: fake.link,
+          onLog: messages.add);
+
+      expect(
+          await loggingFlow.clearStaleStaging(fake.target), OtaPhase.staging);
+      expect(fake.abortCount, 1);
+      expect(fake.isStaging, isFalse);
+      expect(messages.single, contains('933485'));
+    });
+
+    test('clears a verified staging never applied', () async {
+      fake.forceReady();
+      expect(await flow.clearStaleStaging(fake.target), OtaPhase.ready);
+      expect(fake.abortCount, 1);
+      expect(fake.isStaging, isFalse);
+    });
+
+    test('leaves an errored node alone; the arm resets it', () async {
+      const env = 'Xiao_S3_WIO_repeater';
+      final wrongImage =
+          Uint8List.fromList(List<int>.generate(120, (i) => 0xAA));
+      final image = Uint8List.fromList(List<int>.generate(120, (i) => i));
+      final stage =
+          await flow.stage(fake.target, wrongImage, version: 'v1.18.0-r4');
+
+      final ops = computeDelta(Uint8List(0), image).ops;
+      final imageSha = Uint8List.fromList(sha256.convert(wrongImage).bytes);
+      await flow.transfer(
+        target: fake.target,
+        contract: OtaStartContract(
+          imageSize: image.length,
+          imageSha256: imageSha,
+          targetId: targetIdForEnvironment(env),
+          token: stage.token,
+        ),
+        ops: ops,
+        route: OtaRoute.zeroHop(),
+        windowSize: 4,
+        opSpacing: Duration.zero,
+      );
+
+      expect(await flow.clearStaleStaging(fake.target), OtaPhase.error);
+      expect(fake.abortCount, 0);
+    });
+
+    test('returns null for an unparseable status', () async {
+      fake.garbageStatusReads = 1 << 30;
+      expect(await flow.clearStaleStaging(fake.target), isNull);
+      expect(fake.abortCount, 0);
+    });
+
+    test('returns null when the CLI call fails', () async {
+      fake.statusCommandThrows = true;
+      expect(await flow.clearStaleStaging(fake.target), isNull);
+      expect(fake.abortCount, 0);
+    });
+
+    test('stage clears a stranded staging before arming', () async {
+      fake.forceStaging(size: 1452512, off: 933485);
+      final image = Uint8List.fromList(List<int>.generate(60, (i) => i));
+      final stage = await flow.stage(fake.target, image, version: 'v1.18.0-r4');
+      expect(fake.abortCount, 1);
+      expect(stage.size, image.length);
+      expect(fake.isStaging, isFalse);
+    });
   });
 
   test('awaitReady throws when the staged image fails the SHA gate', () async {

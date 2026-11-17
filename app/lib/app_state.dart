@@ -289,7 +289,7 @@ class AppState extends ChangeNotifier {
     _client = CompanionClient(link, onUnexpectedMessage: (m) {
       log_('unrelated msg from ${_hex(m.senderPrefix)}: ${m.text}');
     });
-    _flow = UpdateFlow(client: _client!, link: link);
+    _flow = UpdateFlow(client: _client!, link: link, onLog: log_);
     try {
       final info = await link.selfInfo();
       companionName = info.nodeName;

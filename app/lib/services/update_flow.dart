@@ -39,10 +39,14 @@ class UpdateFlowException implements Exception {
 /// passed its SHA gate (`ota apply`), and a failed health check flips back
 /// automatically in the fork firmware.
 class UpdateFlow {
-  UpdateFlow({required this.client, required this.link});
+  UpdateFlow({required this.client, required this.link, this.onLog});
 
   final CompanionClient client;
   final RadioLink link;
+
+  /// Receives one-line traces of recovery decisions (e.g. a stranded
+  /// staging being cleared); the app wires it to its log view.
+  final void Function(String message)? onLog;
 
   /// Login (admin) and read `ota status`. Throws with the device's reply on
   /// failure; returns null when the node rejected admin (or the firmware
@@ -76,6 +80,38 @@ class UpdateFlow {
     }
   }
 
+  /// `ota status`, or null when the node does not answer with the frozen
+  /// reply (pre-OTA firmware, link failure).
+  Future<OtaStatus?> status(Contact target) async {
+    try {
+      return OtaStatus.parse(await _cli(target, 'ota status'));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Clear a stranded staging so the next arm can take effect.
+  ///
+  /// A previous attempt that died mid-transfer leaves the node in
+  /// `staging` with a partial image, and `OP_START` refuses to replace it
+  /// ("a busy session keeps its place") — so every later arm is silently
+  /// refused and every op is dropped as out-of-order. `ready` is a
+  /// verified image nobody applied; there is no UI to apply a stale one
+  /// later, so a fresh arm must clear it too rather than "verify" and
+  /// apply the wrong image. Returns what it found (null when the node is
+  /// clean or did not answer).
+  Future<OtaPhase?> clearStaleStaging(Contact target) async {
+    final s = await status(target);
+    if (s == null) return null;
+    if (s.state == OtaPhase.staging || s.state == OtaPhase.ready) {
+      onLog?.call(s.state == OtaPhase.ready
+          ? 'discarding a verified staging that was never applied'
+          : 'clearing a stranded partial staging (off=${s.offset} of ${s.size} bytes)');
+      await abortQuietly(target);
+    }
+    return s.state;
+  }
+
   /// Arm the node with the exact image to stage. Returns the parsed arm
   /// contract (size + token) to hand to the transfer.
   ///
@@ -89,6 +125,7 @@ class UpdateFlow {
     required String version,
     int? expectedTargetId,
   }) async {
+    await clearStaleStaging(target);
     if (expectedTargetId != null) {
       final info = await tryNodeInfo(target);
       if (info != null && info.targetId != expectedTargetId) {
