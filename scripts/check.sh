@@ -28,7 +28,7 @@ done
 
 echo "== format =="
 "$DART" format --output=none --set-exit-if-changed \
-  packages app/lib app/test tool bench
+  packages app/lib app/test app/integration_test tool bench
 
 for pkg in mesh_protocol device_link test_support companion_client ota_core; do
   echo "== packages/$pkg =="
