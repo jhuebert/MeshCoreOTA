@@ -6,8 +6,11 @@ import 'package:crypto/crypto.dart';
 import 'package:device_link/device_link.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mesh_protocol/mesh_protocol.dart';
+import 'package:meshcore_ota/app_state.dart';
 import 'package:meshcore_ota/services/update_flow.dart';
 import 'package:ota_core/ota_core.dart';
+
+import 'support.dart';
 
 /// A fake companion with a fork-firmware repeater behind it, speaking real
 /// companion frames and the fork's OTA op interpreter. Exercises the app's
@@ -563,6 +566,102 @@ void main() {
     expect(verified, isTrue);
   });
 
+  group('awaitVersion', () {
+    test('accepts a rebooted image whose version stamp did not change',
+        () async {
+      // A same-commit rebuild boots with a stamp identical to the image
+      // it replaces — the string proves nothing. Only the running image's
+      // SHA-256 can vouch for it.
+      const env = 'Xiao_S3_WIO_repeater';
+      final image = Uint8List.fromList(
+          List<int>.generate(600, (i) => (i * 3 + 7) & 0xFF));
+      final stage = await flow.stage(fake.target, image, version: 'v1.18.0-r4');
+
+      final ops = computeDelta(Uint8List(0), image).ops;
+      final imageSha = Uint8List.fromList(sha256.convert(image).bytes);
+      await flow.transfer(
+        target: fake.target,
+        contract: OtaStartContract(
+          imageSize: image.length,
+          imageSha256: imageSha,
+          targetId: targetIdForEnvironment(env),
+          token: stage.token,
+        ),
+        ops: ops,
+        route: OtaRoute.zeroHop(),
+        windowSize: 4,
+        opSpacing: Duration.zero,
+      );
+      await flow.awaitReady(fake.target,
+          interval: const Duration(milliseconds: 5));
+      await flow.apply(fake.target);
+
+      // A string that shares nothing with the applied stamp — only the
+      // hash path can succeed.
+      final ok = await flow.awaitVersion(
+        fake.target,
+        'hunter2',
+        'a-stamp-that-matches-nothing',
+        expectedImageSha256: Uint8List.fromList(sha256.convert(image).bytes),
+        timeout: const Duration(seconds: 2),
+        interval: const Duration(milliseconds: 20),
+      );
+      expect(ok, isTrue);
+    });
+
+    test('falls back to the version stamp when the running sha mismatches',
+        () async {
+      const env = 'Xiao_S3_WIO_repeater';
+      final image = Uint8List.fromList(
+          List<int>.generate(300, (i) => (i * 5 + 1) & 0xFF));
+      final stage = await flow.stage(fake.target, image, version: 'v1.18.0-r4');
+      final ops = computeDelta(Uint8List(0), image).ops;
+      final imageSha = Uint8List.fromList(sha256.convert(image).bytes);
+      await flow.transfer(
+        target: fake.target,
+        contract: OtaStartContract(
+          imageSize: image.length,
+          imageSha256: imageSha,
+          targetId: targetIdForEnvironment(env),
+          token: stage.token,
+        ),
+        ops: ops,
+        route: OtaRoute.zeroHop(),
+        windowSize: 4,
+        opSpacing: Duration.zero,
+      );
+      await flow.awaitReady(fake.target,
+          interval: const Duration(milliseconds: 5));
+      await flow.apply(fake.target);
+
+      // sha256 of a DIFFERENT image must still report true via the string.
+      final other = Uint8List.fromList(List<int>.generate(32, (i) => 1));
+      final ok = await flow.awaitVersion(
+        fake.target,
+        'hunter2',
+        'v1.18.0-r4',
+        expectedImageSha256: Uint8List.fromList(sha256.convert(other).bytes),
+        timeout: const Duration(seconds: 2),
+        interval: const Duration(milliseconds: 20),
+      );
+      expect(ok, isTrue);
+    });
+
+    test('falls back to the version stamp when status is unparseable',
+        () async {
+      fake.garbageStatusReads = 1 << 30;
+      final ok = await flow.awaitVersion(
+        fake.target,
+        'hunter2',
+        'v1.17.0-filter', // the fake node's boot stamp
+        expectedImageSha256: Uint8List(32),
+        timeout: const Duration(seconds: 2),
+        interval: const Duration(milliseconds: 20),
+      );
+      expect(ok, isTrue);
+    });
+  });
+
   test('awaitReady polls through a delayed ready after the SHA gate', () async {
     const env = 'Xiao_S3_WIO_repeater';
     final image =
@@ -764,5 +863,47 @@ void main() {
     );
     expect(() => flow.awaitReady(fake.target),
         throwsA(isA<UpdateFlowException>()));
+  });
+
+  test('applyAndVerify proves a reboot onto an identically stamped image',
+      () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    final image =
+        Uint8List.fromList(List<int>.generate(400, (i) => (i * 7 + 3) & 0xFF));
+
+    // Stage and transfer the image on the node first (as the transfer step
+    // would have left it, ready to apply).
+    final stage = await flow.stage(fake.target, image, version: 'v1.18.0-r4');
+    final ops = computeDelta(Uint8List(0), image).ops;
+    final imageSha = Uint8List.fromList(sha256.convert(image).bytes);
+    await flow.transfer(
+      target: fake.target,
+      contract: OtaStartContract(
+        imageSize: image.length,
+        imageSha256: imageSha,
+        targetId: targetIdForEnvironment(env),
+        token: stage.token,
+      ),
+      ops: ops,
+      route: OtaRoute.zeroHop(),
+      windowSize: 4,
+      opSpacing: Duration.zero,
+    );
+
+    // Select the image in the app the way the wizard does, then commit.
+    // The node's post-apply stamp shares nothing with the selected one —
+    // verification has to key off the running image's SHA-256.
+    final app = AppState();
+    final lib = FakeLibrary();
+    app.library = lib;
+    app.tcpLinkFactory = (_, __) => fake.link;
+    await app.connectTcp(host: 'unused', port: 0);
+    app.target = fake.target;
+    final entry = lib.addImage(image, env: env, version: 'v1.1.0-rc5-cd72e1a2');
+    await app.selectLibraryEntryForUpdate(entry);
+
+    await app.applyAndVerify(expectedVersion: 'a-stamp-that-matches-nothing');
+    expect(app.updatePhase, UpdatePhase.done);
+    expect(app.verifyMatched, isTrue);
   });
 }

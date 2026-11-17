@@ -321,17 +321,33 @@ class UpdateFlow {
     Contact target,
     String password,
     String expectedVersion, {
+    Uint8List? expectedImageSha256,
     Duration timeout = const Duration(seconds: 120),
     Duration interval = const Duration(seconds: 3),
     void Function()? onTick,
   }) async {
     final deadline = DateTime.now().add(timeout);
+    final expectedPrefix = expectedImageSha256
+        ?.sublist(0, 8)
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
     while (DateTime.now().isBefore(deadline)) {
       onTick?.call();
       try {
         // The rebooted node forgets the login; sign back in before asking.
         final login = await client.login(target, password);
         if (login.ok) {
+          if (expectedPrefix != null) {
+            final s = await status(target);
+            if (s != null &&
+                s.shaPrefix != '0000000000000000' &&
+                s.shaPrefix.toLowerCase() == expectedPrefix) {
+              return true;
+            }
+            // A mismatch means the node booted a different image (it may
+            // still roll back); all-zeros means it cannot report — either
+            // way, the version string is the fallback below.
+          }
           final v = (await client.remoteCli(target, 'version')).trim();
           if (v.contains(expectedVersion)) return true;
         }

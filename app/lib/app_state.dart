@@ -1310,7 +1310,9 @@ class AppState extends ChangeNotifier {
     verifyStateKnown = false;
     verifyMatched = false;
     notifyListeners();
-    final ok = await flow.awaitVersion(t, adminPassword, expectedVersion);
+    final ok = await flow.awaitVersion(t, adminPassword, expectedVersion,
+        expectedImageSha256:
+            selectedImage == null ? null : sha256List(selectedImage!));
     verifyStateKnown = true;
     verifyMatched = ok;
     updatePhase = ok ? UpdatePhase.done : UpdatePhase.failed;

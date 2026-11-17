@@ -150,8 +150,9 @@ class OtaRoute {
   static OtaRoute parsePathList(String input) {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return OtaRoute.zeroHop();
-    if (trimmed == '0')
+    if (trimmed == '0') {
       return OtaRoute.zeroHop(manual: true); // meshcli convention
+    }
     final parts = trimmed
         .split(',')
         .map((p) => p.trim())
