@@ -1009,12 +1009,19 @@ class AppState extends ChangeNotifier {
     _refreshRadioDuration();
   }
 
-  /// Byte-identical to the base matched to the node's running image —
-  /// the update would transfer nothing and the node's SHA gate would
-  /// refuse it (zero bytes written vs the armed size). Sending the full
-  /// image is allowed deliberately, so an explicit force overrides.
-  bool get selectedImageIsRunning =>
-      !forceFullImage && deltaResult?.ops.isEmpty == true;
+  /// The selected image is byte-identical to the one the node runs: the
+  /// library is content-addressed (the entry id is the SHA-256), so the
+  /// base matched to the running image resolving to this very entry means
+  /// the files are the same image. The delta still emits a 32-byte literal
+  /// from the matcher's edge handling, so equality — not the op count — is
+  /// the test. Sending the full image is allowed deliberately, so an
+  /// explicit force overrides.
+  bool get selectedImageIsRunning {
+    if (forceFullImage) return false;
+    final image = selectedLibraryEntry;
+    final base = autoBaseEntry;
+    return image != null && base != null && image.id == base.id;
+  }
 
   /// Estimated transfer size: literal bytes (delta) or full image.
   int? get estimatedTransferBytes =>

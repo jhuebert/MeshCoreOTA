@@ -282,13 +282,13 @@ class _EtaLine extends StatelessWidget {
     final remainingOps =
         (progress.opsTotal - applied).clamp(0, progress.opsTotal);
     final remaining = Duration(seconds: (remainingOps / rate).ceil());
-    final kbPerSecond =
-        progress.literalBytesSent / progress.elapsed.inSeconds / 1024;
+    final rateText =
+        rate >= 10 ? rate.toStringAsFixed(0) : rate.toStringAsFixed(1);
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Text(
         '≈ ${_etaText(remaining)} left at the current rate · '
-        '${kbPerSecond.toStringAsFixed(1)} KB/s',
+        '$rateText ops/s',
         style: const TextStyle(color: OtaTheme.textMuted, fontSize: 11),
       ),
     );

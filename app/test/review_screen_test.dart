@@ -101,6 +101,19 @@ void reviewExtras() {
       name: 'target repeater',
       advType: advTypeRepeater,
     ));
+    final lib = FakeLibrary();
+    app.library = lib;
+    final entry = lib.addImage(
+      Uint8List.fromList(List.filled(8, 9)),
+      env: 'Xiao_S3_WIO_repeater',
+      version: 'v1.1.0-rc5-cd72e1a2',
+    );
+    app.libraryEntries = await lib.list();
+    // The base matched to the node's running image IS this entry — this
+    // image is what the node already runs.
+    app.selectedLibraryEntry = entry;
+    app.selectedAsset = null;
+    app.autoBaseEntry = entry;
     app.deltaResult =
         const DeltaResult(ops: [], literalBytes: 0, copyBytes: 1449808);
 
@@ -129,6 +142,15 @@ void reviewExtras() {
       name: 'target repeater',
       advType: advTypeRepeater,
     ));
+    final lib = FakeLibrary();
+    app.library = lib;
+    final entry = lib.addImage(
+      Uint8List.fromList(List.filled(8, 9)),
+      env: 'Xiao_S3_WIO_repeater',
+      version: 'v1.1.0-rc5-cd72e1a2',
+    );
+    app.selectedLibraryEntry = entry;
+    app.autoBaseEntry = entry;
     app.deltaResult =
         const DeltaResult(ops: [], literalBytes: 0, copyBytes: 1449808);
     app.forceFullImage = true;
@@ -156,6 +178,21 @@ void reviewExtras() {
       name: 'target repeater',
       advType: advTypeRepeater,
     ));
+    final lib = FakeLibrary();
+    app.library = lib;
+    final base = lib.addImage(
+      Uint8List.fromList(List.filled(8, 1)),
+      env: 'Xiao_S3_WIO_repeater',
+      version: 'v1.18.0-r3',
+    );
+    final mine = lib.addImage(
+      Uint8List.fromList(List.filled(8, 2)),
+      env: 'Xiao_S3_WIO_repeater',
+      version: 'v1.1.0-rc5-cd72e1a2',
+    );
+    app.selectedLibraryEntry = mine;
+    // The matched base to the node's running image is a different file.
+    app.autoBaseEntry = base;
     app.deltaResult =
         const DeltaResult(ops: [CopyOp(0, 8)], literalBytes: 8, copyBytes: 100);
 

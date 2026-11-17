@@ -40,7 +40,7 @@ void main() {
     await tester.pump();
 
     expect(find.textContaining('left at the current rate'), findsOneWidget);
-    expect(find.textContaining('KB/s'), findsOneWidget);
+    expect(find.textContaining('ops/s'), findsOneWidget);
     expect(find.text('Measuring the transfer rate…'), findsNothing);
   });
 
