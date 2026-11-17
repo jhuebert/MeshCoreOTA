@@ -6,6 +6,19 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-17
+
+MeshCoreOTA 1.0.0 — first signed release.
+
+Installs are sideloaded from this release (no app store). Android APKs are signed with the project's app key so later releases install in place; desktop bundles are unsigned.
+
+- Eight-step wizard: Connect → Repeater → Sign in → Firmware → Radio → Review → Transfer → Verify.
+- Board-scoped firmware picker, version-based offline library, and imported `.bin` files.
+- Three radio plans: live mesh with a DIRECT override, a temporary private preset, and the repeater's radio2.
+- Delta or full-image transfer with an automatically matched base, a measured-rate ETA, and commit/verify by the running image's hash; the repeater rolls back a bad boot by itself.
+- Bluetooth on Android, macOS and Linux; network (TCP/Wi-Fi) on every platform. Windows has no Bluetooth backend.
+- Signed universal and per-ABI Android APKs, plus Linux, macOS and Windows desktop bundles.
+
 ### Changed
 
 - **Bluetooth is available on macOS and Linux**, in addition to Android and
