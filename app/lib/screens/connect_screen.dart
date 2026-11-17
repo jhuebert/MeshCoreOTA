@@ -39,7 +39,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
   void dispose() {
     _scanSub?.cancel();
     if (_supportsBle) {
-      unawaited(FlutterBluePlus.stopScan());
+      // Best effort; a failed stop must not surface as an unhandled error.
+      unawaited(FlutterBluePlus.stopScan().catchError((_) {}));
     }
     _hostController.dispose();
     _portController.dispose();
@@ -62,14 +63,15 @@ class _ConnectScreenState extends State<ConnectScreen> {
         withServices: [MeshCoreUuids.serviceGuid],
         timeout: const Duration(seconds: 15),
       );
-      setState(() => _scanning = false);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _scanning = false;
         _scanError =
             'Could not start scanning — is Bluetooth on and are MeshCoreOTA’s '
             'Bluetooth permissions granted? ($e)';
       });
+    } finally {
+      if (mounted) setState(() => _scanning = false);
     }
   }
 

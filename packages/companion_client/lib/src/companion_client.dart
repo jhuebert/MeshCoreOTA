@@ -227,6 +227,11 @@ class CompanionClient {
     Duration timeout = const Duration(seconds: 45),
   }) async {
     final reply = Completer<String>();
+    // A failure can land before the caller awaits [reply] (a sync error during
+    // the send). Keep an error listener attached from creation so that early
+    // failure is delivered to the caller rather than reported as an unhandled
+    // asynchronous error.
+    unawaited(reply.future.then<void>((_) {}, onError: (_, __) {}));
     late StreamSubscription<Uint8List> sub;
     sub = link.pushes.listen((frame) {
       if (reply.isCompleted || frame.isEmpty) return;
@@ -282,6 +287,15 @@ class CompanionClient {
         }
         reply.complete(message.text);
         return;
+      }
+    } catch (e) {
+      // A sync failure is the exchange's failure: surface it to the caller
+      // instead of leaving it to time out, and never let it escape as an
+      // unhandled asynchronous error from the unawaited push handler.
+      if (!reply.isCompleted) {
+        reply.completeError(
+          e is CompanionException ? e : CompanionException('$e'),
+        );
       }
     } finally {
       _syncInFlight = false;

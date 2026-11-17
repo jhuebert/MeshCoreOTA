@@ -295,11 +295,16 @@ class TcpDeviceLink implements RadioLink {
       final effectiveTimeout = timeout ?? requestTimeout;
       try {
         socket.add(_codec.encodeFrame(frame, prefix: frameInboundPrefix));
-      } on SocketException catch (e) {
+      } catch (e) {
+        // A write to a closing socket can throw `StateError` as well as
+        // `SocketException`; either way this request is over.
         _pending = null;
-        throw DeviceCommandError.disconnected(
-          message: 'device write failed: ${e.message}',
-        );
+        if (e is SocketException) {
+          throw DeviceCommandError.disconnected(
+            message: 'device write failed: ${e.message}',
+          );
+        }
+        rethrow;
       }
       try {
         return await completer.future.timeout(effectiveTimeout);

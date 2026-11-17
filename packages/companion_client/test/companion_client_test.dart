@@ -48,6 +48,20 @@ Contact _stranger() => Contact(
 
 Future<void> _pump() => Future<void>.delayed(Duration.zero);
 
+/// A link whose message-sync write can be made to fail, modelling a companion
+/// that dropped the session mid-exchange.
+class _SyncFailingLink extends FakeDeviceLink {
+  bool failSync = false;
+
+  @override
+  Future<void> sendFrame(Uint8List frame) async {
+    if (failSync && frame.isNotEmpty && frame[0] == cmdSyncNextMessage) {
+      throw const DeviceCommandError.disconnected(message: 'gone');
+    }
+    await super.sendFrame(frame);
+  }
+}
+
 void main() {
   late FakeDeviceLink link;
   late CompanionClient client;
@@ -335,6 +349,21 @@ void main() {
             timeout: const Duration(milliseconds: 50)),
         throwsA(isA<CompanionTimeoutException>()),
       );
+    });
+
+    test('a sync failure fails the CLI call instead of timing out', () async {
+      final target = _repeater();
+      final syncLink = _SyncFailingLink();
+      await syncLink.connect();
+      final syncClient = CompanionClient(syncLink);
+      final cliFuture = syncClient.remoteCli(target, 'ver');
+      await _pump();
+      // The message pump cannot reach the companion any more: the failure
+      // belongs to this exchange, not to a 45 s wait.
+      syncLink.failSync = true;
+      syncLink.simulatePush(Uint8List.fromList([pushCodeMsgWaiting]));
+
+      await expectLater(cliFuture, throwsA(isA<CompanionException>()));
     });
   });
 
