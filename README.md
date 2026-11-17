@@ -83,10 +83,10 @@ The **Repeaters** tab lists the repeaters your companion knows. Use the
 ![Sign in](docs/images/03-admin.png)
 
 The app signs in as repeater admin and reads the node's state: firmware
-version, board, boot state and the running image's hash. **The password is
-optional**: leave it blank when the companion's key already has admin rights
-in the repeater's access list. Tapping **Sign in** at the bottom signs you in
-and moves straight to the firmware step.
+version, board and boot state. **The password is optional**: leave it blank
+when the companion's key already has admin rights in the repeater's access
+list. Tapping **Sign in** at the bottom signs you in and moves straight to the
+firmware step.
 
 ### 4. Choose firmware
 
@@ -102,7 +102,8 @@ list to manage.
   already on the device) and selects it for this update.
 - The **cloud button** on a version saves **that whole version** (every
   board's image) on your device for offline use. The cloud icon shows the
-  state: outlined = nothing saved, half = partly saved, done = saved.
+  state: outlined cloud = nothing saved, filled cloud = partly saved, cloud
+  with a check = saved.
 - A saved version shows the done cloud icon on its row, and a trash icon
   deletes the version and all of its images.
 - **Imported** shows your imported `.bin` files — one row per file — and is
@@ -110,7 +111,7 @@ list to manage.
 
 ### 5. Radio settings
 
-![Radio settings](docs/images/05-review.png)
+![Radio settings](docs/images/05-radio.png)
 
 A transfer is heavy for a live mesh, so this step is where you decide where
 it runs:
@@ -130,6 +131,8 @@ The app suggests a private frequency and a duration from the node's radio
 settings and the transfer estimate; you can change either.
 
 ### 6. Review
+
+![Review](docs/images/06-review.png)
 
 The review screen summarizes everything chosen before anything goes on air:
 the companion and how it is connected, the repeater and its board, the
@@ -159,8 +162,11 @@ integrity check. **Commit update** flips the boot partition and reboots.
 The app signs back in and confirms the repeater came back on the new image.
 
 If the new firmware cannot start its radio, the repeater's boot health check
-flips back to the previous firmware automatically. You can also roll back
-manually at any time with **Roll back to previous firmware**.
+flips back to the previous firmware automatically. Once the outcome is known,
+you can also roll back manually with **Roll back to previous firmware** — a
+rollback is reported as a rollback, never as a verified update. While the
+reboot is still being decided the app waits rather than racing it, so the
+rollback button is unavailable until then.
 
 ## Going offline
 
@@ -252,6 +258,10 @@ and still verifies the hash, so a wrong file cannot be bricked into place.
 |---|---|
 | ![Firmware](docs/images/04-firmware.png) | ![Offline](docs/images/08-offline.png) |
 
+| Radio settings | Review |
+|---|---|
+| ![Radio settings](docs/images/05-radio.png) | ![Review](docs/images/06-review.png) |
+
 | Repeater list | Firmware library |
 |---|---|
 | ![Repeaters](docs/images/02-repeater.png) | ![Library](docs/images/09-library.png) |
@@ -281,6 +291,15 @@ test from the repo root:
 ./scripts/build.sh linux --release     # Linux desktop
 ./scripts/build.sh windows --release   # Windows (run on Windows)
 ./scripts/build.sh macos --release     # macOS (run on macOS)
+```
+
+Two asset helpers keep the guide in sync with the app:
+
+```sh
+./scripts/screenshots.sh               # recapture the guide PNGs on a device
+./scripts/screenshots.sh --check       # verify every README embed exists
+./scripts/icons.sh                     # render icon.svg + all platform icons
+./scripts/icons.sh --check             # verify the generated icon targets
 ```
 
 See [AGENTS.md](AGENTS.md) for the layout, the wire-contract rules and the

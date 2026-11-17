@@ -253,6 +253,17 @@ The app's widget tests must not touch platform plugins or the network. Use
 and pump screens with a populated `AppState` — path_provider and HTTP are not
 available in the test binding, and a real I/O call hangs the fake-async zone.
 
+The user guide's screenshots are captured from the real widget tree by an
+integration test (a `flutter test` golden would render placeholder text), on
+an attached device. Add a `_Shot` to `app/integration_test/guide_screenshots_test.dart`
+when a screen is added to the guide, then regenerate:
+
+```sh
+./scripts/screenshots.sh                 # 860x1864 PNGs -> docs/images/
+./scripts/screenshots.sh --device <id>   # pick a device (default: linux)
+./scripts/screenshots.sh --check         # verify every README embed exists
+```
+
 When the wire contract or the firmware side changes, run the fork's native
 suite too:
 
@@ -260,8 +271,13 @@ suite too:
 cd ../MeshCore && pio test -e native_ota
 ```
 
-The app icon is `app/assets/icon/icon.svg` (source) rendered to `icon.png`;
-regenerate the platform icons with `cd app && dart run flutter_launcher_icons`.
+The app icon is `app/assets/icon/icon.svg` (source). Render it and regenerate
+every platform target (Android, macOS, Windows) with one command:
+
+```sh
+./scripts/icons.sh          # icon.svg -> icon.png, then flutter_launcher_icons
+./scripts/icons.sh --check  # verify every generated target exists
+```
 
 ## Protocol constraints and known gotchas
 
