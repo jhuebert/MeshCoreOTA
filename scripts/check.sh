@@ -29,6 +29,9 @@ done
 (cd bench && "$DART" pub get >/dev/null)
 (cd app && "$FLUTTER" pub get >/dev/null)
 
+echo "== build scripts =="
+./scripts/test_build_metadata.sh
+
 echo "== format =="
 "$DART" format --output=none --set-exit-if-changed \
   packages app/lib app/test app/integration_test tool bench

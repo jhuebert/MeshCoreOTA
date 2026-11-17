@@ -28,7 +28,12 @@ fi
 build_time="${MESHCOREOTA_BUILD_TIME:-}"
 if [[ -z "$build_time" ]]; then
   if [[ -n "${SOURCE_DATE_EPOCH:-}" ]]; then
-    build_time="$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
+    if date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ >/dev/null 2>&1; then
+      build_time="$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
+    else
+      # BSD date (macOS) takes the epoch directly with -r, not GNU's -d.
+      build_time="$(date -u -r "${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)"
+    fi
   else
     build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   fi
