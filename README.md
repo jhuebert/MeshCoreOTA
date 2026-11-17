@@ -41,8 +41,9 @@ the project's app key, so upgrading an existing install keeps your data.
 - A repeater running the **OTA-enabled MeshCore fork** — see
   [jhuebert/MeshCore](https://github.com/jhuebert/MeshCore). A stock
   repeater says "this firmware does not speak the ota CLI" when you check it.
-- A **MeshCore companion** that the app can reach: over Bluetooth on a phone,
-  or over Wi-Fi/Ethernet (TCP) on any platform.
+- A **MeshCore companion** that the app can reach: over Bluetooth on Android,
+  macOS or Linux, or over Wi-Fi/Ethernet (TCP) on any platform. Windows uses
+  TCP only — the BLE plugin has no Windows backend.
 - **Admin access to the repeater.** Either the companion's key is already in
   the repeater's admin list (then no password is needed), or you know its
   admin password.
@@ -60,8 +61,9 @@ you confirm.
 
 ![Connect screen](docs/images/01-connect.png)
 
-Pick **Bluetooth** on a phone, or **TCP / Wi-Fi** on a computer (or a phone
-talking to a Wi-Fi companion). Tap a discovered companion, or enter its
+Pick **Bluetooth** on Android, macOS or Linux, or **TCP / Wi-Fi** anywhere
+(desktop opens on TCP; Windows has no Bluetooth backend). A phone can also
+talk to a Wi-Fi companion. Tap a discovered companion, or enter its
 `host:port`. When the connection succeeds the app moves straight to repeater
 selection — there is nothing else to press.
 

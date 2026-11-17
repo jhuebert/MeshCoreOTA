@@ -67,6 +67,24 @@ void main() {
     expect(find.text('Connect'), findsOneWidget);
   });
 
+  testWidgets('desktop can switch from the TCP default to Bluetooth',
+      (tester) async {
+    _bigView(tester);
+    final app = AppState();
+
+    await tester.pumpWidget(wrap(app, const ConnectScreen()));
+    await tester.pump();
+
+    // TCP is the default off mobile, but the BLE option stays available on
+    // the platforms where flutter_blue_plus has an implementation.
+    expect(find.text('TCP companion'), findsOneWidget);
+    await tester.tap(find.text('Bluetooth'));
+    await tester.pump();
+
+    expect(find.text('Pair with the companion'), findsOneWidget);
+    expect(find.text('TCP companion'), findsNothing);
+  });
+
   testWidgets('a connected user has exactly one forward action',
       (tester) async {
     _bigView(tester);

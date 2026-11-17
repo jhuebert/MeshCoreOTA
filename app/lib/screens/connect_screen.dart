@@ -23,7 +23,12 @@ class ConnectScreen extends StatefulWidget {
 }
 
 class _ConnectScreenState extends State<ConnectScreen> {
-  static final _supportsBle = Platform.isAndroid || Platform.isIOS;
+  // flutter_blue_plus has implementations for Android, iOS, macOS and Linux.
+  // Windows has none, so the Bluetooth option is hidden there.
+  static final _supportsBle = Platform.isAndroid ||
+      Platform.isIOS ||
+      Platform.isMacOS ||
+      Platform.isLinux;
 
   bool _scanning = false;
   String? _scanError;
@@ -31,14 +36,14 @@ class _ConnectScreenState extends State<ConnectScreen> {
   StreamSubscription<List<ScanResult>>? _scanSub;
   final _hostController = TextEditingController(text: '127.0.0.1');
   final _portController = TextEditingController(text: '5000');
-  // BLE on desktop is not supported by this app (BlueZ reliability); the
-  // TCP companion is the Linux testing path.
+  // TCP stays the default on desktop; Bluetooth is available as the other
+  // segment wherever the plugin supports it.
   bool _tcpMode = !Platform.isAndroid && !Platform.isIOS;
 
   @override
   void dispose() {
     _scanSub?.cancel();
-    if (_supportsBle) {
+    if (_supportsBle && _scanning) {
       // Best effort; a failed stop must not surface as an unhandled error.
       unawaited(FlutterBluePlus.stopScan().catchError((_) {}));
     }
@@ -106,12 +111,13 @@ class _ConnectScreenState extends State<ConnectScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(
-                    value: false,
-                    label: Text('Bluetooth'),
-                    icon: Icon(Icons.bluetooth)),
-                ButtonSegment(
+              segments: <ButtonSegment<bool>>[
+                if (_supportsBle)
+                  const ButtonSegment(
+                      value: false,
+                      label: Text('Bluetooth'),
+                      icon: Icon(Icons.bluetooth)),
+                const ButtonSegment(
                     value: true,
                     label: Text('TCP / Wi-Fi'),
                     icon: Icon(Icons.wifi)),

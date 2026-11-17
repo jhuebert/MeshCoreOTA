@@ -8,6 +8,12 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Changed
 
+- **Bluetooth is available on macOS and Linux**, in addition to Android and
+  iOS. Desktop still opens on TCP, but the Bluetooth option can be selected
+  where the BLE plugin has a backend; Windows keeps TCP only because the
+  plugin has no Windows implementation. The macOS build now declares the
+  Bluetooth entitlement and usage description.
+
 - **The wizard is now eight steps, finishing with a real review.** The old
   "Review update" step is now **Radio settings** — where the transfer runs,
   the suggested preset and a duration input that defaults to the recommended
@@ -46,6 +52,10 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Added
 
+- **The signed test build covers all four platforms.** Alongside the signed
+  Android APKs (universal and per-ABI, including x86_64), the test-build
+  workflow now attaches Linux, macOS and Windows bundles to the workflow run
+  so a candidate can be tried before a release is tagged.
 - **The firmware library is now the firmware picker, usable on its own.**
   The screen reached from the main screen is the same one as step 4: the
   **GitHub** tab lists release versions one row each (with the cloud icons
