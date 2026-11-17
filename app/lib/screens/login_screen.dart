@@ -71,55 +71,58 @@ class _LoginScreenState extends State<LoginScreen> {
                 : (status.running.isEmpty ? 'checked' : 'signed in'),
             mono: false,
           ),
-          const SectionHeader('Admin login'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Sign in to '
-                      '${target == null ? 'the node' : (target.name.isNotEmpty ? target.name : 'the node')} '
-                      'to read its firmware state and allow an update.',
-                      style: const TextStyle(fontSize: 12, height: 1.4),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _password,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Admin password (optional)',
-                        isDense: true,
-                        helperText:
-                            'Leave blank when this companion key already has '
-                            'admin rights in the repeater ACL.',
-                        helperMaxLines: 2,
+          if (status == null) ...[
+            const SectionHeader('Admin login'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Sign in to '
+                        '${target == null ? 'the node' : (target.name.isNotEmpty ? target.name : 'the node')} '
+                        'to read its firmware state and allow an update.',
+                        style: const TextStyle(fontSize: 12, height: 1.4),
                       ),
-                      onChanged: (v) => app.adminPassword = v,
-                      onSubmitted: (_) => _check(app),
-                    ),
-                    const SizedBox(height: 10),
-                    FilledButton.icon(
-                      onPressed: app.probing || target == null
-                          ? null
-                          : () => _check(app),
-                      icon: app.probing
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.verified_user_outlined),
-                      label: Text(app.probing ? 'Checking…' : 'Check node'),
-                    ),
-                  ],
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _password,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Admin password (optional)',
+                          isDense: true,
+                          helperText:
+                              'Leave blank when this companion key already has '
+                              'admin rights in the repeater ACL.',
+                          helperMaxLines: 2,
+                        ),
+                        onChanged: (v) => app.adminPassword = v,
+                        onSubmitted: (_) => _check(app),
+                      ),
+                      const SizedBox(height: 10),
+                      FilledButton.icon(
+                        onPressed: app.probing || target == null
+                            ? null
+                            : () => _check(app),
+                        icon: app.probing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.verified_user_outlined),
+                        label: Text(app.probing ? 'Checking…' : 'Check node'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
+          ],
           if (app.probeError != null) ErrorBanner(app.probeError!),
           if (status != null) ...[
             const SectionHeader('Node status'),
@@ -188,8 +191,14 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  void _check(AppState app) {
+  Future<void> _check(AppState app) async {
     FocusScope.of(context).unfocus();
-    app.probe();
+    await app.probe();
+    if (!mounted) return;
+    if (app.nodeStatus != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const FirmwareScreen()),
+      );
+    }
   }
 }

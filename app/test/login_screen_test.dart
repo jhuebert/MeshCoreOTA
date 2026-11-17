@@ -5,18 +5,39 @@ import 'package:meshcore_ota/app_state.dart';
 import 'package:meshcore_ota/screens/login_screen.dart';
 import 'package:meshcore_ota/services/radio_plan.dart';
 
-import 'support.dart';
+import 'support.dart' as support;
+
+class _AutoProbeAppState extends AppState {
+  _AutoProbeAppState({required this.succeed});
+  final bool succeed;
+
+  @override
+  Future<void> probe({String? password}) async {
+    probing = true;
+    notifyListeners();
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+    if (succeed) {
+      super.nodeStatus = support.nodeStatus();
+      probeError = null;
+    } else {
+      super.nodeStatus = null;
+      probeError = 'nope';
+    }
+    probing = false;
+    notifyListeners();
+  }
+}
 
 AppState _app() {
   final app = AppState();
-  app.target = contact('riley');
+  app.target = support.contact('riley');
   // The screen opens the library and refreshes the catalog on the first
   // frame; give it both so a widget test never asks a platform plugin or the
   // network for them.
-  app.library = FakeLibrary();
-  app.catalog = catalog([
-    release('filter-v1.1.0-rc5', images: [
-      asset('Xiao_S3_WIO_repeater_observer', 'v1.1.0-rc5-cd72e1a2'),
+  app.library = support.FakeLibrary();
+  app.catalog = support.catalog([
+    support.release('filter-v1.1.0-rc5', images: [
+      support.asset('Xiao_S3_WIO_repeater_observer', 'v1.1.0-rc5-cd72e1a2'),
     ]),
   ]);
   return app;
@@ -26,7 +47,7 @@ void main() {
   testWidgets('password is optional and the check button is always offered',
       (tester) async {
     final app = _app();
-    await tester.pumpWidget(wrap(app, const LoginScreen()));
+    await tester.pumpWidget(support.wrap(app, const LoginScreen()));
     await tester.pump();
 
     expect(find.text('Admin password (optional)'), findsOneWidget);
@@ -42,8 +63,8 @@ void main() {
       (tester) async {
     final app = _app();
     app.adminPassword = '';
-    app.nodeStatus = nodeStatus();
-    app.nodeInfo = nodeInfo();
+    app.nodeStatus = support.nodeStatus();
+    app.nodeInfo = support.nodeInfo();
     app.nodePreset = const LoRaPreset(
       frequencyHz: 910525000,
       bandwidthHz: 62500,
@@ -52,13 +73,14 @@ void main() {
     );
     app.radio2Enabled = true;
 
-    await tester.pumpWidget(wrap(app, const LoginScreen()));
+    await tester.pumpWidget(support.wrap(app, const LoginScreen()));
     await tester.pump();
 
     expect(find.text('Xiao_S3_WIO_repeater_observer'), findsOneWidget);
     expect(find.text('0xba7783f9'), findsOneWidget);
     expect(find.text('enabled'), findsOneWidget);
     expect(find.textContaining('v1.1.0-rc5'), findsWidgets);
+    expect(find.text('Admin password (optional)'), findsNothing);
 
     final next = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Next: choose firmware'),
@@ -69,8 +91,8 @@ void main() {
   testWidgets('a blank password logs in and enables the next step',
       (tester) async {
     final app = _app();
-    app.nodeStatus = nodeStatus();
-    await tester.pumpWidget(wrap(app, const LoginScreen()));
+    app.nodeStatus = support.nodeStatus();
+    await tester.pumpWidget(support.wrap(app, const LoginScreen()));
     await tester.pump();
 
     expect(app.adminPassword, '');
@@ -86,10 +108,10 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     final app = _app();
-    app.nodeStatus = nodeStatus();
-    app.nodeInfo = nodeInfo(targetId: 0x11112222);
+    app.nodeStatus = support.nodeStatus();
+    app.nodeInfo = support.nodeInfo(targetId: 0x11112222);
 
-    await tester.pumpWidget(wrap(app, const LoginScreen()));
+    await tester.pumpWidget(support.wrap(app, const LoginScreen()));
     await tester.pump();
 
     expect(find.textContaining('custom build'), findsOneWidget);
@@ -99,7 +121,7 @@ void main() {
   testWidgets('next stays locked until the node has been checked',
       (tester) async {
     final app = _app();
-    await tester.pumpWidget(wrap(app, const LoginScreen()));
+    await tester.pumpWidget(support.wrap(app, const LoginScreen()));
     await tester.pump();
 
     final next = tester.widget<FilledButton>(
@@ -111,11 +133,51 @@ void main() {
 
   testWidgets('the login helper updates the session password', (tester) async {
     final app = _app();
-    await tester.pumpWidget(wrap(app, const LoginScreen()));
+    await tester.pumpWidget(support.wrap(app, const LoginScreen()));
     await tester.pump();
 
     await tester.enterText(find.byType(TextField), 'hunter2');
     await tester.pump();
     expect(app.adminPassword, 'hunter2');
+  });
+
+  testWidgets('a successful check lands straight on the firmware step',
+      (tester) async {
+    final app = _AutoProbeAppState(succeed: true);
+    app.target = support.contact('riley');
+    app.library = support.FakeLibrary();
+    app.catalog = support.catalog([
+      support.release('filter-v1.1.0-rc5', images: [
+        support.asset('Xiao_S3_WIO_repeater_observer', 'v1.1.0-rc5-cd72e1a2'),
+      ]),
+    ]);
+
+    await tester.pumpWidget(support.wrap(app, const LoginScreen()));
+    await tester.pump();
+    await tester.tap(find.text('Check node'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Choose firmware'), findsOneWidget);
+    expect(app.probing, isFalse);
+  });
+
+  testWidgets('a failed check stays on the sign-in screen', (tester) async {
+    final app = _AutoProbeAppState(succeed: false);
+    app.target = support.contact('riley');
+    app.library = support.FakeLibrary();
+    app.catalog = support.catalog([
+      support.release('filter-v1.1.0-rc5', images: [
+        support.asset('Xiao_S3_WIO_repeater_observer', 'v1.1.0-rc5-cd72e1a2'),
+      ]),
+    ]);
+
+    await tester.pumpWidget(support.wrap(app, const LoginScreen()));
+    await tester.pump();
+    await tester.tap(find.text('Check node'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Choose firmware'), findsNothing);
+    expect(find.text('Check node'), findsOneWidget);
+    expect(find.text('nope'), findsOneWidget);
   });
 }

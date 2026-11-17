@@ -99,6 +99,9 @@ All notable changes to MeshCoreOTA are documented here. The format follows
   connected state offers one forward action (Continue) for the
   back-navigation case. The connected screen shows only the connection
   card — the transport form is hidden while connected.
+- **Sign-in auto-advances.** A successful node check lands the operator on
+  the firmware step by itself — no "Next" tap. The password card hides once
+  signed in; the node facts stay visible and the step bar is the way back.
 - **Review screen follows the wizard: one action at a time.** The
   **Choose base** button is on the left and **Change image** on the right.
   The **Work offline** switch is gone — offline mode is decided before this

@@ -165,7 +165,10 @@ buttons are text/outlined, and rarely more than one is a filled button.
 - **Repeater**: repeaters and the manual public key are separate tabs. Long
   contact lists must never hide the key field or the admin login.
 - **Admin**: the password is optional (see parity above), and `Check node`
-  must always be tappable; do not gate it on a non-empty password.
+  must always be tappable; do not gate it on a non-empty password. A
+  successful check lands the operator on the firmware step by itself — no
+  second tap; the step bar stays the way back. When signed in, the password
+  card is hidden and the screen shows the node facts only.
 - **Firmware**: versions are the unit. The GitHub tab shows one row per
   version — no board dropdown, no per-device rows; the app detects the
   node's board and downloads that board's image just-in-time when a version

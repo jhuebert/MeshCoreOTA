@@ -85,7 +85,8 @@ The **Repeaters** tab lists the repeaters your companion knows. Use the
 The app signs in as repeater admin and reads the node's state: firmware
 version, board, boot state and the running image's hash. **The password is
 optional**: leave it blank when the companion's key already has admin rights
-in the repeater's access list.
+in the repeater's access list. Tapping **Check node** signs you in and moves
+straight to the firmware step.
 
 ### 4. Choose firmware
 
