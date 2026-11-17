@@ -28,7 +28,7 @@ done
 
 echo "== format =="
 "$DART" format --output=none --set-exit-if-changed \
-  packages app/lib app/test app/integration_test tool
+  packages app/lib app/test tool bench
 
 for pkg in mesh_protocol device_link test_support companion_client ota_core; do
   echo "== packages/$pkg =="
@@ -40,6 +40,15 @@ for pkg in mesh_protocol device_link test_support companion_client ota_core; do
     fi
   )
 done
+
+# The hardware bench is not run in CI, but it must still compile and stay
+# formatted — its rot is otherwise invisible until someone needs a radio.
+echo "== bench =="
+(
+  cd bench
+  "$DART" pub get >/dev/null
+  "$DART" analyze
+)
 
 echo "== app =="
 (

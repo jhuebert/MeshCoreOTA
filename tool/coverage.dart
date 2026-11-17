@@ -8,7 +8,7 @@ import 'dart:io';
 
 const _baselineFormat = 1;
 const _newFileMinimumPercent = 80.0;
-// A file may lose this many covered lines without failing the gate; see the
+// A file may gain this many uncovered lines without failing the gate; see the
 // regression check below for why a single line is not a reliable signal.
 const _lineNoiseAllowance = 1;
 const _productionPath = r'^(packages/[^/]+/lib|app/lib)/';
@@ -127,16 +127,24 @@ Future<void> main(List<String> args) async {
     }
     final before = entry.value.percent;
     final after = current.percent;
-    // One line's hit count is not stable between runs: the VM attributes
-    // compiler-generated positions (a `const` constructor, for example) to a
-    // source line, and whether that line registers a hit depends on how the
-    // constant was materialized. A file may therefore lose one covered line
-    // without failing the gate. Growth is still held to the baseline: a source
-    // change that adds an uncovered line has to stay above the old percentage.
+    // Nothing can regress in a file that is fully covered, and a refactor that
+    // folds several covered lines into one shrinks both counts without losing
+    // a single test.
+    if (after >= 100.0) continue;
     final lostLines = entry.value.covered - current.covered;
     final gainedLines = current.total - entry.value.total;
+    final uncoveredBefore = entry.value.total - entry.value.covered;
+    final uncoveredAfter = current.total - current.covered;
     final percentRegressed = after + tolerance < before;
-    if (lostLines > _lineNoiseAllowance ||
+    // New or newly unreachable code: lines nobody tests went up.
+    final uncoveredGrew =
+        uncoveredAfter > uncoveredBefore + _lineNoiseAllowance;
+    // Tests stopped reaching code that is still in the file (the file did not
+    // shrink, so this is not a deletion).
+    final coveredLostInPlace =
+        lostLines > _lineNoiseAllowance && gainedLines >= 0;
+    if (uncoveredGrew ||
+        coveredLostInPlace ||
         (gainedLines > 0 && percentRegressed)) {
       final uncovered =
           current._lines.entries

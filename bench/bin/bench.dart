@@ -227,30 +227,13 @@ class Bench {
     info('set companion path for "${target.name}" to $entered');
   }
 
-  /// Ask the node for its `next_expected` (an OP_REPORT). Null on no answer.
   /// Ask the node for its `OP_INFO_REPORT`. Null on no answer.
   Future<OtaNodeInfo?> nodeInfo() async {
-    final done = Completer<OtaNodeInfo?>();
-    int? askTag;
-    late StreamSubscription<Uint8List> sub;
-    sub = link.pushes.listen((frame) {
-      if (frame.isEmpty || frame[0] != pushCodeBinaryResponse) return;
-      final payload = binaryResponseReport(frame,
-          contactPubKey: target.publicKey, askTag: askTag);
-      if (payload == null) return;
-      final parsed = parseInfoReport(payload);
-      if (parsed != null && !done.isCompleted) done.complete(parsed);
-    });
     try {
-      final info = buildInfo();
-      final sent = await link
-          .sendBinaryRequest(target, [reqTypeOta, info.length, ...info]);
-      askTag = sent.tag;
-      return await done.future.timeout(const Duration(seconds: 10));
+      return await queryNodeInfo(link, target,
+          timeout: const Duration(seconds: 10));
     } catch (_) {
       return null;
-    } finally {
-      await sub.cancel();
     }
   }
 
@@ -268,8 +251,8 @@ class Bench {
     });
     try {
       final ask = buildAsk();
-      final sent =
-          await link.sendBinaryRequest(target, [reqTypeOta, ask.length, ...ask]);
+      final sent = await link
+          .sendBinaryRequest(target, [reqTypeOta, ask.length, ...ask]);
       askTag = sent.tag;
       return await done.future.timeout(const Duration(seconds: 15));
     } catch (_) {
@@ -402,13 +385,15 @@ Future<void> scenarioProbe(Bench b) async {
   // and the running image's SHA-256.
   final nodeInfo = await b.nodeInfo();
   if (nodeInfo == null) {
-    info('  info: node did not answer (pre-handshake firmware, or unreachable)');
+    info(
+        '  info: node did not answer (pre-handshake firmware, or unreachable)');
   } else {
     info(
         '  info: wire=${nodeInfo.wireVersion} target=0x${nodeInfo.targetId.toRadixString(16)}'
         ' slot=${nodeInfo.slotSize} max_literal=${nodeInfo.maxLiteral}'
         ' delta=${nodeInfo.supportsDelta} apply=${nodeInfo.supportsApply}');
-    info('  info: running="${nodeInfo.runningVersion}" sha=${_hex(nodeInfo.runningSha256).substring(0, 16)}…');
+    info(
+        '  info: running="${nodeInfo.runningVersion}" sha=${_hex(nodeInfo.runningSha256).substring(0, 16)}…');
   }
 
   final st = await b.status();
@@ -430,7 +415,8 @@ Future<void> scenarioProbe(Bench b) async {
   );
   info('  companion radio: ${params.frequencyHz / 1e6} MHz '
       'BW${params.bandwidthHz ~/ 1000} SF${params.spreadingFactor} CR${params.codingRate}');
-  info('  one ${otaMaxPayload}B packet ≈ ${(airtime / 1000).toStringAsFixed(0)} ms airtime');
+  info(
+      '  one ${otaMaxPayload}B packet ≈ ${(airtime / 1000).toStringAsFixed(0)} ms airtime');
 }
 
 Future<void> scenarioUpdate(Bench b, Uint8List image,
@@ -467,9 +453,7 @@ Future<void> scenarioUpdate(Bench b, Uint8List image,
   } on CompanionTimeoutException {
     applyTimedOut = true;
   }
-  check(
-      '$label apply accepted',
-      applyTimedOut || isApplyReply(applyReply),
+  check('$label apply accepted', applyTimedOut || isApplyReply(applyReply),
       applyTimedOut ? 'reboot raced the reply (expected)' : applyReply);
   final tApply = DateTime.now();
   await b.waitRebootAndLogin();
@@ -807,9 +791,7 @@ Future<void> scenarioResumeFull(Bench b, Uint8List image) async {
   } on CompanionTimeoutException {
     applyTimedOut = true;
   }
-  check(
-      'resumed image apply accepted',
-      applyTimedOut || isApplyReply(apply),
+  check('resumed image apply accepted', applyTimedOut || isApplyReply(apply),
       applyTimedOut ? 'reboot raced the reply (expected)' : apply);
   await b.waitRebootAndLogin();
   final version = await b.cli('version');
@@ -830,9 +812,7 @@ Future<void> scenarioRollback(Bench b) async {
   } on CompanionTimeoutException {
     applyTimedOut = true;
   }
-  check(
-      'rollback accepted',
-      applyTimedOut || isRollbackReply(reply),
+  check('rollback accepted', applyTimedOut || isRollbackReply(reply),
       applyTimedOut ? 'reboot raced the reply (expected)' : reply);
   await b.waitRebootAndLogin();
   final after = await b.cli('version');
@@ -864,8 +844,9 @@ Future<void> main(List<String> argv) async {
     env: env,
     contactName: contactName,
     windowSize: windowSize,
-    spacingOverride:
-        args['spacing'] == null ? null : Duration(milliseconds: int.parse(args['spacing']!)),
+    spacingOverride: args['spacing'] == null
+        ? null
+        : Duration(milliseconds: int.parse(args['spacing']!)),
     routePath: routePath,
   );
 
@@ -877,7 +858,9 @@ Future<void> main(List<String> argv) async {
   if (imagePath != null) image = File(imagePath).readAsBytesSync();
   Uint8List? base;
   if (basePath != null) base = File(basePath).readAsBytesSync();
-  info(routePath.trim().isEmpty ? 'route: companion stored path' : 'route: ${routePath.trim()}');
+  info(routePath.trim().isEmpty
+      ? 'route: companion stored path'
+      : 'route: ${routePath.trim()}');
   if (image != null) {
     info(
         'image: ${image.length} bytes sha=${_hex(_sha256(image)).substring(0, 16)}…');
