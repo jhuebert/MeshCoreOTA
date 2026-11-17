@@ -1009,6 +1009,13 @@ class AppState extends ChangeNotifier {
     _refreshRadioDuration();
   }
 
+  /// Byte-identical to the base matched to the node's running image —
+  /// the update would transfer nothing and the node's SHA gate would
+  /// refuse it (zero bytes written vs the armed size). Sending the full
+  /// image is allowed deliberately, so an explicit force overrides.
+  bool get selectedImageIsRunning =>
+      !forceFullImage && deltaResult?.ops.isEmpty == true;
+
   /// Estimated transfer size: literal bytes (delta) or full image.
   int? get estimatedTransferBytes =>
       deltaResult?.literalBytes ?? _selectedImage?.length;

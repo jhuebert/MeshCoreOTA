@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:meshcore_ota/app_state.dart';
 import 'package:meshcore_ota/screens/review_screen.dart';
 import 'package:meshcore_ota/services/radio_plan.dart';
+import 'package:ota_core/ota_core.dart';
 
 import 'support.dart';
 
@@ -89,6 +90,88 @@ void reviewExtras() {
     await tester.tap(find.text('Automatic'));
     await tester.pumpAndSettle();
     expect(app.forceFullImage, isFalse);
+  });
+
+  testWidgets('a same-image selection says the node is already up to date',
+      (tester) async {
+    _bigView(tester);
+    final app = AppState();
+    app.selectTarget(Contact(
+      publicKey: Uint8List(32),
+      name: 'target repeater',
+      advType: advTypeRepeater,
+    ));
+    app.deltaResult =
+        const DeltaResult(ops: [], literalBytes: 0, copyBytes: 1449808);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppState>.value(
+        value: app,
+        child: const MaterialApp(home: ReviewScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('already running this image'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Start update'), findsNothing);
+    final start = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Already up to date'),
+    );
+    expect(start.onPressed, isNull);
+  });
+
+  testWidgets('the full-image override re-enables a same-image re-flash',
+      (tester) async {
+    _bigView(tester);
+    final app = AppState();
+    app.selectTarget(Contact(
+      publicKey: Uint8List(32),
+      name: 'target repeater',
+      advType: advTypeRepeater,
+    ));
+    app.deltaResult =
+        const DeltaResult(ops: [], literalBytes: 0, copyBytes: 1449808);
+    app.forceFullImage = true;
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppState>.value(
+        value: app,
+        child: const MaterialApp(home: ReviewScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('already running this image'), findsNothing);
+    final start = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Start update'),
+    );
+    expect(start.onPressed, isNotNull);
+  });
+
+  testWidgets('a nonzero delta keeps Start update enabled', (tester) async {
+    _bigView(tester);
+    final app = AppState();
+    app.selectTarget(Contact(
+      publicKey: Uint8List(32),
+      name: 'target repeater',
+      advType: advTypeRepeater,
+    ));
+    app.deltaResult =
+        const DeltaResult(ops: [CopyOp(0, 8)], literalBytes: 8, copyBytes: 100);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppState>.value(
+        value: app,
+        child: const MaterialApp(home: ReviewScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('already running this image'), findsNothing);
+    final start = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Start update'),
+    );
+    expect(start.onPressed, isNotNull);
   });
 
   testWidgets('a private radio plan replaces the path override',

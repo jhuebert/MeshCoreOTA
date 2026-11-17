@@ -57,6 +57,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final imageBytes = app.selectedImage?.length ?? 0;
     final plan = app.radioPlan;
     final planProblem = app.radioPlanProblem;
+    final imageIsRunning = app.selectedImageIsRunning;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Review update')),
@@ -150,6 +151,18 @@ class _ReviewScreenState extends State<ReviewScreen> {
             value: _baseDescription(app),
             mono: false,
           ),
+          if (imageIsRunning)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: Text(
+                'This node is already running this image — the transfer '
+                'would send nothing. Choose a different image, or pick '
+                '\'Full image\' in the base picker to re-flash this one '
+                'deliberately.',
+                style:
+                    TextStyle(color: OtaTheme.warn, fontSize: 12, height: 1.45),
+              ),
+            ),
           if (_manualBaseMismatch(app))
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
@@ -268,14 +281,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: FilledButton.icon(
-              onPressed: planProblem != null
+              onPressed: planProblem != null || imageIsRunning
                   ? null
                   : () => Navigator.of(context).push(
                         MaterialPageRoute(
                             builder: (_) => const TransferScreen()),
                       ),
               icon: const Icon(Icons.system_update_alt),
-              label: const Text('Start update'),
+              label:
+                  Text(imageIsRunning ? 'Already up to date' : 'Start update'),
             ),
           ),
         ],
