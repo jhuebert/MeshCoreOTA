@@ -113,7 +113,7 @@ list to manage.
 ![Review update](docs/images/05-review.png)
 
 You see the node, the install image, the delta base (the image the repeater
-is already running, used to send only what changed), the estimated airtime,
+is already running, used to send only what changed), a rough time estimate,
 and the radio plan.
 
 **Before and after images.** The app picks the "before" image by matching the
@@ -142,8 +142,11 @@ settings and the transfer estimate; you can change either.
 
 The app stages the image into the repeater's **inactive** firmware slot,
 streams the changes as ordinary encrypted admin requests, and the repeater
-asks for anything it missed. Progress, retries and a log are on screen. You
-can cancel; a cancelled transfer discards the staged image.
+asks for anything it missed. Progress and a log are on screen, and once it
+is moving the app shows the **estimated time left, based on the measured
+rate** (the node is deaf while each op commits to flash, so a transfer takes
+much longer than airtime alone would suggest). You can cancel; a cancelled
+transfer discards the staged image.
 
 ### 7. Commit and verify
 

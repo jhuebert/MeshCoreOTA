@@ -107,7 +107,21 @@ All notable changes to MeshCoreOTA are documented here. The format follows
   The **Work offline** switch is gone — offline mode is decided before this
   step (the firmware screen).
 
+### Changed
+
+- **The transfer estimate is op-round-trip based, not airtime.** The node is
+  deaf while each 173-byte literal commits to flash (~1.4–1.5 s/op measured);
+  the old airtime model was ~15x optimistic. The radio screens, the review
+  step and the tempradio duration suggestion all use the new model, and the
+  transfer screen now shows **time left at the measured rate** plus KB/s once
+  a few ops have landed.
+
 ### Fixed
+
+- **A mid-transfer transport failure no longer leaves a dead Cancel button.**
+  The companion's binary-request timeout (5 s) crashed the transfer while
+  the UI stayed in `transferring`; the update now unwinds to `failed` with a
+  Back action.
 
 - **An imported or downloaded image now appears immediately.** The library
   updated its in-memory list without notifying listeners, so newly imported

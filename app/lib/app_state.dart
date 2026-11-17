@@ -1027,25 +1027,25 @@ class AppState extends ChangeNotifier {
   int get transferBytesEstimate =>
       deltaResult?.literalBytes ?? _selectedImage?.length ?? 0;
 
-  /// Airtime estimate in seconds for the selected image on [preset].
+  /// Wall time per op on a stock companion, in seconds.
   ///
-  /// One literal chunk per packet, plus the op frames and a few reports; the
-  /// mode factor accounts for radio2 sharing the radio with the live mesh.
+  /// The node is deaf while each 173-byte literal is committed to flash, so
+  /// the rate limiter is the node's flash write latency, not airtime — an
+  /// airtime model is ~15x optimistic on real hardware (measured ~1.4–1.5 s
+  /// per literal op: a 426 KB delta took ~1 hour on an expected ~4 minutes).
   /// Synchronous so a settings screen can compare modes while the user types.
+  static const double estimateOpSeconds = 1.5;
+
+  /// Transfer estimate in seconds for the selected image. [factor] scales for
+  /// radio2 (it shares the radio, so ops cost roughly twice as long).
   int? estimateSecondsForPreset(LoRaPreset? preset, {double factor = 1.0}) {
     final bytes = estimatedTransferBytes;
     if (preset == null || bytes == null || bytes <= 0) return null;
-    final packets = (bytes / otaLiteralChunk).ceil() + 16;
-    final us = loraTimeOnAirMicros(
-      payloadBytes: otaMaxPayload,
-      spreadingFactor: preset.spreadingFactor,
-      bandwidthHz: preset.bandwidthHz,
-      codingRate: preset.codingRate,
-    );
-    return (packets * us / 1e6 * factor).ceil();
+    final ops = (bytes / otaLiteralChunk).ceil() + 16;
+    return (ops * estimateOpSeconds * factor).ceil();
   }
 
-  /// Airtime estimate in seconds for [mode] at the current selection. The
+  /// Transfer estimate in seconds for [mode] at the current selection. The
   /// preset is the plan's (for off-mesh modes) or the live one.
   int? estimateSecondsForMode(RadioMode mode, {LoRaPreset? preset}) {
     final chosen = mode == RadioMode.liveMesh
@@ -1055,7 +1055,7 @@ class AppState extends ChangeNotifier {
     return estimateSecondsForPreset(chosen, factor: factor);
   }
 
-  /// LoRa airtime estimate in seconds at the preset the transfer will use, or
+  /// Transfer estimate in seconds at the preset the transfer will use, or
   /// null when the radio parameters are unavailable.
   Future<int?> estimateTransferSeconds() async {
     final image = _selectedImage;
@@ -1176,6 +1176,16 @@ class AppState extends ChangeNotifier {
         await flow.abortQuietly(t);
         updatePhase = UpdatePhase.failed;
         throw UpdateFlowException('transfer failed: ${e.message}');
+      }
+      // A transport-layer failure (e.g. the companion's binary-request
+      // timeout) throws something that is not an OtaTransferException; it must
+      // still end the staged session and leave the UI in the failed state,
+      // never stuck with a dead cancel button.
+      catch (e) {
+        await flow.abortQuietly(t);
+        updatePhase = UpdatePhase.failed;
+        log_('transfer failed: $e');
+        throw UpdateFlowException('transfer failed: $e');
       }
 
       // Confirm the staged image passed the node's SHA gate.

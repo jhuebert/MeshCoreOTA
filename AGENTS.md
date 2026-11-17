@@ -190,7 +190,9 @@ buttons are text/outlined, and rarely more than one is a filled button.
   validation before the Start button, and never start with an invalid one.
 - **Transfer/Verify**: no screen may claim success until the node answers the
   new version. A lost reply from `ota apply`/`rollback` is an unknown outcome,
-  decided by re-login and `version`.
+  decided by re-login and `version`. The transfer screen shows a rate-based
+  ETA (ops applied / elapsed) once a few ops land — never an airtime-only
+  guess; the node is deaf during flash writes, so airtime is ~15x off.
 
 ### Radio plan rules
 

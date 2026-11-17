@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'package:ota_core/ota_core.dart' show TransferProgress;
+
 import '../app_state.dart';
 import '../services/foreground.dart';
 import '../theme.dart';
@@ -117,6 +119,7 @@ class _TransferScreenState extends State<TransferScreen> {
                   style:
                       const TextStyle(color: OtaTheme.textMuted, fontSize: 12),
                 ),
+                if (progress != null) _EtaLine(progress: progress),
               ],
             ),
           ),
@@ -153,7 +156,7 @@ class _TransferScreenState extends State<TransferScreen> {
                     : _StepState.pending,
           ),
           if (_error != null) ErrorBanner(_error!),
-          if (phase == UpdatePhase.failed && _error != null)
+          if (phase == UpdatePhase.failed)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
               child: OutlinedButton(
@@ -257,3 +260,43 @@ class _TransferScreenState extends State<TransferScreen> {
 }
 
 enum _StepState { pending, active, ok }
+
+/// Time left at the measured rate of the current transfer, so the operator
+/// can plan around a real number instead of the airtime-only pre-estimate.
+class _EtaLine extends StatelessWidget {
+  const _EtaLine({required this.progress});
+
+  final TransferProgress progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final applied = progress.opsApplied;
+    if (applied == null || applied < 4 || progress.elapsed.inSeconds < 5) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 4),
+        child: Text('Measuring the transfer rate…',
+            style: TextStyle(color: OtaTheme.textMuted, fontSize: 11)),
+      );
+    }
+    final rate = applied / progress.elapsed.inSeconds; // ops per second
+    final remainingOps =
+        (progress.opsTotal - applied).clamp(0, progress.opsTotal);
+    final remaining = Duration(seconds: (remainingOps / rate).ceil());
+    final kbPerSecond =
+        progress.literalBytesSent / progress.elapsed.inSeconds / 1024;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        '≈ ${_etaText(remaining)} left at the current rate · '
+        '${kbPerSecond.toStringAsFixed(1)} KB/s',
+        style: const TextStyle(color: OtaTheme.textMuted, fontSize: 11),
+      ),
+    );
+  }
+
+  static String _etaText(Duration d) {
+    if (d.inMinutes < 2) return '${d.inSeconds}s';
+    if (d.inHours < 1) return '${d.inMinutes} min';
+    return '${d.inHours}h ${d.inMinutes.remainder(60)}m';
+  }
+}

@@ -365,8 +365,8 @@ void estimateTests() {
     final radio2 =
         app.estimateSecondsForMode(RadioMode.radio2, preset: app.nodePreset);
 
-    expect(live, isNotNull);
-    expect(live, greaterThan(0));
+    // 120000 bytes / 173 per literal, +16 op frames, at ~1.5 s per op.
+    expect(live, ((120000 / 173).ceil() + 16) * 1.5);
     expect(temp, live);
     expect(radio2, greaterThan(temp!));
     expect(radio2, closeTo(temp * RadioPlan.radio2DutyFactor, 2));
