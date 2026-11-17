@@ -142,6 +142,10 @@ spec.
 - New ops get new codes; existing ops never change meaning, field order or
   size; the SEQ rules and CRC are frozen. Hard breaks are a new REQ code,
   never a silent redefinition.
+- `REQ_TYPE_OTA` is `0xA0`, a fork-private REQ code above upstream's
+  `0x01..0x09` range (`0x08` is upstream's `subscribe`). Keep the app's
+  `reqTypeOta` in sync with the repeater's constant; changing one alone breaks
+  every update session.
 - Unknown ops are dropped silently; a stray unknown op **inside a staged
   stream aborts staging** — that is deliberate.
 - Don't reintroduce transport bindings ("wire v2") in docs/comments: nodes in

@@ -167,7 +167,9 @@ const int reqTypeGetStatus = 0x01;
 const int reqTypeKeepAlive = 0x02;
 const int reqTypeGetTelemetryData = 0x03;
 // Fork firmware's OTA ops (admin-only); each request body is one OTA frame.
-const int reqTypeOta = 0x08;
+// Fork-private value, above upstream's 0x01..0x09 REQ type range (0x08 is
+// already upstream's 'subscribe'). Keep in sync with the repeater firmware.
+const int reqTypeOta = 0xA0;
 
 // Server login response codes (`RESP_SERVER_*` in the firmware).
 const int respServerLoginOk = 0x00;

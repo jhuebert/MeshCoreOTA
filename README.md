@@ -5,8 +5,8 @@
 </p>
 
 **MeshCoreOTA updates MeshCore repeater firmware over the air, from your phone
-or laptop — no tower visit, no laptop at the site, and no special traffic
-flooding your mesh.**
+or laptop — no tower visit, no laptop at the site, and no extra traffic across
+your mesh.**
 
 A repeater on a hill, a roof or a water tower is hard to reach and easy to
 put off updating. Plugging in a USB cable means a climb, a ladder or a drive.
@@ -38,18 +38,17 @@ the project's app key, so upgrading an existing install keeps your data.
 
 ## What you need
 
-- A repeater running the **OTA-enabled MeshCore fork** — see
-  [jhuebert/MeshCore](https://github.com/jhuebert/MeshCore). A stock
-  repeater says "this firmware does not speak the ota CLI" when you check it.
-- A **MeshCore companion** that the app can reach: over Bluetooth on Android,
-  macOS or Linux, or over Wi-Fi/Ethernet (TCP) on any platform. Windows uses
-  TCP only — the BLE plugin has no Windows backend.
-- **Admin access to the repeater.** Either the companion's key is already in
-  the repeater's admin list (then no password is needed), or you know its
-  admin password.
-- The firmware image you want to install. The app downloads the fork's
-  releases for you, or you can import a `.bin` file — including a custom
-  build.
+- A repeater running the **update-enabled MeshCore fork** — see
+  [jhuebert/MeshCore](https://github.com/jhuebert/MeshCore). A stock repeater
+  replies "this firmware does not speak the ota CLI" when you check it.
+- A **MeshCore companion** the app can reach: by Bluetooth on Android, macOS
+  or Linux, or over your network (Wi-Fi or Ethernet) on any platform. Windows
+  supports network connections only.
+- **Administrator access to the repeater.** Either the companion is already
+  approved as an administrator on the repeater (no password needed), or you
+  know its admin password.
+- The firmware file you want to install. The app can download the fork's
+  releases for you, or you can pick a `.bin` file — including your own build.
 
 ## Getting started
 
@@ -62,10 +61,10 @@ you confirm.
 ![Connect screen](docs/images/01-connect.png)
 
 Pick **Bluetooth** on Android, macOS or Linux, or **TCP / Wi-Fi** anywhere
-(desktop opens on TCP; Windows has no Bluetooth backend). A phone can also
-talk to a Wi-Fi companion. Tap a discovered companion, or enter its
-`host:port`. When the connection succeeds the app moves straight to repeater
-selection — there is nothing else to press.
+(desktop opens on TCP; Windows has no Bluetooth). A phone can also reach a
+companion over Wi-Fi. Tap a companion you find, or enter its `host:port`.
+When the connection succeeds the app moves straight to repeater selection —
+there is nothing else to press.
 
 The **Firmware library** is available here before you connect. It is the
 same screen as step 4, used for managing your files instead of picking one:
@@ -76,18 +75,17 @@ no longer need.
 
 ![Pick a repeater](docs/images/02-repeater.png)
 
-The **Repeaters** tab lists the repeaters your companion knows. Use the
-**Public key** tab for a node that is not in its contact list — paste the
-64-character public key.
+The **Repeaters** tab lists repeaters your companion knows. For one that is
+not in its list, use the **Public key** tab and paste its 64-character key.
 
 ### 3. Sign in
 
 ![Sign in](docs/images/03-admin.png)
 
-The app signs in as repeater admin and reads the node's state: firmware
-version, board and boot state. **The password is optional**: leave it blank
-when the companion's key already has admin rights in the repeater's access
-list. Tapping **Sign in** at the bottom signs you in and moves straight to the
+The app signs in as the repeater's administrator and reads its details:
+firmware version, board, and whether it is running normally. **The password
+is optional**: leave it blank when the companion is already approved as an
+administrator. Tapping **Sign in** signs you in and takes you straight to the
 firmware step.
 
 ### 4. Choose firmware
@@ -95,96 +93,91 @@ firmware step.
 ![Choose firmware](docs/images/04-firmware.png)
 
 The **GitHub** tab lists the fork's releases as **versions** — one row per
-version, newest first. **Stable** and **Dev** are separate tabs. The
-list only shows versions that have an image for the repeater's board, and the
-app picks that image for you — there is no board picker and no per-device
-list to manage.
+version, newest first. **Stable** and **Dev** are separate tabs. Only versions
+with a file for the repeater's board are shown, and the app picks that file
+for you — there is no board picker and no per-device list to manage.
 
-- Tapping a version downloads **its image for your board** (if it is not
+- Tapping a version downloads **its file for your board** (if it is not
   already on the device) and selects it for this update.
-- The **cloud button** on a version saves **that whole version** (every
-  board's image) on your device for offline use. The cloud icon shows the
+- The **cloud button** on a version saves **that whole version** (the file
+  for every board) on your device for offline use. The cloud icon shows the
   state: outlined cloud = nothing saved, filled cloud = partly saved, cloud
   with a check = saved.
 - A saved version shows the done cloud icon on its row, and a trash icon
-  deletes the version and all of its images.
-- **Imported** shows your imported `.bin` files — one row per file — and is
-  where you import a custom build.
+  deletes the version and all of its files.
+- **Imported** shows your `.bin` files — one row per file — and is where you
+  add your own build.
 
 ### 5. Radio settings
 
 ![Radio settings](docs/images/05-radio.png)
 
-A transfer is heavy for a live mesh, so this step is where you decide where
-it runs:
+A firmware transfer uses a lot of airtime, so choose where it runs:
 
-- **Live mesh** — the normal channel and the saved DIRECT route. You can enter
-  a DIRECT path override.
-- **Temporary private channel** — both the repeater and the companion move to
-  a private radio preset for the length of the transfer, then return. The
-  transfer is zero-hop, so no other node hears it.
-- **The repeater's second preset (radio2)** — the repeater keeps serving the
-  live mesh on its normal channel and carries the transfer on its second
-  preset. The companion is tuned to it for the duration. If radio2 was
-  already enabled, the app tells you and leaves the repeater's configuration
-  alone.
+- **Live mesh** — use your normal channel and the saved path to the repeater.
+  You can enter a different path.
+- **Temporary private channel** — the repeater and the companion switch to a
+  private channel for the transfer, then switch back. The update goes
+  straight between them, so no other node hears it.
+- **The repeater's second channel (radio2)** — the repeater keeps serving the
+  mesh on its normal channel and carries the update on its second channel.
+  The companion is tuned to it for the transfer. If radio2 was already
+  enabled, the app tells you and leaves the repeater's settings alone.
 
-The app suggests a private frequency and a duration from the node's radio
-settings and the transfer estimate; you can change either.
+The app suggests a frequency and a time limit from the repeater's settings and
+the size of the update; you can change either.
 
 ### 6. Review
 
 ![Review](docs/images/06-review.png)
 
-The review screen summarizes everything chosen before anything goes on air:
+The review screen shows everything you picked before anything goes on air:
 the companion and how it is connected, the repeater and its board, the
-firmware it is running now, the firmware you are installing, the image size,
-whether this is a delta (only what changed) or the full image and how much
-will be sent, a time estimate, and the radio choice. **Start update** begins
-the transfer — nothing boots until the final commit.
+firmware it runs now, the firmware you are installing, the file size, whether
+the app can reuse parts of the firmware you already have (and how much it will
+send), a time estimate, and the channel choice. **Start update** begins the
+transfer — the new firmware does not start until you confirm at the end.
 
-The delta is computed automatically: the app matches the repeater's reported
-image against your library and reuses what it can. If there is no match, it
-tells you the full image will be sent.
+The app works out what it can reuse by comparing the repeater's current
+firmware with your library. If nothing matches, it sends the whole file.
 
 ### 7. Transfer
 
-The app stages the image into the repeater's **inactive** firmware slot,
-streams the changes as ordinary encrypted admin requests, and the repeater
-asks for anything it missed. Progress and a log are on screen, and once it
-is moving the app shows the **estimated time left, based on the measured
-rate** (the node is deaf while each op commits to flash, so a transfer takes
-much longer than airtime alone would suggest). You can cancel; a cancelled
-transfer discards the staged image.
+The app puts the new firmware into the repeater's **spare** slot, sends the
+changes as normal encrypted requests, and the repeater asks for anything it
+missed. You can watch progress and a log, plus an **estimated time left based
+on how fast the transfer is actually going**. It takes longer than the radio
+speed alone suggests, because the repeater pauses to write each batch to its
+storage. You can cancel at any time; a cancelled transfer throws away the
+partly received firmware.
 
 ### 8. Commit and verify
 
-When the image is fully staged, it has already passed the repeater's
-integrity check. **Commit update** flips the boot partition and reboots.
-The app signs back in and confirms the repeater came back on the new image.
+Once the transfer is complete, the repeater has already checked the file.
+**Commit update** switches to the new firmware and restarts the repeater.
+The app signs back in and confirms it came back on the new version.
 
-If the new firmware cannot start its radio, the repeater's boot health check
-flips back to the previous firmware automatically. Once the outcome is known,
-you can also roll back manually with **Roll back to previous firmware** — a
-rollback is reported as a rollback, never as a verified update. While the
-reboot is still being decided the app waits rather than racing it, so the
-rollback button is unavailable until then.
+If the new firmware cannot start its radio, the repeater switches back to the
+old version by itself. Once the result is clear you can also switch back
+manually with **Roll back to previous firmware** — the app reports that as a
+rollback, never as a successful update. Until the reboot is settled the app
+waits instead of guessing, so the rollback button stays unavailable.
 
 ## Going offline
 
 The **cloud** button on the firmware screen switches the app offline. In
-offline mode it never contacts GitHub — not for the release list, not for an
-image. The **GitHub** tab then shows exactly the versions saved on this
-device — like a music app's downloaded list. **Imported** is available in
-both modes.
+offline mode it never contacts GitHub — not for the release list, not for a
+firmware file. The **GitHub** tab then shows only the versions saved on this
+device, like a music app's downloaded list. **Imported** is available in both
+modes.
 
 The setting is remembered, so a device that goes into the field stays offline
 across restarts. Switch it back on when you have a connection.
 
-To prepare: while on Wi-Fi, open **Choose firmware → GitHub**, and tap the
-cloud button on the version you want. Every image of that version is saved.
-Do the same for the version the repeater currently runs; that second image is
-what makes a small delta possible. The **Firmware library** on the main
+To prepare: while on Wi-Fi, open **Choose firmware → GitHub** and tap the
+cloud button on the version you want. Its file for every board is saved. Do
+the same for the version the repeater currently runs; that second file is what
+lets the app send only what changed. The **Firmware library** on the main
 screen manages what is stored: download versions, delete ones you no longer
 need, and see downloaded versions (one row per version) and imported `.bin`
 files (one row per file) separately.
@@ -192,51 +185,53 @@ files (one row per file) separately.
 ## The firmware library
 
 **Firmware library** on the main screen is the same screen as step 4, outside
-the update flow. Use the **GitHub** tab to download release versions (tapping
-a version downloads all of its missing images), see saved versions in offline
-mode (one row per version), and delete a version with the trash icon on its
-row. Use the **Imported** tab to import a custom `.bin` (one row per file)
-and delete imported files you no longer need. Deleting an image the app had
-selected for an update simply clears that selection.
+the update flow. Use the **GitHub** tab to download released versions (tapping
+a version downloads its missing files), see saved versions in offline mode
+(one row per version), and delete a version with the trash icon on its row.
+Use the **Imported** tab to add your own `.bin` file (one row per file) and
+delete files you no longer need. Deleting a file selected for an update just
+clears that selection.
 
 Imported files and downloaded versions are listed separately on purpose:
-downloaded images come from releases (they carry the release's board and
-version), while an imported `.bin` is identified by its hash alone. When the
-repeater reports its running image's SHA-256, the app uses the matching
-image — imported or downloaded — as the delta base automatically.
+downloaded files come from releases (labelled with the board and version),
+while an imported `.bin` is identified by its fingerprint alone. When the
+repeater reports the fingerprint of the firmware it is running, the app
+automatically uses the matching file — imported or downloaded — as the
+starting point for a smaller update.
 
 ## Custom firmware
 
-Custom builds work exactly like releases:
+Your own builds work just like releases:
 
-1. Build your firmware (the repeater side needs the OTA feature).
+1. Build your firmware (the repeater side needs the update feature).
 2. **Firmware library → Imported tab → Import a .bin**, on any platform.
 3. Select it on the **Imported** tab (or a saved version on the **GitHub**
    tab, in either mode).
 
-The app works out the before-image automatically: it matches the repeater's
-reported image against your library (downloaded releases or imported files).
-If nothing matches, it sends the whole image. To force a specific file as
-the base, use **Use as delta base** on its row in the **Imported** tab.
+The app works out the starting point automatically by matching the repeater's
+current firmware against your library. If nothing matches, it sends the whole
+file. To pick a specific file, use **Use as delta base** on its row in the
+**Imported** tab.
 
-A custom image has no board name, so the app uses the board id the repeater
-itself reported. The repeater still refuses an image built for another board
-and still verifies the hash, so a wrong file cannot be bricked into place.
+A custom file has no board name, so the app uses the board the repeater
+reports. The repeater still refuses firmware built for another board and
+still checks the fingerprint, so a wrong file cannot be installed by mistake.
 
 ![Firmware library](docs/images/09-library.png)
 
 ## Safety and limits
 
-- **Nothing boots until you commit.** Staging writes only the spare slot.
-- **The staged bytes are verified by the repeater**, not by the app. A
-  mismatch discards the staging session.
-- **Only an admin can start.** The same login as every other repeater CLI
-  command is required.
-- **A bad boot flips back.** The new image must start its radio and send one
-  packet; failure restores the previous partition.
-- **A low battery suspends staging.** Charge or power the repeater first.
-- **Board mismatch is refused.** The image must be built for the board the
-  repeater reports.
+- **Nothing starts until you confirm.** The transfer only writes to the spare
+  slot — the firmware you are running is untouched.
+- **The repeater checks the file itself**, not just the app. A mismatch throws
+  away the transfer.
+- **Only an administrator can start**, using the same sign-in as other
+  repeater settings.
+- **A bad update undoes itself.** The new firmware must start its radio; if it
+  cannot, the old firmware is restored.
+- **A low battery pauses the transfer.** Charge or power the repeater first.
+- **The wrong model is refused.** The firmware must match the repeater's
+  board.
 - The companion is used as shipped. Relays on the path need no custom
   firmware.
 
@@ -244,15 +239,15 @@ and still verifies the hash, so a wrong file cannot be bricked into place.
 
 | What you see | What it means |
 |---|---|
-| "This firmware does not speak the ota CLI" | The repeater is not running an OTA-enabled fork build. Flash one over USB/Wi-Fi first. |
-| "login rejected" | The password is wrong and this companion's key is not in the repeater's admin list. Try the password, or add the key on the repeater. |
-| "logged in, but not as admin" | The key is in the repeater's access list as a guest. Give it admin rights on the repeater. |
-| "No saved route" | The companion does not know a path. Enter a direct path on the radio step, use a private radio plan, or let the request flood. |
+| "This firmware does not speak the ota CLI" | The repeater is not running an update-enabled fork build. Flash one over USB/Wi-Fi first. |
+| "login rejected" | The password is wrong and this companion is not approved as an administrator. Try the password, or approve the companion on the repeater. |
+| "logged in, but not as admin" | The companion is approved only as a guest. Give it administrator rights on the repeater. |
+| "No saved route" | The companion does not know a path to the repeater. Set a direct path on the radio step, or use a private channel. |
 | "battery gate active; staging refused" | The repeater's battery is low. Charge or power it. |
-| "the node refused ... radio2" | radio2 cannot use that preset (it overlaps the live band or cannot be scanned). Pick another frequency. |
-| "the image did not pass verification" | The before-image was not matched to the repeater's image (or the file is damaged). Match the image the repeater runs in your library, or let it send the full image. |
-| The transfer stalls | A lost reply, not necessarily a lost update. Wait for the retry, or cancel and retry; the staged session is discarded safely. |
-| The node does not answer after commit | It may be rolling back. Re-check with the app; if it is back on the old version, the new image failed its boot health check. |
+| "the node refused ... radio2" | radio2 cannot use that channel (it is too close to your live channel or cannot be scanned). Pick another frequency. |
+| "the image did not pass verification" | The app could not match the repeater's current firmware to a file in your library (or the file is damaged). Pick the file the repeater runs, or send the whole file. |
+| The transfer stalls | A lost reply, not necessarily a lost update. Wait for the retry, or cancel and retry; the partial transfer is discarded safely. |
+| The repeater does not answer after the update | It may be switching back. Check again with the app; if it is back on the old version, the new firmware failed to start. |
 
 ## Screenshots
 
@@ -270,16 +265,17 @@ and still verifies the hash, so a wrong file cannot be bricked into place.
 
 ## How it works (short version)
 
-The app talks to your companion, which encrypts each operation as an ordinary
-admin request to the repeater — the same path a status request takes.
-Intermediate nodes forward it like any other request, so relays need no
-special firmware. The repeater reassembles the stream into its spare firmware
-slot, verifies the SHA-256, and waits for an explicit apply. The first boot of
-a new image proves its radio; if it cannot, the previous slot boots instead.
+The app sends each step to your companion, which forwards it to the repeater
+as a normal encrypted request — the same kind used to check the repeater's
+status. The request follows the path you chose, or goes straight to the
+repeater when it is in range, so any relays on the way need no special
+firmware. The repeater collects the update in its spare slot, checks the
+file's fingerprint, and waits for you to confirm. On the first start, if the
+new firmware cannot use its radio, the repeater goes back to the old one.
 
-The exact wire contract is specified in the fork's
+The exact message format is documented for developers in the fork's
 [`OtaUpdate.h`](https://github.com/jhuebert/MeshCore/blob/lora-ota/examples/simple_repeater/OtaUpdate.h)
-and summarised in [AGENTS.md](AGENTS.md). The companion stays stock.
+and summarised in [AGENTS.md](AGENTS.md). The companion needs no changes.
 
 ## For developers
 
