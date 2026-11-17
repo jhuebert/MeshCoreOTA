@@ -12,8 +12,8 @@ import '../widgets/common.dart';
 import '../widgets/wizard.dart';
 import 'verify_screen.dart';
 
-/// Step 5: the transfer itself. DIRECT packets only; the node re-verifies
-/// SHA-256 when the stream ends. Nothing boots until the operator commits.
+/// Step 7: the transfer itself. The node re-verifies the image when the
+/// stream ends. Nothing boots until the operator commits.
 class TransferScreen extends StatefulWidget {
   const TransferScreen({super.key});
 
@@ -80,7 +80,7 @@ class _TransferScreenState extends State<TransferScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const WizardBar(step: 6, label: 'Transfer'),
+          const WizardBar(step: 7, label: 'Transfer'),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Text(
@@ -125,13 +125,13 @@ class _TransferScreenState extends State<TransferScreen> {
           ),
           const SectionHeader('Steps'),
           _stepRow(
-            label: 'Stage image (arm the node)',
+            label: 'Stage image',
             state: phase.index >= UpdatePhase.staging.index
                 ? _StepState.ok
                 : _StepState.pending,
           ),
           _stepRow(
-            label: 'Transfer (windowed REQ stream)',
+            label: 'Transfer',
             state: phase.index >= UpdatePhase.readyToApply.index
                 ? _StepState.ok
                 : phase == UpdatePhase.transferring
@@ -139,7 +139,7 @@ class _TransferScreenState extends State<TransferScreen> {
                     : _StepState.pending,
           ),
           _stepRow(
-            label: 'Node verifies SHA-256',
+            label: 'Verify the image',
             state: phase.index >= UpdatePhase.readyToApply.index
                 ? _StepState.ok
                 : phase == UpdatePhase.transferring
@@ -147,7 +147,7 @@ class _TransferScreenState extends State<TransferScreen> {
                     : _StepState.pending,
           ),
           _stepRow(
-            label: 'Commit update (apply)',
+            label: 'Commit update',
             state: phase.index >= UpdatePhase.verifying.index
                 ? _StepState.ok
                 : phase == UpdatePhase.applying ||

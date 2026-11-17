@@ -100,16 +100,6 @@ class _ConnectScreenState extends State<ConnectScreen> {
         padding: const EdgeInsets.only(bottom: 24),
         children: [
           const WizardBar(step: 1, label: 'Connect the companion'),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 14, 16, 0),
-            child: Text(
-              'Update a MeshCore repeater over LoRa — no laptop at the site. '
-              'This app talks to your companion device; the companion radios to '
-              'the repeater.',
-              style: TextStyle(
-                  color: OtaTheme.textMuted, fontSize: 13, height: 1.45),
-            ),
-          ),
           const SectionHeader('Transport'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -184,7 +174,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
                     const SizedBox(width: 10),
                     const Expanded(
                       child: Text(
-                        'Pair with the companion (NUS)',
+                        'Pair with the companion',
                         style: TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -207,8 +197,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 4),
                     child: Text(
-                      'No companions found yet — tap Scan. Your phone must be '
-                      'within BLE range of the companion.',
+                      'Nothing found yet — tap Scan. The companion must be '
+                      'powered and nearby.',
                       style: TextStyle(
                           color: OtaTheme.textMuted, fontSize: 12, height: 1.4),
                     ),
@@ -274,9 +264,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Point at a Wi-Fi or Ethernet companion (host:port), a USB '
-                  'serial-to-TCP bridge, or a companion on this machine. This '
-                  'is the normal path on a computer.',
+                  'The companion on this network, by host and port.',
                   style: TextStyle(
                       color: OtaTheme.textMuted, fontSize: 12, height: 1.4),
                 ),

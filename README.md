@@ -52,7 +52,7 @@ the project's app key, so upgrading an existing install keeps your data.
 
 ## Getting started
 
-The app walks you through seven steps. You can go back at any point; nothing
+The app walks you through eight steps. You can go back at any point; nothing
 is changed on the repeater until the transfer starts, and nothing boots until
 you confirm.
 
@@ -85,15 +85,15 @@ The **Repeaters** tab lists the repeaters your companion knows. Use the
 The app signs in as repeater admin and reads the node's state: firmware
 version, board, boot state and the running image's hash. **The password is
 optional**: leave it blank when the companion's key already has admin rights
-in the repeater's access list. Tapping **Check node** signs you in and moves
-straight to the firmware step.
+in the repeater's access list. Tapping **Sign in** at the bottom signs you in
+and moves straight to the firmware step.
 
 ### 4. Choose firmware
 
 ![Choose firmware](docs/images/04-firmware.png)
 
 The **GitHub** tab lists the fork's releases as **versions** — one row per
-version, newest first. **Stable** and **Dev builds** are separate tabs. The
+version, newest first. **Stable** and **Dev** are separate tabs. The
 list only shows versions that have an image for the repeater's board, and the
 app picks that image for you — there is no board picker and no per-device
 list to manage.
@@ -101,28 +101,19 @@ list to manage.
 - Tapping a version downloads **its image for your board** (if it is not
   already on the device) and selects it for this update.
 - The **cloud button** on a version saves **that whole version** (every
-  board's image) on your device for offline use. The cloud icon tells the
-  state: outlined = not downloaded, filled = partially saved, done = saved.
-- A saved version is marked on its row, and a trash icon deletes the version
-  and all of its images.
+  board's image) on your device for offline use. The cloud icon shows the
+  state: outlined = nothing saved, half = partly saved, done = saved.
+- A saved version shows the done cloud icon on its row, and a trash icon
+  deletes the version and all of its images.
 - **Imported** shows your imported `.bin` files — one row per file — and is
   where you import a custom build.
 
-### 5. Review
+### 5. Radio settings
 
-![Review update](docs/images/05-review.png)
+![Radio settings](docs/images/05-review.png)
 
-You see the node, the install image, the delta base (the image the repeater
-is already running, used to send only what changed), a rough time estimate,
-and the radio plan.
-
-**Before and after images.** The app picks the "before" image by matching the
-repeater's reported image hash. If you have a custom build, use **Change
-base** to choose the file the repeater actually runs, or **Full image** to
-send every byte. **Change image** returns to the picker.
-
-**Radio plan.** A transfer is heavy for a live mesh, so you can move it off
-the production channel:
+A transfer is heavy for a live mesh, so this step is where you decide where
+it runs:
 
 - **Live mesh** — the normal channel and the saved DIRECT route. You can enter
   a DIRECT path override.
@@ -138,7 +129,20 @@ the production channel:
 The app suggests a private frequency and a duration from the node's radio
 settings and the transfer estimate; you can change either.
 
-### 6. Transfer
+### 6. Review
+
+The review screen summarizes everything chosen before anything goes on air:
+the companion and how it is connected, the repeater and its board, the
+firmware it is running now, the firmware you are installing, the image size,
+whether this is a delta (only what changed) or the full image and how much
+will be sent, a time estimate, and the radio choice. **Start update** begins
+the transfer — nothing boots until the final commit.
+
+The delta is computed automatically: the app matches the repeater's reported
+image against your library and reuses what it can. If there is no match, it
+tells you the full image will be sent.
+
+### 7. Transfer
 
 The app stages the image into the repeater's **inactive** firmware slot,
 streams the changes as ordinary encrypted admin requests, and the repeater
@@ -148,11 +152,11 @@ rate** (the node is deaf while each op commits to flash, so a transfer takes
 much longer than airtime alone would suggest). You can cancel; a cancelled
 transfer discards the staged image.
 
-### 7. Commit and verify
+### 8. Commit and verify
 
-When the image is fully staged, it has already passed the repeater's SHA-256
-check. **Commit update** flips the boot partition and reboots. The app signs
-back in and confirms the new version answered.
+When the image is fully staged, it has already passed the repeater's
+integrity check. **Commit update** flips the boot partition and reboots.
+The app signs back in and confirms the repeater came back on the new image.
 
 If the new firmware cannot start its radio, the repeater's boot health check
 flips back to the previous firmware automatically. You can also roll back
@@ -201,8 +205,11 @@ Custom builds work exactly like releases:
 2. **Firmware library → Imported tab → Import a .bin**, on any platform.
 3. Select it on the **Imported** tab (or a saved version on the **GitHub**
    tab, in either mode).
-4. On the review screen, choose the file the repeater already runs as the
-   **base** — or send the full image.
+
+The app works out the before-image automatically: it matches the repeater's
+reported image against your library (downloaded releases or imported files).
+If nothing matches, it sends the whole image. To force a specific file as
+the base, use **Use as delta base** on its row in the **Imported** tab.
 
 A custom image has no board name, so the app uses the board id the repeater
 itself reported. The repeater still refuses an image built for another board
@@ -230,12 +237,12 @@ and still verifies the hash, so a wrong file cannot be bricked into place.
 | What you see | What it means |
 |---|---|
 | "This firmware does not speak the ota CLI" | The repeater is not running an OTA-enabled fork build. Flash one over USB/Wi-Fi first. |
-| "login rejected" | The password is wrong and this companion's key is not in the repeater's admin list. Try the password, or add the key to the ACL. |
-| "logged in, but not as admin" | The key is in the ACL as a guest. Give it admin rights on the repeater. |
-| "No saved direct route" | The companion does not know a path. Enter a DIRECT path, use a private radio plan, or let the request flood. |
+| "login rejected" | The password is wrong and this companion's key is not in the repeater's admin list. Try the password, or add the key on the repeater. |
+| "logged in, but not as admin" | The key is in the repeater's access list as a guest. Give it admin rights on the repeater. |
+| "No saved route" | The companion does not know a path. Enter a direct path on the radio step, use a private radio plan, or let the request flood. |
 | "battery gate active; staging refused" | The repeater's battery is low. Charge or power it. |
 | "the node refused ... radio2" | radio2 cannot use that preset (it overlaps the live band or cannot be scanned). Pick another frequency. |
-| "the image did not pass verification" | The delta base was not the image the repeater runs, or the file is damaged. Choose the correct base or send the full image. |
+| "the image did not pass verification" | The before-image was not matched to the repeater's image (or the file is damaged). Match the image the repeater runs in your library, or let it send the full image. |
 | The transfer stalls | A lost reply, not necessarily a lost update. Wait for the retry, or cancel and retry; the staged session is discarded safely. |
 | The node does not answer after commit | It may be rolling back. Re-check with the app; if it is back on the old version, the new image failed its boot health check. |
 

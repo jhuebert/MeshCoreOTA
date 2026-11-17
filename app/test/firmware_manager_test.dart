@@ -65,8 +65,7 @@ void main() {
     expect(find.text('Review update'), findsNothing);
     expect(find.text('All boards'), findsNothing); // board dropdown is gone
     expect(find.text('RAK_4631_repeater'), findsNothing); // no device rows
-    expect(
-        find.textContaining('Versions are treated as a unit'), findsOneWidget);
+    expect(find.textContaining('Versions are treated as a unit'), findsNothing);
     // The offline switch is still there — managing is the point here.
     expect(find.byTooltip('Go offline — never contact GitHub'), findsOneWidget);
   });

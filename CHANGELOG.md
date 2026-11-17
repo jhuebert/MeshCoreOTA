@@ -6,6 +6,44 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The wizard is now eight steps, finishing with a real review.** The old
+  "Review update" step is now **Radio settings** — where the transfer runs,
+  the suggested preset and a duration input that defaults to the recommended
+  time (the "Use X min" button is gone), plus the live-mesh direct path
+  override. A new **Review** step summarizes everything chosen before
+  anything goes on air: the companion and how it is connected, the repeater
+  and its board, the current firmware, the firmware to install, the image
+  size, full-vs-delta and how much will be sent, an estimated time, and the
+  radio choice. Transfer is step 7, Verify is step 8.
+- **The review screen no longer offers a base picker.** The delta base is
+  always matched automatically (running-image hash, then the version
+  stamp); when there is no match the screen says the full image will be
+  sent. The **Choose base** and **Change image** buttons are gone, along
+  with the "what happens" and SHA-256 sections. On warnings, the board
+  mismatch bullet is gone; the low-battery and phone-in-range bullets stay.
+  A manual base override is still possible from the **Imported** tab
+  (**Use as delta base** / **Clear delta base override**).
+- **The firmware picker and library dropped the explanatory copy.** The
+  release list lost the "Versions are treated as a unit…"/"Showing
+  versions…" paragraph (the refresh icon stays), the "Showing the cached
+  catalog" note is gone, and version rows no longer spell out "not
+  downloaded"/"saved for offline use" — the cloud icon shows it (partial
+  downloads still show a count). The **Dev builds** tab is now **Dev**.
+- **Sign in uses one action.** The separate **Check node** button is gone:
+  the bottom action signs in (always tappable, blank password allowed) and
+  lands on the firmware step on success.
+- **Quieter, plainer copy throughout.** Protocol terms were removed or
+  renamed where they weren't needed ("Dev builds"→"Dev", the transfer step
+  no longer mentions the windowed REQ stream, the integrity check is no
+  longer called SHA-256 on screens, the Undo explainer section on the
+  verify screen is gone, and "(ota rollback)" was dropped from the
+  rollback button). The verified message now says the repeater came back
+  on the new image hash instead of the version stamp. The connect screen
+  lost its intro blurb and the TCP companion description was simplified;
+  the public key tab lost the "manual node" sentence.
+
 ### Added
 
 - **The firmware library is now the firmware picker, usable on its own.**

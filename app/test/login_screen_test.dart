@@ -44,17 +44,18 @@ AppState _app() {
 }
 
 void main() {
-  testWidgets('password is optional and the check button is always offered',
+  testWidgets('password is optional and the sign in button is always offered',
       (tester) async {
     final app = _app();
     await tester.pumpWidget(support.wrap(app, const LoginScreen()));
     await tester.pump();
 
     expect(find.text('Admin password (optional)'), findsOneWidget);
-    expect(find.textContaining('repeater ACL'), findsOneWidget);
+    expect(find.textContaining('already an admin on the repeater'),
+        findsOneWidget);
 
     final check = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Check node'),
+      find.widgetWithText(FilledButton, 'Sign in'),
     );
     expect(check.onPressed, isNotNull); // a blank password is a valid login
   });
@@ -77,7 +78,6 @@ void main() {
     await tester.pump();
 
     expect(find.text('Xiao_S3_WIO_repeater_observer'), findsOneWidget);
-    expect(find.text('0xba7783f9'), findsOneWidget);
     expect(find.text('enabled'), findsOneWidget);
     expect(find.textContaining('v1.1.0-rc5'), findsWidgets);
     expect(find.text('Admin password (optional)'), findsNothing);
@@ -114,21 +114,22 @@ void main() {
     await tester.pumpWidget(support.wrap(app, const LoginScreen()));
     await tester.pump();
 
-    expect(find.textContaining('custom build'), findsOneWidget);
-    expect(find.textContaining('not in the firmware catalog'), findsOneWidget);
+    expect(find.textContaining('custom build the app does not know'),
+        findsOneWidget);
   });
 
-  testWidgets('next stays locked until the node has been checked',
+  testWidgets('the sign in button is locked until a node is chosen',
       (tester) async {
     final app = _app();
+    app.target = null;
     await tester.pumpWidget(support.wrap(app, const LoginScreen()));
     await tester.pump();
 
     final next = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: choose firmware'),
+      find.widgetWithText(FilledButton, 'Sign in'),
     );
     expect(next.onPressed, isNull);
-    expect(find.textContaining('Check the node first'), findsOneWidget);
+    expect(find.textContaining('Pick a repeater first'), findsOneWidget);
   });
 
   testWidgets('the login helper updates the session password', (tester) async {
@@ -154,7 +155,7 @@ void main() {
 
     await tester.pumpWidget(support.wrap(app, const LoginScreen()));
     await tester.pump();
-    await tester.tap(find.text('Check node'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
 
     expect(find.text('Choose firmware'), findsOneWidget);
@@ -173,11 +174,11 @@ void main() {
 
     await tester.pumpWidget(support.wrap(app, const LoginScreen()));
     await tester.pump();
-    await tester.tap(find.text('Check node'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
     await tester.pumpAndSettle();
 
     expect(find.text('Choose firmware'), findsNothing);
-    expect(find.text('Check node'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Sign in'), findsOneWidget);
     expect(find.text('nope'), findsOneWidget);
   });
 }

@@ -7,9 +7,9 @@ import '../widgets/common.dart';
 import '../widgets/wizard.dart';
 
 /// Final step: boot into the new image and prove it works. The node
-/// rebooted into an image its SHA-256 gate approved; the boot health check
+/// rebooted into an image its hash gate approved; the boot health check
 /// flips back if the LoRa radio is dead. The app adds the last mile:
-/// re-login and check `version` actually answers with the new stamp.
+/// re-login and confirm the image hash matches the one that was sent.
 class VerifyScreen extends StatefulWidget {
   const VerifyScreen({super.key});
 
@@ -49,7 +49,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const WizardBar(step: 7, label: 'Verify'),
+          const WizardBar(step: 8, label: 'Verify'),
           const SizedBox(height: 18),
           if (phase == UpdatePhase.applying || phase == UpdatePhase.verifying)
             const Column(
@@ -91,12 +91,13 @@ class _VerifyScreenState extends State<VerifyScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Text(
                   matched
-                      ? 'The node answered admin CLI with the new version stamp. '
-                          'The update is complete.'
-                      : 'The node is not answering with the expected version. '
-                          'Either the boot health check flipped it back to the '
-                          'previous firmware (good), or the new image is broken. '
-                          'Check the node; you can undo the update below.',
+                      ? 'The repeater came back on the new firmware — its '
+                          'image matches the one that was sent. The update is '
+                          'complete.'
+                      : 'The node is not running the expected image. Either it '
+                          'switched itself back to the previous firmware (the '
+                          'safe outcome), or the new image is broken. Check the '
+                          'node — you can roll back below.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       color: OtaTheme.textMuted, fontSize: 12.5, height: 1.5),
@@ -104,17 +105,6 @@ class _VerifyScreenState extends State<VerifyScreen> {
               ),
             ),
           ],
-          const SectionHeader('Undo'),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'If the node behaves oddly after an update, flip the boot '
-              'partition back to the previous firmware. No re-flashing, no '
-              'laptop. The old image is untouched.',
-              style: TextStyle(
-                  color: OtaTheme.textMuted, fontSize: 12, height: 1.5),
-            ),
-          ),
           const SizedBox(height: 10),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -122,8 +112,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
               onPressed:
                   phase == UpdatePhase.applying ? null : () => _rollback(app),
               icon: const Icon(Icons.undo),
-              label:
-                  const Text('Roll back to previous firmware (ota rollback)'),
+              label: const Text('Roll back to previous firmware'),
             ),
           ),
           const SizedBox(height: 6),
@@ -147,8 +136,8 @@ class _VerifyScreenState extends State<VerifyScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Roll back?'),
         content: const Text(
-          'The node reboots into the previous partition. The new image stays '
-          'in the staging slot until the next update.',
+          'The repeater reboots into the previous firmware. Nothing is '
+          're-flashed.',
         ),
         actions: [
           TextButton(

@@ -66,7 +66,8 @@ admin/ACL login, `OP_INFO` handshake, board-scoped version picker, delta or
 full-image staging, windowed transfer, `ota apply`, post-reboot verification
 and `ota rollback`. The app also carries a version-based offline library, a
 three-way radio plan (live mesh / temporary private preset / the repeater's
-radio2), and manual before/after images for custom builds.
+radio2), and automatic before/after image matching (the delta base is the
+repeater's running image, hash-matched against the library).
 
 Planned and explicitly deferred:
 
@@ -149,12 +150,15 @@ spec.
 
 ## App UX contract
 
-The app is a seven-step wizard: Connect → Repeater → Admin → Firmware →
-Review → Transfer → Verify. Every screen carries `WizardBar` (step + label);
-the next action lives in a `WizardFooter` or an equivalent bottom bar. Keep
-the flow linear — an action that belongs on the next screen does not belong
-below the fold on the current one. One screen, one main action: secondary
-buttons are text/outlined, and rarely more than one is a filled button.
+The app is an eight-step wizard: Connect → Repeater → Sign in → Firmware →
+Radio → Review → Transfer → Verify. Every screen carries `WizardBar`
+(step + label); the next action lives in a `WizardFooter` or an equivalent
+bottom bar. Keep the flow linear — an action that belongs on the next
+screen does not belong below the fold on the current one. One screen, one
+main action: secondary buttons are text/outlined, and rarely more than one
+is a filled button. The UI is aimed at operators with no MeshCore or
+protocol knowledge — keep copy user-centric and jargon only where it is
+accounted for (e.g. `radio2`, `tempradio` on the node CLI itself).
 
 - **Connect**: BLE is Android/iOS only; TCP is a first-class path on every
   platform (Wi-Fi/Ethernet companion, serial-to-TCP bridge, local simulator).
@@ -164,11 +168,12 @@ buttons are text/outlined, and rarely more than one is a filled button.
   action (Continue) for the back-navigation case only.
 - **Repeater**: repeaters and the manual public key are separate tabs. Long
   contact lists must never hide the key field or the admin login.
-- **Admin**: the password is optional (see parity above), and `Check node`
-  must always be tappable; do not gate it on a non-empty password. A
-  successful check lands the operator on the firmware step by itself — no
-  second tap; the step bar stays the way back. When signed in, the password
-  card is hidden and the screen shows the node facts only.
+- **Sign in**: the password is optional (see parity above), and the bottom
+  button signs in — always tappable; do not gate it on a non-empty
+  password. There is no separate check/verify button: the bottom action is
+  the check, and a successful one lands the operator on the firmware step
+  by itself — no second tap; the step bar stays the way back. When signed
+  in, the password card is hidden and the screen shows the node facts only.
 - **Firmware**: versions are the unit. The GitHub tab shows one row per
   version — no board dropdown, no per-device rows; the app detects the
   node's board and downloads that board's image just-in-time when a version
@@ -184,13 +189,23 @@ buttons are text/outlined, and rarely more than one is a filled button.
   (`FirmwareScreen(updateMode: false)`): tapping a version downloads the
   whole version instead of selecting an update. The offline switch is
   persisted and must prevent every GitHub request (catalog included).
-- **Review**: three radio plans (live mesh with the path override, temporary
-  private preset on both ends, or the repeater's radio2) and before/after
-  image selection. Off-mesh modes are implicit zero-hop. Show the plan's
-  validation before the Start button, and never start with an invalid one.
-- **Transfer/Verify**: no screen may claim success until the node answers the
-  new version. A lost reply from `ota apply`/`rollback` is an unknown outcome,
-  decided by re-login and `version`. The transfer screen shows a rate-based
+- **Radio**: three radio plans (live mesh with the path override, temporary
+  private preset on both ends, or the repeater's radio2). Off-mesh modes are
+  implicit zero-hop. The duration input defaults to the recommended time for
+  the selected image; show the plan's validation before the Next action, and
+  never continue with an invalid one.
+- **Review**: a summary of everything selected before the update — companion
+  and how it is connected, repeater name and board, current firmware, the
+  firmware to install, image size, full-vs-delta and how much will be sent,
+  an estimated time, and the radio choice. The delta base is matched
+  automatically (running-image hash, then version stamp); there is
+  deliberately no base picker — if no base is found the screen says a full
+  image will be sent, and the user can turn back instead. Show the plan's
+  validation before Start, and never start with an invalid one.
+- **Transfer/Verify**: no screen may claim success until the node answers
+  with the newly sent image's hash. A lost reply from `ota apply`/`rollback`
+  is an unknown outcome, decided by re-login and the reported image hash.
+  The transfer screen shows a rate-based
   ETA (ops applied / elapsed) once a few ops land — never an airtime-only
   guess; the node is deaf during flash writes, so airtime is ~15x off.
 

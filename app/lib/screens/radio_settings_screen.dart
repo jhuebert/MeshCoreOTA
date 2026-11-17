@@ -7,13 +7,15 @@ import '../services/radio_plan.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/wizard.dart';
+import 'review_screen.dart';
 
-/// Step 5 (detail): where the transfer runs.
+/// Step 5: where the transfer runs.
 ///
 /// The live mesh stays untouched in a temporary-preset or radio2 transfer;
 /// both are zero-hop because nothing else is tuned there. The screen suggests
 /// a preset and a duration from the node's own radio settings and the
 /// transfer estimate, and explains what will be changed and restored.
+/// In live-mesh mode it also carries the optional direct path override.
 class RadioSettingsScreen extends StatefulWidget {
   const RadioSettingsScreen({super.key});
 
@@ -38,6 +40,7 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
   late RadioMode _mode;
   late final TextEditingController _frequency;
   late final TextEditingController _duration;
+  late final TextEditingController _route;
   late int _bandwidthHz;
   late int _spreadingFactor;
   late int _codingRate;
@@ -51,17 +54,36 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
         app.radioPlan.preset ?? app.suggestedRadioPreset() ?? app.livePreset;
     _frequency = TextEditingController(
         text: suggested == null ? '' : _fmt(suggested.frequencyMhz));
-    _duration =
-        TextEditingController(text: app.radioPlan.durationMinutes.toString());
+    // The duration input only ever defaults to the recommended time for the
+    // selected radio; it is never auto-rewritten while the user is typing.
+    final estimate = _initialEstimate(app);
+    final recommended = estimate == null
+        ? app.radioPlan.durationMinutes
+        : RadioPlan.suggestDurationMinutes(estimate);
+    _duration = TextEditingController(text: recommended.toString());
+    _route = TextEditingController(text: app.manualRoutePath);
     _bandwidthHz = suggested?.bandwidthHz ?? 125000;
     _spreadingFactor = suggested?.spreadingFactor ?? 7;
     _codingRate = suggested?.codingRate ?? 5;
+  }
+
+  int? _initialEstimate(AppState app) {
+    final live = app.livePreset;
+    if (_mode == RadioMode.liveMesh) {
+      return live == null ? null : app.estimateSecondsForPreset(live);
+    }
+    final preset = app.radioPlan.preset ?? app.suggestedRadioPreset() ?? live;
+    return app.estimateSecondsForPreset(
+      preset,
+      factor: _mode == RadioMode.radio2 ? RadioPlan.radio2DutyFactor : 1.0,
+    );
   }
 
   @override
   void dispose() {
     _frequency.dispose();
     _duration.dispose();
+    _route.dispose();
     super.dispose();
   }
 
@@ -71,6 +93,8 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
     final live = app.livePreset;
     final plan = _planFromFields();
     final problem = plan.error(primary: live);
+    final routeInvalid =
+        _mode == RadioMode.liveMesh && app.manualRouteError != null;
     final fieldPreset = _presetFromFields();
     final liveEta = live == null ? null : app.estimateSecondsForPreset(live);
     final tempEta = app.estimateSecondsForPreset(fieldPreset);
@@ -84,11 +108,11 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
     final selectedEta = etaFor(_mode);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Radio for the transfer')),
+      appBar: AppBar(title: const Text('Radio settings')),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const WizardBar(step: 5, label: 'Radio for the transfer'),
+          const WizardBar(step: 5, label: 'Radio settings'),
           const SectionHeader('Where the update runs'),
           RadioGroup<RadioMode>(
             groupValue: _mode,
@@ -122,6 +146,26 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
               ],
             ),
           ),
+          if (_mode == RadioMode.liveMesh) ...[
+            const SectionHeader('Direct path'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+              child: TextField(
+                controller: _route,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: InputDecoration(
+                  labelText: 'Direct path override (optional)',
+                  hintText: 'c0ff, c0c0',
+                  helperText:
+                      'Comma-separated hash hops. Empty keeps the saved route.',
+                  errorText: app.manualRouteError,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: app.setManualRoutePath,
+              ),
+            ),
+          ],
           if (_mode != RadioMode.liveMesh) ...[
             const SectionHeader('Private preset'),
             Padding(
@@ -137,7 +181,7 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Text(
                             'Live preset: ${live.label}. The private preset must '
-                            'stay clear of it${_mode == RadioMode.radio2 ? ' (radio2 requires a different band)' : ''}.',
+                            'stay clear of it${_mode == RadioMode.radio2 ? ' (the second preset must use a different band)' : ''}.',
                             style: const TextStyle(
                                 color: OtaTheme.textMuted,
                                 fontSize: 11,
@@ -241,48 +285,23 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _duration,
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly
-                              ],
-                              decoration: const InputDecoration(
-                                labelText: 'Keep the preset for (minutes)',
-                                isDense: true,
-                              ),
-                              onChanged: (_) => setState(() {}),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Flexible(
-                            child: OutlinedButton(
-                              onPressed: selectedEta == null
-                                  ? null
-                                  : () => setState(() {
-                                        _duration.text =
-                                            RadioPlan.suggestDurationMinutes(
-                                                    selectedEta)
-                                                .toString();
-                                      }),
-                              child: Text(
-                                selectedEta == null
-                                    ? 'Estimate'
-                                    : 'Use ${RadioPlan.suggestDurationMinutes(selectedEta)} min',
-                              ),
-                            ),
-                          ),
+                      TextField(
+                        controller: _duration,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly
                         ],
+                        decoration: const InputDecoration(
+                          labelText: 'Keep the preset for (minutes)',
+                          isDense: true,
+                        ),
+                        onChanged: (_) => setState(() {}),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         selectedEta == null
-                            ? 'Choose an image to see the transfer estimate. The '
-                                'preset reverts automatically when the time is up, '
-                                'on both ends.'
+                            ? 'The preset reverts automatically when the time is '
+                                'up, on both ends.'
                             : 'Estimated transfer: ${RadioPlan.describeSeconds(selectedEta)} '
                                 'for the selected radio. The preset reverts '
                                 'automatically when the time is up, on both ends.',
@@ -309,8 +328,8 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Text(
-              'A low battery still suspends staging, and the node still '
-              'verifies the image by SHA-256 before anything can boot.',
+              'A low battery still pauses the transfer. The repeater checks '
+              'the image before it can boot.',
               style: TextStyle(
                   color: OtaTheme.textMuted, fontSize: 11, height: 1.45),
             ),
@@ -318,9 +337,11 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
         ],
       ),
       bottomNavigationBar: WizardFooter(
-        label: 'Use these settings',
-        icon: Icons.check,
-        onPressed: problem != null ? null : () => _save(app, plan),
+        label: 'Next: review',
+        onPressed: problem != null || routeInvalid
+            ? null
+            : () => _saveAndContinue(app, plan),
+        hint: routeInvalid ? 'Fix the direct path override above.' : null,
       ),
     );
   }
@@ -424,13 +445,15 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
     });
   }
 
-  void _save(AppState app, RadioPlan plan) {
+  void _saveAndContinue(AppState app, RadioPlan plan) {
     app.setRadioMode(_mode);
     if (_mode != RadioMode.liveMesh) {
       app.setRadioPreset(_presetFromFields());
       app.setRadioDuration(plan.durationMinutes);
     }
-    Navigator.of(context).pop();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ReviewScreen()),
+    );
   }
 
   static String _fmt(double value) {

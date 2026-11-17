@@ -15,8 +15,9 @@ class WizardBar extends StatelessWidget implements PreferredSizeWidget {
   static const steps = <String>[
     'Connect',
     'Repeater',
-    'Admin',
+    'Sign in',
     'Firmware',
+    'Radio',
     'Review',
     'Transfer',
     'Verify',

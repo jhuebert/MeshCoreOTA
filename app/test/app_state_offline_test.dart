@@ -318,6 +318,35 @@ void main() {
     expect(app.autoBaseEntry, isNull);
   });
 
+  test('setFullImage forces the full image even when a base is matched',
+      () async {
+    final app = AppState();
+    final lib = FakeLibrary();
+    final running = Uint8List.fromList(List.filled(64, 9));
+    lib.addImage(running,
+        env: _board,
+        version: 'v1.1.0-rc5',
+        fileName: '$_board-v1.1.0-rc5-abc1234.bin');
+    app.library = lib;
+    app.libraryEntries = await lib.list();
+    app.nodeStatus = nodeStatus();
+    app.nodeInfo = nodeInfo(
+        runningSha256: Uint8List.fromList(sha256.convert(running).bytes));
+    final update = app.libraryEntries.single;
+    await app.selectLibraryEntryForUpdate(update);
+    expect(app.autoBaseEntry?.id, update.id);
+    expect(app.baseEntry?.id, update.id);
+
+    await app.setFullImage(true);
+    expect(app.forceFullImage, isTrue);
+    expect(app.baseEntry, isNull);
+    expect(app.baseIsManual, isFalse);
+
+    await app.setFullImage(false);
+    expect(app.forceFullImage, isFalse);
+    expect(app.baseEntry?.id, update.id);
+  });
+
   test('downloadAssetToLibrary refuses outside a connection', () async {
     final app = AppState();
     app.offlineMode = true;

@@ -252,6 +252,7 @@ class AppState extends ChangeNotifier {
     await _disposeLink();
     connectionPhase = ConnectionPhase.connecting;
     connectError = null;
+    transportKind = 'ble';
     notifyListeners();
     try {
       final ble = BleDeviceLink(device: device);
@@ -271,6 +272,9 @@ class AppState extends ChangeNotifier {
     await _disposeLink();
     connectionPhase = ConnectionPhase.connecting;
     connectError = null;
+    transportKind = 'tcp';
+    tcpHost = host;
+    tcpPort = port;
     notifyListeners();
     try {
       final tcp = tcpLinkFactory?.call(host, port) ??

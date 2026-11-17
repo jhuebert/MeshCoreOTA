@@ -45,11 +45,9 @@ void main() {
     await tester.pumpWidget(wrap(app, const FirmwareScreen()));
     await tester.pump();
 
-    // One row per version; the device names and the board dropdown are gone.
-    expect(
-        find.textContaining('Showing versions with an image for your '
-            'board'),
-        findsOneWidget);
+    // One row per version; the device names and the board dropdown are gone,
+    // and the verbose explainer line is gone too.
+    expect(find.textContaining('image for your board'), findsNothing);
     expect(find.text('filter-v1.1.0-rc5'), findsOneWidget);
     expect(find.text('RAK_4631_repeater'), findsNothing);
     expect(find.text(_board), findsNothing);
@@ -90,7 +88,7 @@ void main() {
     expect(find.text('filter-v1.1.0-rc5'), findsOneWidget);
     expect(find.text('filter-v1.1.0-dev.9'), findsNothing);
 
-    await tester.tap(find.text('Dev builds'));
+    await tester.tap(find.text('Dev'));
     await tester.pump();
 
     expect(find.text('filter-v1.1.0-dev.9'), findsOneWidget);
@@ -118,6 +116,7 @@ void main() {
     expect(find.text('Offline'), findsNothing); // the Offline tab is gone
     expect(find.text('filter-v1.1.0-rc5'), findsOneWidget); // saved → shown
     expect(find.text('filter-v1.1.0-dev.9'), findsNothing); // not saved
+    expect(find.textContaining('saved for offline use'), findsNothing);
 
     // Toggle back online from the same button.
     await tester.tap(find.byTooltip('Offline — showing downloaded versions '
@@ -165,7 +164,7 @@ void main() {
 
     expect(find.textContaining('1 version(s) on this device'), findsOneWidget);
     expect(find.text('filter-v1.1.0-rc5'), findsOneWidget);
-    expect(find.textContaining('saved for offline use'), findsOneWidget);
+    expect(find.textContaining('saved for offline use'), findsNothing);
     expect(find.text('RAK_4631_repeater'), findsNothing);
 
     // Tapping it picks the image built for this node's board.

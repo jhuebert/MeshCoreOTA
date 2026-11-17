@@ -18,6 +18,7 @@ const _live = LoRaPreset(
 
 AppState _app({RadioMode mode = RadioMode.tempRadio, bool? radio2}) {
   final app = AppState();
+  app.target = contact('riley');
   app.nodePreset = _live;
   app.radio2Enabled = radio2;
   app.radioPlan = RadioPlan(
@@ -47,9 +48,37 @@ void main() {
     expect(find.text('The repeater\'s second preset'), findsOneWidget);
     expect(find.text('PRIVATE PRESET'), findsOneWidget);
     expect(find.text('Keep the preset for (minutes)'), findsOneWidget);
+    expect(find.text('Step 5 of 8'), findsOneWidget);
   });
 
-  testWidgets('an invalid preset is refused before saving', (tester) async {
+  testWidgets('the duration input defaults to the recommended time',
+      (tester) async {
+    _bigView(tester);
+    final app = _app();
+    final lib = FakeLibrary();
+    app.library = lib;
+    final entry = lib.addImage(
+      Uint8List.fromList(List.filled(120000, 3)),
+      env: 'Xiao_S3_WIO_repeater_observer',
+      version: 'v1.1.0-rc5-cd72e1a2',
+    );
+    app.libraryEntries = await lib.list();
+    await app.selectLibraryEntryForUpdate(entry);
+
+    await tester.pumpWidget(wrap(app, const RadioSettingsScreen()));
+    await tester.pump();
+
+    // 120000 bytes at 173 per op → 710 ops × 1.5s ≈ 1065s; plus the
+    // suggestion margin → 22 minutes — never the hard-coded default of 10.
+    final field = tester.widget<TextField>(
+      find.widgetWithText(TextField, 'Keep the preset for (minutes)'),
+    );
+    expect(field.controller?.text, '22');
+    // The "Use X min" affordance is gone; Suggest settings covers the preset.
+    expect(find.textContaining('Use 22 min'), findsNothing);
+  });
+
+  testWidgets('an invalid preset is refused before continuing', (tester) async {
     _bigView(tester);
     final app = _app();
     await tester.pumpWidget(wrap(app, const RadioSettingsScreen()));
@@ -61,7 +90,7 @@ void main() {
 
     expect(find.textContaining('frequency must be 150–2500'), findsOneWidget);
     final save = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Use these settings'),
+      find.widgetWithText(FilledButton, 'Next: review'),
     );
     expect(save.onPressed, isNull);
   });
@@ -80,12 +109,12 @@ void main() {
 
     expect(find.textContaining('frequency must be 150–2500'), findsNothing);
     final save = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Use these settings'),
+      find.widgetWithText(FilledButton, 'Next: review'),
     );
     expect(save.onPressed, isNotNull);
   });
 
-  testWidgets('saving a private plan stores the preset and duration',
+  testWidgets('continuing stores the preset and duration, then moves on',
       (tester) async {
     _bigView(tester);
     final app = _app();
@@ -97,15 +126,17 @@ void main() {
     await tester.enterText(
         find.widgetWithText(TextField, 'Keep the preset for (minutes)'), '25');
     await tester.pump();
-    await tester.tap(find.text('Use these settings'));
-    await tester.pump();
+    await tester.tap(find.text('Next: review'));
+    await tester.pumpAndSettle();
 
     expect(app.radioPlan.mode, RadioMode.tempRadio);
     expect(app.radioPlan.preset!.frequencyMhz, 914);
     expect(app.radioPlan.durationMinutes, 25);
+    // The next wizard step is the review summary.
+    expect(find.text('Step 6 of 8'), findsOneWidget);
   });
 
-  testWidgets('switching to live mesh hides the private preset',
+  testWidgets('switching to live mesh hides the preset and shows the path',
       (tester) async {
     _bigView(tester);
     final app = _app();
@@ -116,8 +147,9 @@ void main() {
     await tester.pump();
 
     expect(find.text('PRIVATE PRESET'), findsNothing);
-    await tester.tap(find.text('Use these settings'));
-    await tester.pump();
+    expect(find.text('Direct path override (optional)'), findsOneWidget);
+    await tester.tap(find.text('Next: review'));
+    await tester.pumpAndSettle();
     expect(app.radioPlan.mode, RadioMode.liveMesh);
   });
 
@@ -127,7 +159,7 @@ void main() {
     final lib = FakeLibrary();
     app.library = lib;
     final entry = lib.addImage(Uint8List.fromList(List.filled(120000, 3)),
-        env: 'Xiao_S3_WIO_repeater_observer', version: 'v1.1.0-rc5');
+        env: 'Xiao_S3_WIO_repeater_observer', version: 'v1.1.0-rc5-cd72e1a2');
     app.libraryEntries = await lib.list();
     await app.selectLibraryEntryForUpdate(entry);
 
@@ -137,6 +169,33 @@ void main() {
     // Three mode tiles plus the duration card.
     expect(find.textContaining('Estimated transfer:'), findsNWidgets(4));
     expect(find.textContaining('\u00d7 the airtime'), findsOneWidget);
+  });
+
+  testWidgets('the direct path override accepts and rejects paths',
+      (tester) async {
+    _bigView(tester);
+    final app = _app(mode: RadioMode.liveMesh);
+    await tester.pumpWidget(wrap(app, const RadioSettingsScreen()));
+    await tester.pump();
+
+    expect(find.text('Step 5 of 8'), findsOneWidget);
+    expect(find.text('Direct path override (optional)'), findsOneWidget);
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Direct path override (optional)'),
+        'c0ff');
+    await tester.pump();
+    expect(app.manualRoutePath, 'c0ff');
+
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Direct path override (optional)'),
+        'not-hex');
+    await tester.pumpAndSettle();
+    expect(app.manualRouteError, isNotNull);
+    final save = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Next: review'),
+    );
+    expect(save.onPressed, isNull);
+    expect(find.text('Fix the direct path override above.'), findsOneWidget);
   });
 
   testWidgets('an existing radio2 configuration is called out', (tester) async {
@@ -162,7 +221,7 @@ void main() {
 
     expect(find.textContaining('must not overlap'), findsOneWidget);
     final save = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Use these settings'),
+      find.widgetWithText(FilledButton, 'Next: review'),
     );
     expect(save.onPressed, isNull);
   });

@@ -10,8 +10,9 @@ import 'firmware_screen.dart';
 /// Step 3: prove the app may administer the node, and read its capabilities.
 ///
 /// A password is optional. The repeater treats a blank login as "is this key
-/// already in my ACL?", so a companion that is already an admin needs no
-/// password at all — the field says so instead of refusing an empty value.
+/// already an admin on my list?", so a companion that is already an admin
+/// needs no password at all — the field says so instead of refusing an
+/// empty value.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -55,7 +56,7 @@ class _LoginScreenState extends State<LoginScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const WizardBar(step: 3, label: 'Admin access to the node'),
+          const WizardBar(step: 3, label: 'Sign in'),
           const SectionHeader('Target'),
           InfoRow(
             label: 'Node',
@@ -65,7 +66,7 @@ class _LoginScreenState extends State<LoginScreen> {
             mono: false,
           ),
           InfoRow(
-            label: 'Admin',
+            label: 'Status',
             value: status == null
                 ? 'not checked yet'
                 : (status.running.isEmpty ? 'checked' : 'signed in'),
@@ -82,9 +83,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        'Sign in to '
-                        '${target == null ? 'the node' : (target.name.isNotEmpty ? target.name : 'the node')} '
-                        'to read its firmware state and allow an update.',
+                        'Sign in to read the repeater’s firmware state and '
+                        'allow an update.',
                         style: const TextStyle(fontSize: 12, height: 1.4),
                       ),
                       const SizedBox(height: 10),
@@ -95,27 +95,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           labelText: 'Admin password (optional)',
                           isDense: true,
                           helperText:
-                              'Leave blank when this companion key already has '
-                              'admin rights in the repeater ACL.',
+                              'Leave blank if this companion is already an '
+                              'admin on the repeater.',
                           helperMaxLines: 2,
                         ),
                         onChanged: (v) => app.adminPassword = v,
                         onSubmitted: (_) => _check(app),
-                      ),
-                      const SizedBox(height: 10),
-                      FilledButton.icon(
-                        onPressed: app.probing || target == null
-                            ? null
-                            : () => _check(app),
-                        icon: app.probing
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.verified_user_outlined),
-                        label: Text(app.probing ? 'Checking…' : 'Check node'),
                       ),
                     ],
                   ),
@@ -133,20 +118,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     InfoRow(label: 'Firmware', value: status.running),
                     InfoRow(label: 'State', value: status.state.name),
-                    InfoRow(label: 'Running SHA', value: status.shaPrefix),
                     InfoRow(
                         label: 'Board',
                         value: board ??
                             (app.nodeInfo == null
-                                ? 'unknown (no handshake)'
-                                : 'custom build — pick a board on the next screen'),
+                                ? 'unknown'
+                                : 'custom build — import the image on the '
+                                    'next step'),
                         mono: board != null),
-                    if (app.nodeInfo != null)
-                      InfoRow(
-                        label: 'Target id',
-                        value:
-                            '0x${app.nodeInfo!.targetId.toRadixString(16).padLeft(8, '0')}',
-                      ),
                     if (radio2 != null)
                       InfoRow(
                         label: 'radio2',
@@ -166,9 +145,8 @@ class _LoginScreenState extends State<LoginScreen> {
               const Padding(
                 padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
                 child: Text(
-                  'This build environment is not in the firmware catalog or '
-                  'library. Pick its board on the next screen, or import the '
-                  'image you want to install.',
+                  'This repeater runs a custom build the app does not know. '
+                  'Import the image you want to install on the next step.',
                   style: TextStyle(
                       color: OtaTheme.warn, fontSize: 12, height: 1.45),
                 ),
@@ -177,16 +155,16 @@ class _LoginScreenState extends State<LoginScreen> {
         ],
       ),
       bottomNavigationBar: WizardFooter(
-        label: 'Next: choose firmware',
-        icon: Icons.memory,
+        label: status == null ? 'Sign in' : 'Next: choose firmware',
+        icon: status == null ? Icons.verified_user_outlined : Icons.memory,
+        busy: app.probing,
         onPressed: status == null
-            ? null
+            ? (app.probing || target == null ? null : () => _check(app))
             : () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const FirmwareScreen()),
                 ),
-        hint: status == null
-            ? 'Check the node first — the picker is scoped to its board.'
-            : null,
+        hint:
+            status == null && target == null ? 'Pick a repeater first.' : null,
       ),
     );
   }

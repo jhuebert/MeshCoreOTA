@@ -3,8 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mesh_protocol/mesh_protocol.dart';
-import 'package:provider/provider.dart';
-
+import 'package:device_link/device_link.dart';
 import 'package:meshcore_ota/app_state.dart';
 import 'package:meshcore_ota/screens/review_screen.dart';
 import 'package:meshcore_ota/services/radio_plan.dart';
@@ -13,99 +12,208 @@ import 'package:ota_core/ota_core.dart';
 import 'support.dart';
 
 void main() {
-  testWidgets('route override accepts valid paths and surfaces invalid ones',
-      (tester) async {
-    final app = AppState();
-    app.selectTarget(Contact(
-      publicKey: Uint8List(32),
-      name: 'target repeater',
-      advType: advTypeRepeater,
-    ));
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AppState>.value(
-        value: app,
-        child: const MaterialApp(home: ReviewScreen()),
-      ),
-    );
-
-    expect(find.text('Direct path override (optional)'), findsOneWidget);
-    await tester.enterText(find.byType(TextField), 'c0ff');
-    await tester.pump();
-    expect(app.manualRoutePath, 'c0ff');
-    expect(find.textContaining('direct override: c0ff'), findsOneWidget);
-
-    await tester.enterText(find.byType(TextField), 'not-hex');
-    await tester.pump();
-    expect(app.manualRouteError, isNotNull);
-    expect(find.textContaining('path'), findsWidgets);
-  });
-
-  reviewExtras();
+  reviewSummaryTests();
 }
 
-// The review step is where the operator sees the radio choice and the
-// before/after images. These cover the wizard chrome and the base picker.
 void _bigView(WidgetTester tester) {
   tester.view.physicalSize = const Size(1200, 2600);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 }
 
-void reviewExtras() {
-  testWidgets(
-      'Choose base is left of Change image and there is no offline switch',
+AppState _app({RadioMode mode = RadioMode.liveMesh}) {
+  final app = AppState();
+  app.selectTarget(Contact(
+    publicKey: Uint8List(32),
+    name: 'target repeater',
+    advType: advTypeRepeater,
+  ));
+  app.radioPlan = RadioPlan(
+    mode: mode,
+    preset: mode == RadioMode.liveMesh ? null : _preset,
+    durationMinutes: 15,
+  );
+  return app;
+}
+
+const _board = 'Xiao_S3_WIO_repeater_observer';
+final _targetId = targetIdForEnvironment(_board);
+final _preset = LoRaPreset(
+  frequencyHz: 913025000,
+  bandwidthHz: 62500,
+  spreadingFactor: 7,
+  codingRate: 5,
+);
+
+/// A connected session over TCP, needed because the review screen's ETA row
+/// only appears when the app has a link. The connect runs in real async time
+/// (widget tests are fake-async otherwise).
+Future<AppState> _connectedApp(WidgetTester tester,
+    {RadioMode mode = RadioMode.tempRadio}) async {
+  final app = AppState();
+  app.tcpLinkFactory = (_, __) {
+    final link = FakeDeviceLink();
+    link.frameHandler = (frame) {
+      if (frame.isEmpty) return;
+      if (frame[0] == cmdGetContacts) {
+        link.simulatePush(
+            Uint8List.fromList([respCodeEndOfContacts, 0, 0, 0, 0]));
+      }
+    };
+    return link;
+  };
+  await tester.runAsync(() => app.connectTcp(host: '127.0.0.1', port: 5000));
+  app.selectTarget(Contact(
+    publicKey: Uint8List(32),
+    name: 'target repeater',
+    advType: advTypeRepeater,
+  ));
+  app.radioPlan = RadioPlan(mode: mode, preset: _preset, durationMinutes: 15);
+  return app;
+}
+
+void reviewSummaryTests() {
+  testWidgets('the review lists companion, repeater and the image to send',
       (tester) async {
     _bigView(tester);
-    final app = AppState();
-    app.selectTarget(Contact(
-      publicKey: Uint8List(32),
-      name: 'target repeater',
-      advType: advTypeRepeater,
-    ));
+    final app = _app();
+    app.companionName = 'test companion';
+    app.transportKind = 'tcp';
+    app.tcpHost = '10.0.0.8';
+    app.tcpPort = 5000;
+    app.nodeStatus = nodeStatus(running: 'v1.1.0-r3');
+    app.nodeInfo = nodeInfo(targetId: _targetId);
+    app.catalog = catalog([
+      release('filter-v1.1.0-rc5', images: [
+        asset(_board, 'v1.1.0-rc5-cd72e1a2'),
+      ]),
+    ]);
+    final lib = FakeLibrary();
+    app.library = lib;
+    lib.addImage(Uint8List.fromList(List.filled(64, 7)),
+        env: _board,
+        version: 'v1.1.0-rc5-cd72e1a2',
+        fileName: '$_board-v1.1.0-rc5-cd72e1a2-filter-abc1234.bin');
+    app.libraryEntries = await lib.list();
+    await app.selectLibraryEntryForUpdate(app.libraryEntries.single);
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AppState>.value(
-        value: app,
-        child: const MaterialApp(home: ReviewScreen()),
-      ),
-    );
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
 
-    expect(find.text('Work offline'), findsNothing);
-    final base = tester.getCenter(find.text('Choose base')).dx;
-    final image = tester.getCenter(find.text('Change image')).dx;
-    expect(base, lessThan(image));
+    expect(find.text('test companion'), findsOneWidget);
+    expect(find.text('TCP — 10.0.0.8:5000'), findsOneWidget);
+    expect(find.text('target repeater'), findsOneWidget);
+    expect(find.text(_board), findsOneWidget); // the node's board
+    expect(find.text('v1.1.0-r3'), findsOneWidget); // current firmware
+    expect(find.text('v1.1.0-rc5-cd72e1a2'), findsOneWidget); // update to
+    expect(find.text('Step 6 of 8'), findsOneWidget);
+    // No base could be matched, so the summary says the full image will be
+    // sent — that is the whole signal it gives.
+    expect(find.textContaining('Full image'), findsOneWidget);
+    // No navigation buttons and no base picker on this screen.
+    expect(find.text('Choose base'), findsNothing);
+    expect(find.text('Change image'), findsNothing);
+    expect(find.text('What happens'), findsNothing);
+    expect(find.text('SHA-256'), findsNothing);
+  });
 
-    // Exercise the base picker sheet paths.
-    await tester.tap(find.text('Choose base'));
-    await tester.pumpAndSettle();
-    expect(find.text('Automatic'), findsOneWidget);
-    expect(find.text('Full image'), findsOneWidget);
-    await tester.tap(find.text('Full image'));
-    await tester.pumpAndSettle();
-    expect(app.forceFullImage, isTrue);
-    await tester.tap(find.text('Choose base'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Automatic'));
-    await tester.pumpAndSettle();
-    expect(app.forceFullImage, isFalse);
+  testWidgets('a matched delta base lists what will be sent', (tester) async {
+    _bigView(tester);
+    final app = _app();
+    app.nodeStatus = nodeStatus(running: 'v1.1.0-r3');
+    final lib = FakeLibrary();
+    app.library = lib;
+    final base = lib.addImage(Uint8List.fromList(List.filled(8, 1)),
+        env: _board, version: 'v1.1.0-r3');
+    lib.addImage(Uint8List.fromList(List.filled(120000, 2)),
+        env: _board, version: 'v1.1.0-rc5-cd72e1a2');
+    app.libraryEntries = await lib.list();
+    app.autoBaseEntry = base;
+    app.deltaResult = const DeltaResult(
+        ops: [CopyOp(0, 8)], literalBytes: 4096, copyBytes: 8);
+
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
+    await tester.pump();
+
+    expect(find.textContaining('Delta — send'), findsOneWidget);
+    expect(find.textContaining('of the image'), findsOneWidget);
+    expect(find.text('Step 6 of 8'), findsOneWidget);
+  });
+
+  testWidgets('a private radio plan is summarized, path override is not',
+      (tester) async {
+    _bigView(tester);
+    final app = _app(mode: RadioMode.tempRadio);
+    app.nodeStatus = nodeStatus(running: 'v1.1.0-r3');
+
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
+    await tester.pump();
+
+    expect(find.textContaining('Temporary private channel'), findsOneWidget);
+    expect(find.textContaining('15 min'), findsOneWidget);
+    expect(find.text('Direct path override (optional)'), findsNothing);
+    final start = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Start update'),
+    );
+    expect(start.onPressed, isNotNull);
+  });
+
+  testWidgets('a live-mesh plan shows the route and the warnings two',
+      (tester) async {
+    _bigView(tester);
+    final app = _app();
+    app.nodeStatus = nodeStatus(running: 'v1.1.0-r3');
+
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
+    await tester.pump();
+
+    expect(find.textContaining('Live mesh'), findsOneWidget);
+    // The first board-mismatch warning bullet is gone, the other two stay.
+    expect(find.textContaining('different board'), findsNothing);
+    expect(find.textContaining('battery is low'), findsOneWidget);
+    expect(find.textContaining('screen on'), findsOneWidget);
+    final start = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Start update'),
+    );
+    expect(start.onPressed, isNotNull);
+  });
+
+  testWidgets('an invalid radio plan disables start and says why',
+      (tester) async {
+    _bigView(tester);
+    final app = _app(mode: RadioMode.radio2);
+    // radio2 on the live frequency is refused.
+    app.nodePreset = const LoRaPreset(
+      frequencyHz: 913025000,
+      bandwidthHz: 62500,
+      spreadingFactor: 7,
+      codingRate: 5,
+    );
+    app.radioPlan = RadioPlan(
+      mode: RadioMode.radio2,
+      preset: app.nodePreset,
+      durationMinutes: 10,
+    );
+
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
+    await tester.pump();
+
+    expect(find.textContaining('must not overlap'), findsOneWidget);
+    final start = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Start update'),
+    );
+    expect(start.onPressed, isNull);
   });
 
   testWidgets('a same-image selection says the node is already up to date',
       (tester) async {
     _bigView(tester);
-    final app = AppState();
-    app.selectTarget(Contact(
-      publicKey: Uint8List(32),
-      name: 'target repeater',
-      advType: advTypeRepeater,
-    ));
+    final app = _app();
     final lib = FakeLibrary();
     app.library = lib;
     final entry = lib.addImage(
       Uint8List.fromList(List.filled(8, 9)),
-      env: 'Xiao_S3_WIO_repeater',
+      env: _board,
       version: 'v1.1.0-rc5-cd72e1a2',
     );
     app.libraryEntries = await lib.list();
@@ -117,16 +225,10 @@ void reviewExtras() {
     app.deltaResult =
         const DeltaResult(ops: [], literalBytes: 0, copyBytes: 1449808);
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AppState>.value(
-        value: app,
-        child: const MaterialApp(home: ReviewScreen()),
-      ),
-    );
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
 
     expect(find.textContaining('already running this image'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Start update'), findsNothing);
     final start = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Already up to date'),
     );
@@ -136,17 +238,12 @@ void reviewExtras() {
   testWidgets('the full-image override re-enables a same-image re-flash',
       (tester) async {
     _bigView(tester);
-    final app = AppState();
-    app.selectTarget(Contact(
-      publicKey: Uint8List(32),
-      name: 'target repeater',
-      advType: advTypeRepeater,
-    ));
+    final app = _app();
     final lib = FakeLibrary();
     app.library = lib;
     final entry = lib.addImage(
       Uint8List.fromList(List.filled(8, 9)),
-      env: 'Xiao_S3_WIO_repeater',
+      env: _board,
       version: 'v1.1.0-rc5-cd72e1a2',
     );
     app.selectedLibraryEntry = entry;
@@ -155,12 +252,7 @@ void reviewExtras() {
         const DeltaResult(ops: [], literalBytes: 0, copyBytes: 1449808);
     app.forceFullImage = true;
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AppState>.value(
-        value: app,
-        child: const MaterialApp(home: ReviewScreen()),
-      ),
-    );
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
 
     expect(find.textContaining('already running this image'), findsNothing);
@@ -172,22 +264,17 @@ void reviewExtras() {
 
   testWidgets('a nonzero delta keeps Start update enabled', (tester) async {
     _bigView(tester);
-    final app = AppState();
-    app.selectTarget(Contact(
-      publicKey: Uint8List(32),
-      name: 'target repeater',
-      advType: advTypeRepeater,
-    ));
+    final app = _app();
     final lib = FakeLibrary();
     app.library = lib;
     final base = lib.addImage(
       Uint8List.fromList(List.filled(8, 1)),
-      env: 'Xiao_S3_WIO_repeater',
+      env: _board,
       version: 'v1.18.0-r3',
     );
     final mine = lib.addImage(
       Uint8List.fromList(List.filled(8, 2)),
-      env: 'Xiao_S3_WIO_repeater',
+      env: _board,
       version: 'v1.1.0-rc5-cd72e1a2',
     );
     app.selectedLibraryEntry = mine;
@@ -196,12 +283,7 @@ void reviewExtras() {
     app.deltaResult =
         const DeltaResult(ops: [CopyOp(0, 8)], literalBytes: 8, copyBytes: 100);
 
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AppState>.value(
-        value: app,
-        child: const MaterialApp(home: ReviewScreen()),
-      ),
-    );
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
 
     expect(find.textContaining('already running this image'), findsNothing);
@@ -211,113 +293,120 @@ void reviewExtras() {
     expect(start.onPressed, isNotNull);
   });
 
-  testWidgets('a private radio plan replaces the path override',
+  testWidgets(
+      'image sizes in MB and second-level ETAs are shown for small jobs',
       (tester) async {
     _bigView(tester);
-    final app = AppState();
-    app.selectTarget(Contact(
-      publicKey: Uint8List(32),
-      name: 'target repeater',
-      advType: advTypeRepeater,
-    ));
-    app.nodePreset = const LoRaPreset(
-      frequencyHz: 910525000,
-      bandwidthHz: 62500,
-      spreadingFactor: 7,
-      codingRate: 5,
-    );
-    app.radioPlan = RadioPlan(
-      mode: RadioMode.tempRadio,
-      preset: RadioPlan.suggestTempRadio(app.nodePreset!),
-      durationMinutes: 15,
-    );
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AppState>.value(
-        value: app,
-        child: const MaterialApp(home: ReviewScreen()),
-      ),
-    );
-    await tester.pump();
-
-    expect(find.text('Step 5 of 7'), findsOneWidget);
-    expect(find.text('Temporary private channel'), findsOneWidget);
-    expect(find.textContaining('15 min'), findsOneWidget);
-    expect(find.text('Direct path override (optional)'), findsNothing);
-    final start = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Start update'),
-    );
-    expect(start.onPressed, isNotNull);
-  });
-
-  testWidgets('the base picker chooses a library image', (tester) async {
-    _bigView(tester);
-    final app = AppState();
-    app.selectTarget(Contact(
-      publicKey: Uint8List(32),
-      name: 'target repeater',
-      advType: advTypeRepeater,
-    ));
+    final app = await _connectedApp(tester);
     final lib = FakeLibrary();
     app.library = lib;
     final entry = lib.addImage(
-      Uint8List.fromList(List.filled(8, 9)),
-      env: 'Xiao_S3_WIO_repeater_observer',
+      Uint8List.fromList(List.filled(5000, 5)),
+      env: _board,
+      version: 'v1.1.0-rc5',
+    );
+    app.libraryEntries = await lib.list();
+    await app.selectLibraryEntryForUpdate(entry);
+
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('5 KB'), findsOneWidget);
+    expect(find.text('~68s'), findsOneWidget);
+  });
+
+  testWidgets('minute-level ETAs are shown for typical images', (tester) async {
+    _bigView(tester);
+    final app = await _connectedApp(tester);
+    final lib = FakeLibrary();
+    app.library = lib;
+    final entry = lib.addImage(
+      Uint8List.fromList(List.filled(120000, 6)),
+      env: _board,
+      version: 'v1.1.0-rc5',
+    );
+    app.libraryEntries = await lib.list();
+    await app.selectLibraryEntryForUpdate(entry);
+
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('~18 min'), findsOneWidget);
+  });
+
+  testWidgets('hour-level ETAs are shown for large images', (tester) async {
+    _bigView(tester);
+    final app = await _connectedApp(tester);
+    final lib = FakeLibrary();
+    app.library = lib;
+    final entry = lib.addImage(
+      Uint8List.fromList(List.filled(1200000, 6)),
+      env: _board,
+      version: 'v1.1.0-rc5',
+    );
+    app.libraryEntries = await lib.list();
+    await app.selectLibraryEntryForUpdate(entry);
+
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1.14 MB'), findsOneWidget);
+    expect(find.text('~2.9 h'), findsOneWidget);
+  });
+
+  testWidgets('Start update opens the transfer step', (tester) async {
+    _bigView(tester);
+    final app = _app(mode: RadioMode.tempRadio);
+    app.nodeStatus = nodeStatus(running: 'v1.1.0-r3');
+    final lib = FakeLibrary();
+    app.library = lib;
+    final entry = lib.addImage(
+      Uint8List.fromList(List.filled(5000, 5)),
+      env: _board,
+      version: 'v1.1.0-rc5',
+    );
+    app.libraryEntries = await lib.list();
+    await app.selectLibraryEntryForUpdate(entry);
+
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Start update'));
+    // TransferScreen animates indeterminately (progress unknown yet), so
+    // settle with bounded pumps instead of pumpAndSettle.
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Step 7 of 8'), findsOneWidget);
+  });
+
+  testWidgets('a manual base override that mismatches warns the operator',
+      (tester) async {
+    _bigView(tester);
+    final app = _app();
+    app.nodeStatus = nodeStatus(running: 'v1.1.0-r3');
+    app.nodeInfo = nodeInfo(targetId: _targetId);
+    final lib = FakeLibrary();
+    app.library = lib;
+    // A base chosen by hand (Imported tab) that is not what the node runs.
+    final mine = lib.addImage(
+      Uint8List.fromList(List.filled(8, 2)),
+      env: _board,
       version: 'v1.1.0-rc5-cd72e1a2',
     );
     app.libraryEntries = await lib.list();
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AppState>.value(
-        value: app,
-        child: const MaterialApp(home: ReviewScreen()),
-      ),
+    await app.selectLibraryEntryForUpdate(mine);
+    final manual = lib.addImage(
+      Uint8List.fromList(List.filled(8, 3)),
+      env: 'custom',
+      version: 'custom',
+      fileName: 'other.bin',
+      origin: 'import',
     );
+    await app.setBaseOverride(manual);
+
+    await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
 
-    await tester.tap(find.text('Choose base'));
-    await tester.pumpAndSettle();
-    expect(find.text('Delta base'), findsOneWidget);
-    await tester.tap(find.text(entry.fileName));
-    await tester.pumpAndSettle();
-
-    expect(app.baseOverride?.id, entry.id);
-    expect(find.textContaining('chosen manually'), findsOneWidget);
-  });
-
-  testWidgets('an invalid radio plan blocks the start button', (tester) async {
-    _bigView(tester);
-    final app = AppState();
-    app.selectTarget(Contact(
-      publicKey: Uint8List(32),
-      name: 'target repeater',
-      advType: advTypeRepeater,
-    ));
-    // radio2 on the live frequency is refused by the node.
-    app.nodePreset = const LoRaPreset(
-      frequencyHz: 910525000,
-      bandwidthHz: 62500,
-      spreadingFactor: 7,
-      codingRate: 5,
-    );
-    app.radioPlan = RadioPlan(
-      mode: RadioMode.radio2,
-      preset: app.nodePreset,
-      durationMinutes: 10,
-    );
-
-    await tester.pumpWidget(
-      ChangeNotifierProvider<AppState>.value(
-        value: app,
-        child: const MaterialApp(home: ReviewScreen()),
-      ),
-    );
-    await tester.pump();
-
-    expect(find.textContaining('must not overlap'), findsOneWidget);
-    final start = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Start update'),
-    );
-    expect(start.onPressed, isNull);
+    expect(find.textContaining('delta base you chose'), findsOneWidget);
   });
 }

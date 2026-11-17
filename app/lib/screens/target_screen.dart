@@ -141,9 +141,8 @@ class _TargetScreenState extends State<TargetScreen> {
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 0),
           child: Text(
-            'Paste the repeater\'s 32-byte public key (64 hex characters) for '
-            'a node this companion does not know. A manual node has no saved '
-            'route, so the update uses a shared DIRECT path or floods.',
+            'Paste the repeater\'s public key (64 hex characters) for a node '
+            'this companion does not know.',
             style: TextStyle(
                 color: OtaTheme.textMuted, fontSize: 12, height: 1.45),
           ),
@@ -207,9 +206,9 @@ class _TargetScreenState extends State<TargetScreen> {
   }
 
   String _pathLabel(Contact c) {
-    if (!c.hasDirectRoute) return 'no direct route known — zero-hop only';
+    if (!c.hasDirectRoute) return 'no saved route';
     final hops = c.outPathLen & 0x3F;
-    if (hops == 0) return 'direct, zero hop';
-    return 'direct, $hops hop(s) — path known';
+    if (hops == 0) return 'direct';
+    return 'direct, $hops hop(s)';
   }
 }

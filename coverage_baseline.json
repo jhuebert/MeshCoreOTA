@@ -2,44 +2,44 @@
   "format": 1,
   "files": {
     "app/lib/app_state.dart": {
-      "covered": 290,
-      "total": 673
+      "covered": 390,
+      "total": 671
     },
     "app/lib/main.dart": {
       "covered": 4,
       "total": 14
     },
     "app/lib/screens/connect_screen.dart": {
-      "covered": 44,
-      "total": 123
+      "covered": 77,
+      "total": 131
     },
     "app/lib/screens/firmware_screen.dart": {
-      "covered": 308,
-      "total": 392
+      "covered": 314,
+      "total": 368
     },
     "app/lib/screens/login_screen.dart": {
-      "covered": 61,
-      "total": 70
+      "covered": 62,
+      "total": 67
     },
     "app/lib/screens/radio_settings_screen.dart": {
-      "covered": 174,
-      "total": 186
+      "covered": 187,
+      "total": 195
     },
     "app/lib/screens/review_screen.dart": {
-      "covered": 151,
-      "total": 191
+      "covered": 94,
+      "total": 94
     },
     "app/lib/screens/target_screen.dart": {
       "covered": 74,
       "total": 77
     },
     "app/lib/screens/transfer_screen.dart": {
-      "covered": 1,
-      "total": 108
+      "covered": 111,
+      "total": 124
     },
     "app/lib/screens/verify_screen.dart": {
       "covered": 1,
-      "total": 56
+      "total": 54
     },
     "app/lib/services/ble_device_link.dart": {
       "covered": 0,
@@ -62,8 +62,8 @@
       "total": 79
     },
     "app/lib/services/update_flow.dart": {
-      "covered": 54,
-      "total": 78
+      "covered": 83,
+      "total": 103
     },
     "app/lib/theme.dart": {
       "covered": 6,

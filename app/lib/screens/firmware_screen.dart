@@ -150,7 +150,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
       return _offlineEmpty(
         icon: Icons.help_outline,
         title: 'This node\'s board is not recognized',
-        body: 'The node reported a build id the app does not know, so no '
+        body: 'This build is not in the app\'s catalog or library, so no '
             'release can be matched to it. Import the image in the Imported '
             'tab instead.',
       );
@@ -165,30 +165,18 @@ class _FirmwareScreenState extends State<FirmwareScreen>
 
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 8, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  update
-                      ? 'Showing versions with an image for your board '
-                          '($detected). Tap a version to download its image '
-                          'for this update.'
-                      : 'Versions are treated as a unit. Tapping a version '
-                          'downloads every board\'s image for it.',
-                  style: const TextStyle(
-                      color: OtaTheme.textMuted, fontSize: 11, height: 1.35),
-                ),
-              ),
-              IconButton(
-                tooltip: 'Refresh releases',
-                onPressed: app.catalogLoading
-                    ? null
-                    : () => app.loadCatalog(forceRefresh: true),
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
+        Align(
+          alignment: Alignment.centerRight,
+          heightFactor: 1.0,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 6, 4, 0),
+            child: IconButton(
+              tooltip: 'Refresh releases',
+              onPressed: app.catalogLoading
+                  ? null
+                  : () => app.loadCatalog(forceRefresh: true),
+              icon: const Icon(Icons.refresh),
+            ),
           ),
         ),
         Padding(
@@ -196,20 +184,12 @@ class _FirmwareScreenState extends State<FirmwareScreen>
           child: SegmentedButton<ReleaseTrack>(
             segments: const [
               ButtonSegment(value: ReleaseTrack.stable, label: Text('Stable')),
-              ButtonSegment(value: ReleaseTrack.dev, label: Text('Dev builds')),
+              ButtonSegment(value: ReleaseTrack.dev, label: Text('Dev')),
             ],
             selected: {app.releaseTrack},
             onSelectionChanged: (s) => app.setReleaseTrack(s.first),
           ),
         ),
-        if (app.catalogFromCache)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Text(
-              'Showing the cached catalog (may be stale).',
-              style: TextStyle(color: OtaTheme.textMuted, fontSize: 11),
-            ),
-          ),
         if (app.catalogError != null) ErrorBanner(app.catalogError!),
         if (app.catalogLoading)
           const Padding(
@@ -338,10 +318,10 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                   padding: const EdgeInsets.all(24),
                   child: Center(
                     child: Text(
-                      'Imported .bin files are custom or local builds. An '
-                      'imported image is matched by its SHA-256 — the same '
-                      'bytes are the same delta base or update image, whatever '
-                      'its file name says.',
+                      'Imported .bin files are custom or local builds. The '
+                      'app recognizes an imported image by its content, so '
+                      'the same bytes are used the same way whatever the '
+                      'file name says.',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                           color: OtaTheme.textMuted, fontSize: 12, height: 1.5),
@@ -384,18 +364,22 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                                   onSelected: (value) =>
                                       _importedMenuAction(app, entry, value),
                                   itemBuilder: (_) => update
-                                      ? const [
-                                          PopupMenuItem(
+                                      ? [
+                                          const PopupMenuItem(
                                               value: 'install',
                                               child:
                                                   Text('Use for the update')),
                                           PopupMenuItem(
                                               value: 'base',
-                                              child: Text('Use as delta base')),
-                                          PopupMenuItem(
+                                              child: Text(app
+                                                          .baseOverride?.id ==
+                                                      entry.id
+                                                  ? 'Clear delta base override'
+                                                  : 'Use as delta base')),
+                                          const PopupMenuItem(
                                               value: 'details',
                                               child: Text('Details')),
-                                          PopupMenuItem(
+                                          const PopupMenuItem(
                                               value: 'delete',
                                               child: Text('Delete')),
                                         ]
@@ -428,8 +412,13 @@ class _FirmwareScreenState extends State<FirmwareScreen>
       case 'install':
         await app.selectLibraryEntryForUpdate(entry);
       case 'base':
-        await app.setBaseOverride(entry);
-        _showSnack('Delta base set to ${entry.fileName}');
+        if (app.baseOverride?.id == entry.id) {
+          await app.setBaseOverride(null);
+          _showSnack('Delta base override cleared');
+        } else {
+          await app.setBaseOverride(entry);
+          _showSnack('Delta base set to ${entry.fileName}');
+        }
       case 'details':
         _inspectEntry(entry);
       case 'delete':
@@ -846,11 +835,9 @@ class _VersionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    final state = _complete
-        ? (savedCount == 0 ? 'not downloaded' : 'saved for offline use')
-        : savedCount == 0
-            ? 'not downloaded'
-            : '$savedCount of $totalCount images saved';
+    final state = _complete || savedCount == 0
+        ? null
+        : '$savedCount of $totalCount images saved';
 
     return Card(
       color: selected ? OtaTheme.surfaceHigh : null,
@@ -874,7 +861,7 @@ class _VersionCard extends StatelessWidget {
           ],
         ),
         subtitle: Text(
-          '$dateLabel · $state',
+          state == null ? dateLabel : '$dateLabel · $state',
           style: const TextStyle(color: OtaTheme.textMuted, fontSize: 11),
         ),
         trailing: Row(
