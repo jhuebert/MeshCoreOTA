@@ -153,11 +153,15 @@ The app is a seven-step wizard: Connect → Repeater → Admin → Firmware →
 Review → Transfer → Verify. Every screen carries `WizardBar` (step + label);
 the next action lives in a `WizardFooter` or an equivalent bottom bar. Keep
 the flow linear — an action that belongs on the next screen does not belong
-below the fold on the current one.
+below the fold on the current one. One screen, one main action: secondary
+buttons are text/outlined, and rarely more than one is a filled button.
 
 - **Connect**: BLE is Android/iOS only; TCP is a first-class path on every
   platform (Wi-Fi/Ethernet companion, serial-to-TCP bridge, local simulator).
-  The firmware library is reachable here before any connection.
+  The firmware library is reachable here before any connection. Connecting
+  lands the operator on the repeater step by itself — there is no
+  "next" tap after connect; the connected card shows a single forward
+  action (Continue) for the back-navigation case only.
 - **Repeater**: repeaters and the manual public key are separate tabs. Long
   contact lists must never hide the key field or the admin login.
 - **Admin**: the password is optional (see parity above), and `Check node`

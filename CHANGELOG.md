@@ -94,6 +94,16 @@ All notable changes to MeshCoreOTA are documented here. The format follows
   versions saved on the device in the GitHub tab — there is no separate
   Offline tab. Imported `.bin` files are unchanged.
 
+- **Connect auto-advances.** Tapping a BLE companion or the TCP Connect
+  button lands the operator on the repeater step without a second tap; the
+  connected state offers one forward action (Continue) for the
+  back-navigation case. The connected screen shows only the connection
+  card — the transport form is hidden while connected.
+- **Review screen follows the wizard: one action at a time.** The
+  **Choose base** button is on the left and **Change image** on the right.
+  The **Work offline** switch is gone — offline mode is decided before this
+  step (the firmware screen).
+
 ### Fixed
 
 - **An imported or downloaded image now appears immediately.** The library

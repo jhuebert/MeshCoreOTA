@@ -168,34 +168,20 @@ class _ReviewScreenState extends State<ReviewScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.swap_horiz, size: 18),
-                    label: const Text('Change image'),
+                    onPressed: () => _pickBase(app),
+                    icon: const Icon(Icons.link, size: 18),
+                    label: const Text('Choose base'),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => _pickBase(app),
-                    icon: const Icon(Icons.link, size: 18),
-                    label: const Text('Change base'),
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.swap_horiz, size: 18),
+                    label: const Text('Change image'),
                   ),
                 ),
               ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SwitchListTile(
-              value: app.offlineMode,
-              onChanged: app.setOfflineMode,
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              title: const Text('Work offline', style: TextStyle(fontSize: 13)),
-              subtitle: const Text(
-                'Pick images from this device only; never contact GitHub.',
-                style: TextStyle(color: OtaTheme.textMuted, fontSize: 11),
-              ),
             ),
           ),
           InfoRow(

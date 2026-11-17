@@ -73,6 +73,22 @@ class _ConnectScreenState extends State<ConnectScreen> {
     }
   }
 
+  /// Connect, then land the user on repeater selection without a second
+  /// tap. The CTA to move forward in the wizard is the connection itself.
+  Future<void> _connectAndContinue(
+    BuildContext context,
+    Future<void> Function() connect,
+  ) async {
+    await connect();
+    if (!context.mounted) return;
+    if (context.read<AppState>().connectionPhase != ConnectionPhase.connected) {
+      return; // failure stays here and shows the error banner
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const TargetScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -112,12 +128,13 @@ class _ConnectScreenState extends State<ConnectScreen> {
               onSelectionChanged: (s) => setState(() => _tcpMode = s.first),
             ),
           ),
-          if (_tcpMode)
-            ..._buildTcpCard(context, app)
+          if (!connected)
+            ...(_tcpMode
+                ? _buildTcpCard(context, app)
+                : _buildBleCard(context, app))
           else
-            ..._buildBleCard(context, app),
+            ..._buildConnectedCard(context, app),
           if (app.connectError != null) ErrorBanner(app.connectError!),
-          if (connected) ..._buildConnectedCard(context, app),
           const SectionHeader('Firmware'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -215,7 +232,10 @@ class _ConnectScreenState extends State<ConnectScreen> {
                         ? null
                         : () {
                             FocusScope.of(context).unfocus();
-                            app.connectBle(result.device);
+                            _connectAndContinue(
+                              context,
+                              () => app.connectBle(result.device),
+                            );
                           },
                   ),
                 const SizedBox(height: 10),
@@ -292,7 +312,10 @@ class _ConnectScreenState extends State<ConnectScreen> {
                               int.tryParse(_portController.text.trim()) ?? 5000;
                           if (host.isEmpty) return;
                           FocusScope.of(context).unfocus();
-                          app.connectTcp(host: host, port: port);
+                          _connectAndContinue(
+                            context,
+                            () => app.connectTcp(host: host, port: port),
+                          );
                         },
                   icon: const Icon(Icons.link),
                   label: const Text('Connect'),
@@ -341,12 +364,15 @@ class _ConnectScreenState extends State<ConnectScreen> {
                       const TextStyle(color: OtaTheme.textMuted, fontSize: 12),
                 ),
                 const SizedBox(height: 14),
+                // Normally never shown: connecting lands on the repeater step
+                // by itself. It is the way forward when the user comes back
+                // here from the wizard.
                 FilledButton.icon(
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const TargetScreen()),
                   ),
                   icon: const Icon(Icons.cell_tower),
-                  label: const Text('Next: pick a repeater'),
+                  label: const Text('Continue — pick a repeater'),
                 ),
               ],
             ),

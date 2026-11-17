@@ -52,6 +52,45 @@ void _bigView(WidgetTester tester) {
 }
 
 void reviewExtras() {
+  testWidgets(
+      'Choose base is left of Change image and there is no offline switch',
+      (tester) async {
+    _bigView(tester);
+    final app = AppState();
+    app.selectTarget(Contact(
+      publicKey: Uint8List(32),
+      name: 'target repeater',
+      advType: advTypeRepeater,
+    ));
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AppState>.value(
+        value: app,
+        child: const MaterialApp(home: ReviewScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Work offline'), findsNothing);
+    final base = tester.getCenter(find.text('Choose base')).dx;
+    final image = tester.getCenter(find.text('Change image')).dx;
+    expect(base, lessThan(image));
+
+    // Exercise the base picker sheet paths.
+    await tester.tap(find.text('Choose base'));
+    await tester.pumpAndSettle();
+    expect(find.text('Automatic'), findsOneWidget);
+    expect(find.text('Full image'), findsOneWidget);
+    await tester.tap(find.text('Full image'));
+    await tester.pumpAndSettle();
+    expect(app.forceFullImage, isTrue);
+    await tester.tap(find.text('Choose base'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Automatic'));
+    await tester.pumpAndSettle();
+    expect(app.forceFullImage, isFalse);
+  });
+
   testWidgets('a private radio plan replaces the path override',
       (tester) async {
     _bigView(tester);
@@ -116,7 +155,7 @@ void reviewExtras() {
     );
     await tester.pump();
 
-    await tester.tap(find.text('Change base'));
+    await tester.tap(find.text('Choose base'));
     await tester.pumpAndSettle();
     expect(find.text('Delta base'), findsOneWidget);
     await tester.tap(find.text(entry.fileName));

@@ -53,6 +53,12 @@ class AppState extends ChangeNotifier {
   ConnectionPhase connectionPhase = ConnectionPhase.disconnected;
   String? connectError;
   String companionName = '';
+
+  /// Test seam: overrides the TCP link built by [connectTcp] (the screen
+  /// cannot inject one). Null in production, where a real TcpDeviceLink is
+  /// built.
+  RadioLink Function(String host, int port)? tcpLinkFactory;
+
   RadioLink? _link;
   CompanionClient? _client;
   UpdateFlow? _flow;
@@ -258,15 +264,19 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> connectTcp({required String host, required int port}) async {
+  Future<void> connectTcp({
+    required String host,
+    required int port,
+  }) async {
     await _disposeLink();
     connectionPhase = ConnectionPhase.connecting;
     connectError = null;
     notifyListeners();
     try {
-      final link = TcpDeviceLink(host: host, port: port);
-      await link.connect();
-      await _adoptLink(link);
+      final tcp = tcpLinkFactory?.call(host, port) ??
+          TcpDeviceLink(host: host, port: port);
+      await tcp.connect();
+      await _adoptLink(tcp);
     } catch (e) {
       connectionPhase = ConnectionPhase.disconnected;
       connectError = 'TCP connect failed: $e';

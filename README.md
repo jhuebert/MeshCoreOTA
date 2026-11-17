@@ -62,7 +62,8 @@ you confirm.
 
 Pick **Bluetooth** on a phone, or **TCP / Wi-Fi** on a computer (or a phone
 talking to a Wi-Fi companion). Tap a discovered companion, or enter its
-`host:port`.
+`host:port`. When the connection succeeds the app moves straight to repeater
+selection — there is nothing else to press.
 
 The **Firmware library** is available here before you connect. It is the
 same screen as step 4, used for managing your files instead of picking one:
@@ -155,7 +156,7 @@ manually at any time with **Roll back to previous firmware**.
 
 ## Going offline
 
-The **cloud** button on the firmware screen (and the **Work offline** switch on the review screen) switches the app offline. In
+The **cloud** button on the firmware screen switches the app offline. In
 offline mode it never contacts GitHub — not for the release list, not for an
 image. The **GitHub** tab then shows exactly the versions saved on this
 device — like a music app's downloaded list. **Imported** is available in
