@@ -60,12 +60,23 @@ class _FakeCompanion {
   /// Test seam: drop OP_INFO requests silently (pre-handshake firmware).
   bool infoSilent = false;
 
+  /// Test seam: keep `ota status` reporting staging (SHA verify pending) for
+  /// this many reads before flipping to ready — models the commit race.
+  int readyPollsDelay = 0;
+
+  /// Test seam: have `ota status` answer with an unparseable reply this many
+  /// times, then answer normally.
+  int garbageStatusReads = 0;
+
   // op-interpreter state
   int _expect = 1;
   int _written = 0;
   int _size = 0;
   List<int> _expectedSha = const [];
   bool _ready = false;
+
+  /// err= code for the CLI replies; 4 = SHA gate refused the staged image.
+  int _error = 0;
 
   final FakeDeviceLink link = FakeDeviceLink(snr: 6.0, rssi: -70);
 
@@ -174,15 +185,26 @@ class _FakeCompanion {
       .join();
 
   String _state() {
-    if (_ready) return 'ready';
+    if (_error != 0) return 'error';
+    if (_ready) {
+      if (readyPollsDelay > 0) {
+        readyPollsDelay--;
+        if (_written > 0) return 'staging';
+      }
+      return 'ready';
+    }
     if (_written > 0) return 'staging';
     return 'idle';
   }
 
   String _cliReply(String command) {
     if (command == 'ota status') {
+      if (garbageStatusReads > 0) {
+        garbageStatusReads--;
+        return 'Err - unknown command';
+      }
       return 'running=$_nodeVersion sha=${_runningSha16()} state=${_state()} '
-          'size=$_size off=$_written err=0';
+          'size=$_size off=$_written err=$_error';
     }
     if (command == 'version') return '$_nodeVersion (Build: Nov 11 2026)';
     if (command == 'ota abort') {
@@ -232,6 +254,7 @@ class _FakeCompanion {
     _size = 0;
     _expect = 1;
     _ready = false;
+    _error = 0;
     _armValid = false;
   }
 
@@ -360,6 +383,7 @@ class _FakeCompanion {
       if (_staging == null) return const [];
       final digest = sha256.convert(_staging!.sublist(0, _written)).bytes;
       _ready = _bytesEqual(digest, _expectedSha);
+      if (!_ready) _error = 4;
       return const [];
     }
     return const [];
@@ -500,6 +524,101 @@ void main() {
     final verified =
         await flow.awaitVersion(fake.target, 'hunter2', 'v1.18.0-r4');
     expect(verified, isTrue);
+  });
+
+  test('awaitReady polls through a delayed ready after the SHA gate', () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    final image =
+        Uint8List.fromList(List<int>.generate(600, (i) => (i * 3 + 7) & 0xFF));
+
+    final stage = await flow.stage(fake.target, image, version: 'v1.18.0-r4');
+    final ops = computeDelta(Uint8List(0), image).ops;
+    final imageSha = Uint8List.fromList(sha256.convert(image).bytes);
+    await flow.transfer(
+      target: fake.target,
+      contract: OtaStartContract(
+        imageSize: image.length,
+        imageSha256: imageSha,
+        targetId: targetIdForEnvironment(env),
+        token: stage.token,
+      ),
+      ops: ops,
+      route: OtaRoute.zeroHop(),
+      windowSize: 4,
+      opSpacing: Duration.zero,
+    );
+
+    // The node needs two polls to finish the verify before reporting ready.
+    fake.readyPollsDelay = 2;
+    final ready = await flow.awaitReady(fake.target,
+        interval: const Duration(milliseconds: 5));
+    expect(ready.state, OtaPhase.ready);
+  });
+
+  test('awaitReady gives up when the node never reports ready', () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    final image =
+        Uint8List.fromList(List<int>.generate(600, (i) => (i * 3 + 7) & 0xFF));
+
+    final stage = await flow.stage(fake.target, image, version: 'v1.18.0-r4');
+    final ops = computeDelta(Uint8List(0), image).ops;
+    final imageSha = Uint8List.fromList(sha256.convert(image).bytes);
+    await flow.transfer(
+      target: fake.target,
+      contract: OtaStartContract(
+        imageSize: image.length,
+        imageSha256: imageSha,
+        targetId: targetIdForEnvironment(env),
+        token: stage.token,
+      ),
+      ops: ops,
+      route: OtaRoute.zeroHop(),
+      windowSize: 4,
+      opSpacing: Duration.zero,
+    );
+
+    // Keep status in staging forever by refusing every ready flip; the
+    // deadline must trip.
+    fake.readyPollsDelay = 1 << 30;
+    await expectLater(
+      flow.awaitReady(fake.target,
+          timeout: const Duration(milliseconds: 100),
+          interval: const Duration(milliseconds: 5)),
+      throwsA(isA<UpdateFlowException>()
+          .having((e) => e.message, 'message', contains('did not finish'))),
+    );
+  });
+
+  test('awaitReady gives up when ota status never parses', () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    final image =
+        Uint8List.fromList(List<int>.generate(300, (i) => (i * 5 + 1) & 0xFF));
+
+    final stage = await flow.stage(fake.target, image, version: 'v1.18.0-r4');
+    final ops = computeDelta(Uint8List(0), image).ops;
+    final imageSha = Uint8List.fromList(sha256.convert(image).bytes);
+    await flow.transfer(
+      target: fake.target,
+      contract: OtaStartContract(
+        imageSize: image.length,
+        imageSha256: imageSha,
+        targetId: targetIdForEnvironment(env),
+        token: stage.token,
+      ),
+      ops: ops,
+      route: OtaRoute.zeroHop(),
+      windowSize: 4,
+      opSpacing: Duration.zero,
+    );
+
+    fake.garbageStatusReads = 1 << 30;
+    await expectLater(
+      flow.awaitReady(fake.target,
+          timeout: const Duration(milliseconds: 100),
+          interval: const Duration(milliseconds: 5)),
+      throwsA(isA<UpdateFlowException>()
+          .having((e) => e.message, 'message', contains('unparseable'))),
+    );
   });
 
   test('awaitReady throws when the staged image fails the SHA gate', () async {

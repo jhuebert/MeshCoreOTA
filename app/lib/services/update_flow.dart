@@ -186,20 +186,46 @@ class UpdateFlow {
     }
   }
 
-  /// After the transfer, read `ota status` and require state=ready.
-  Future<OtaStatus> awaitReady(Contact target) async {
-    final reply = await _cli(target, 'ota status');
-    final status = OtaStatus.parse(reply);
-    if (status == null) {
-      throw UpdateFlowException('unparseable ota status', deviceReply: reply);
+  /// After the transfer, poll `ota status` until the node reports ready.
+  ///
+  /// The SHA-256 verification at OP_END runs inside the node and is not
+  /// instant: a single read right after the transfer can catch the node
+  /// still in staging (err=0, off=size), which is a commit race, not a
+  /// failure. Poll until ready, a definite error, or the deadline passes.
+  Future<OtaStatus> awaitReady(Contact target,
+      {Duration timeout = const Duration(seconds: 60),
+      Duration interval = const Duration(milliseconds: 500)}) async {
+    final deadline = DateTime.now().add(timeout);
+    for (;;) {
+      final reply = await _cli(target, 'ota status');
+      final status = OtaStatus.parse(reply);
+      if (status == null) {
+        if (DateTime.now().isAfter(deadline)) {
+          throw UpdateFlowException('unparseable ota status',
+              deviceReply: reply);
+        }
+        await Future<void>.delayed(interval);
+        continue;
+      }
+      switch (status.state) {
+        case OtaPhase.ready:
+          return status;
+        case OtaPhase.error:
+        case OtaPhase.unsupported:
+          throw UpdateFlowException(
+            'the staged image did not pass verification (${otaErrLabel(status.err)})',
+            deviceReply: reply,
+          );
+        default:
+          if (DateTime.now().isAfter(deadline)) {
+            throw UpdateFlowException(
+              'the node did not finish verifying the staged image in time',
+              deviceReply: reply,
+            );
+          }
+          await Future<void>.delayed(interval);
+      }
     }
-    if (status.state != OtaPhase.ready) {
-      throw UpdateFlowException(
-        'the staged image did not pass verification (${otaErrLabel(status.err)})',
-        deviceReply: reply,
-      );
-    }
-    return status;
   }
 
   /// `ota apply` — boot the verified image. The node reboots; the app link
