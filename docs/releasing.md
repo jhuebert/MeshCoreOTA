@@ -28,7 +28,9 @@ are sideloaded APKs from GitHub Releases — there is no Play track yet.
    ```
 
    It must be stable for the app's lifetime — Android uses it to verify
-   in-place updates.
+   in-place updates. Keep the keystore file and its passwords outside the
+   repository and back them up: losing them means existing installs can no
+   longer be updated in place.
 
 3. **`release` environment** — create it in repo settings → Environments;
    optionally require a reviewer. Add these **environment secrets**:
@@ -84,7 +86,9 @@ semantics, matches MeshChameleon's handling.
 Actions → **Test build** → Run workflow: pick `ref` (branch/tag/SHA to
 validate). Reserves a build number, builds the same signed APKs (release
 environment, reviewer required), and uploads them as a workflow artifact.
-Nothing is tagged, pushed, or published; artifacts expire in 14 days.
+Linux, macOS and Windows bundles are attached to the same run as separate
+artifacts. Nothing is tagged, pushed, or published; artifacts expire in 14
+days.
 
 ## Local release-adjacent builds
 
