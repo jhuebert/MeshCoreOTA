@@ -47,7 +47,7 @@ class FirmwareAsset {
   // OTA targets ESP32 dual-app boards: only the raw app-slot .bin is
   // installable. UF2/zip are for USB flashing; -merged.bin carries the
   // bootloader and would never land correctly in the inactive slot.
-  static final _exts = ['.bin'];
+  static const _extension = '.bin';
 
   /// Parse an asset name of the form `<env>-<version...>-filter-<sha>.bin`.
   /// Returns null when it is not a firmware asset at all, or is a
@@ -58,16 +58,9 @@ class FirmwareAsset {
     required String downloadUrl,
     String? sha256,
   }) {
-    var ext = '';
-    for (final candidate in _exts) {
-      if (name.endsWith(candidate)) {
-        ext = candidate;
-        break;
-      }
-    }
-    if (ext.isEmpty) return null;
+    if (!name.endsWith(_extension)) return null;
     if (name.contains('-merged.')) return null; // never for OTA
-    final base = name.substring(0, name.length - ext.length);
+    final base = name.substring(0, name.length - _extension.length);
     final match = _versionRe.firstMatch(base);
     if (match == null) return null;
     final env = base.substring(0, match.start);

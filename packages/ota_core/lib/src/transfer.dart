@@ -37,8 +37,14 @@ class TransferProgress {
   final int retries;
   final Duration elapsed;
 
-  double? get fraction =>
-      opsApplied == null || opsTotal == 0 ? null : opsApplied! / opsTotal;
+  double? get fraction {
+    final applied = opsApplied;
+    if (applied == null || opsTotal == 0) return null;
+    // The node's watermark can pass the last op: OP_END is applied (and bumps
+    // next_expected) without being part of the op count. A progress bar that
+    // reads 100.1% is a bug, not extra progress.
+    return (applied / opsTotal).clamp(0.0, 1.0);
+  }
 }
 
 /// Result of a completed transfer.
@@ -224,11 +230,13 @@ class OtaRoute {
 /// Seq numbering is assigned here: START is seq 0; each op takes the next
 /// seq; OP_END is last. LITERALs are split to [otaLiteralChunk] bytes.
 ///
-/// Protocol gotcha (mirrors the firmware): OP_END is *applied* but does not
-/// advance the node's `next_expected` watermark — it bumps only while
-/// staging. Once every op except OP_END landed, the node's report is
-/// `frames.length`, which is therefore the completion signal for transfer
-/// purposes; whether OP_END actually landed is confirmed by the following
+/// Protocol gotcha (mirrors the firmware): every applied op advances the
+/// node's `next_expected` watermark, OP_END included (`if (_state !=
+/// State::Error) _expect++;`). OP_END is not one of the ops the app counts, so
+/// once the whole stream has landed the report is `frames.length` *before*
+/// END is applied and `frames.length + 1` after — which is why the engine's
+/// completion test is `>=`, and why the reported figure is clamped for
+/// display. Whether OP_END actually landed is confirmed by the following
 /// `ota status` poll (state=ready), which the app must do anyway.
 class WireOps {
   WireOps(this.frames);
@@ -480,10 +488,11 @@ class OtaTransfer {
   /// ~180, so it is worth [maxReasks] asks before one re-broadcast round, and a
   /// round only re-sends from what the node reports missing.
   Future<int> _askUntilInSync(int windowStart, int windowEnd) async {
-    // OP_END does not advance the node's next_expected watermark (the raw
-    // firmware bumps it only while staging), so once END has been sent the
-    // report can never exceed frames.length. Everything except END landed
-    // iff the node reports frames.length.
+    // Every applied op advances the node's watermark, OP_END included, but the
+    // op count the app displays excludes OP_END. A full window of K ops shows
+    // up as `windowEnd + 1` while more ops remain, and the final window
+    // completes at `frames.length` (all ops but END applied) or
+    // `frames.length + 1` (END applied too) — so the test is `>=`, never `==`.
     final target = windowEnd < wireOps.frames.length
         ? windowEnd + 1
         : wireOps.frames.length;
@@ -601,10 +610,13 @@ class OtaTransfer {
     required int? opsApplied,
     required int literalBytes,
   }) {
+    // Total ops the node can report as applied: every frame but OP_END, which
+    // advances the watermark without being one of them.
+    final total = wireOps.frames.length - 1;
     onProgress?.call(TransferProgress(
       phase: phase,
-      opsApplied: opsApplied,
-      opsTotal: wireOps.frames.length - 1,
+      opsApplied: opsApplied?.clamp(0, total),
+      opsTotal: total,
       packetsSent: packetsSent,
       literalBytesSent: literalBytes,
       retries: retries,

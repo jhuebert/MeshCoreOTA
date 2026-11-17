@@ -153,6 +153,11 @@ class FakeOtaNode {
       final digest = sha256.convert(stagedImage).bytes;
       if (_bytesEqual(digest, _expectedSha)) {
         state = FakeNodeState.ready;
+        // The firmware advances next_expected after every op that did not
+        // error, OP_END included (`if (_state != State::Error) _expect++;`).
+        // OP_END is not one of the ops the app counts, so the watermark ends
+        // up one past the op count.
+        _received++;
       } else {
         state = FakeNodeState.error;
         err = 4;
@@ -319,6 +324,27 @@ void main() {
     expect(harness.node.stagedImage, target);
     expect(result.packetsSent, greaterThan(0));
     expect(progress, isNotEmpty);
+    expect(progress.last.fraction, 1.0);
+  });
+
+  test('progress never passes 100% once OP_END bumps the watermark', () async {
+    final harness = _Harness();
+    final base = Uint8List.fromList(
+        List<int>.generate(8192, (i) => (i * 31 + 7) & 0xFF));
+    final target = _mutate(base, random, edits: 400);
+    harness.wire(base: base, target: target);
+    final transfer = harness.makeTransfer(target: target, base: base);
+    final progress = <TransferProgress>[];
+    await transfer.run(onProgress: progress.add);
+
+    // The node reports next_expected one past the op count after OP_END; the
+    // app counts only the real ops, so the reported figure must be clamped.
+    expect(harness.node.nextExpected, greaterThan(progress.last.opsTotal));
+    for (final p in progress) {
+      expect(p.fraction, isNotNull);
+      expect(p.fraction, inInclusiveRange(0.0, 1.0));
+      expect(p.opsApplied, inInclusiveRange(0, p.opsTotal));
+    }
     expect(progress.last.fraction, 1.0);
   });
 

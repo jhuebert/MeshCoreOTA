@@ -7,16 +7,6 @@ import 'package:device_link/device_link.dart';
 import 'package:mesh_protocol/mesh_protocol.dart';
 import 'package:ota_core/ota_core.dart';
 
-/// One completed stage of the update, for progress display.
-enum FlowStep {
-  probing,
-  staging,
-  transferring,
-  verifying,
-  applying,
-  verifyingApply
-}
-
 /// Errors from the update flow, with the device's own reply when there is one.
 class UpdateFlowException implements Exception {
   UpdateFlowException(this.message, {this.deviceReply});
@@ -63,10 +53,6 @@ class UpdateFlow {
     final reply = await _cli(target, 'ota status');
     return OtaStatus.parse(reply);
   }
-
-  /// Whether the node runs an OTA-capable fork firmware.
-  Future<bool> supportsOta(Contact target, String password) async =>
-      await probe(target, password) != null;
 
   /// Best-effort `OP_INFO` handshake. Returns null when the node does not
   /// answer (e.g. firmware older than the handshake) — the caller treats
@@ -327,10 +313,9 @@ class UpdateFlow {
     void Function()? onTick,
   }) async {
     final deadline = DateTime.now().add(timeout);
-    final expectedPrefix = expectedImageSha256
-        ?.sublist(0, 8)
-        .map((b) => b.toRadixString(16).padLeft(2, '0'))
-        .join();
+    final expectedPrefix = expectedImageSha256 == null
+        ? null
+        : bytesToHex(expectedImageSha256.sublist(0, 8));
     while (DateTime.now().isBefore(deadline)) {
       onTick?.call();
       try {
@@ -359,17 +344,6 @@ class UpdateFlow {
     return false;
   }
 
-  /// The version string an update verifies against: `v1.18.0-r4`-ish. The
-  /// device reply carries the build stamp suffix; substring match is exact
-  /// enough for that.
-  static String expectedVersionOf(String assetVersion) => assetVersion;
-
   Future<String> _cli(Contact target, String command) =>
       client.remoteCli(target, command);
-}
-
-/// Decode the version the node reports, `vX.Y.Z...` from the raw reply line.
-String? parseVersionReply(String reply) {
-  final match = RegExp(r'v?\d+\.\d+\.\d+\S*').firstMatch(reply);
-  return match?.group(0);
 }

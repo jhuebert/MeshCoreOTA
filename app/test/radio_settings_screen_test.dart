@@ -68,12 +68,13 @@ void main() {
     await tester.pumpWidget(wrap(app, const RadioSettingsScreen()));
     await tester.pump();
 
-    // 120000 bytes at 173 per op → 710 ops × 1.5s ≈ 1065s; plus the
-    // suggestion margin → 22 minutes — never the hard-coded default of 10.
+    // 120000 bytes at 132 per op (the stock companion's literal limit) → 910
+    // ops × 1.5s ≈ 1389s; plus the suggestion margin → 28 minutes — never the
+    // hard-coded default of 10.
     final field = tester.widget<TextField>(
       find.widgetWithText(TextField, 'Keep the preset for (minutes)'),
     );
-    expect(field.controller?.text, '22');
+    expect(field.controller?.text, '28');
     // The "Use X min" affordance is gone; Suggest settings covers the preset.
     expect(find.textContaining('Use 22 min'), findsNothing);
   });

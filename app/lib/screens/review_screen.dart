@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mesh_protocol/mesh_protocol.dart';
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
@@ -200,10 +201,7 @@ class ReviewScreen extends StatelessWidget {
   bool _baseMatchesRunning(AppState app, LibraryEntry base) {
     final info = app.nodeInfo;
     if (info == null) return false;
-    final running = info.runningSha256
-        .map((b) => b.toRadixString(16).padLeft(2, '0'))
-        .join();
-    return base.sha256 == running;
+    return base.sha256 == bytesToHex(info.runningSha256);
   }
 
   bool _manualBaseMismatch(AppState app) =>

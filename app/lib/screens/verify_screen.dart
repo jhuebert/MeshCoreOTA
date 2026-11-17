@@ -72,15 +72,27 @@ class _VerifyScreenState extends State<VerifyScreen> {
           if (phase == UpdatePhase.done || phase == UpdatePhase.failed) ...[
             Center(
               child: Icon(
-                matched ? Icons.check_circle : Icons.warning_amber_rounded,
+                app.rolledBack
+                    ? Icons.undo
+                    : matched
+                        ? Icons.check_circle
+                        : Icons.warning_amber_rounded,
                 size: 84,
-                color: matched ? OtaTheme.ok : OtaTheme.warn,
+                color: app.rolledBack
+                    ? OtaTheme.warn
+                    : matched
+                        ? OtaTheme.ok
+                        : OtaTheme.warn,
               ),
             ),
             const SizedBox(height: 12),
             Center(
               child: Text(
-                matched ? 'Update verified' : 'New firmware did not come up',
+                app.rolledBack
+                    ? 'Rolled back to the previous firmware'
+                    : matched
+                        ? 'Update verified'
+                        : 'New firmware did not come up',
                 style:
                     const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
               ),
@@ -90,14 +102,17 @@ class _VerifyScreenState extends State<VerifyScreen> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Text(
-                  matched
-                      ? 'The repeater came back on the new firmware — its '
-                          'image matches the one that was sent. The update is '
-                          'complete.'
-                      : 'The node is not running the expected image. Either it '
-                          'switched itself back to the previous firmware (the '
-                          'safe outcome), or the new image is broken. Check the '
-                          'node — you can roll back below.',
+                  app.rolledBack
+                      ? 'The repeater rebooted into the firmware it ran before '
+                          'this update. Nothing was re-flashed.'
+                      : matched
+                          ? 'The repeater came back on the new firmware — its '
+                              'image matches the one that was sent. The update is '
+                              'complete.'
+                          : 'The node is not running the expected image. Either it '
+                              'switched itself back to the previous firmware (the '
+                              'safe outcome), or the new image is broken. Check the '
+                              'node — you can roll back below.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       color: OtaTheme.textMuted, fontSize: 12.5, height: 1.5),
@@ -109,8 +124,12 @@ class _VerifyScreenState extends State<VerifyScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: OutlinedButton.icon(
-              onPressed:
-                  phase == UpdatePhase.applying ? null : () => _rollback(app),
+              // A rollback while apply/verify is still deciding would race the
+              // in-flight reboot: the outcome is not known yet.
+              onPressed: phase == UpdatePhase.applying ||
+                      phase == UpdatePhase.verifying
+                  ? null
+                  : () => _rollback(app),
               icon: const Icon(Icons.undo),
               label: const Text('Roll back to previous firmware'),
             ),

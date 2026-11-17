@@ -75,6 +75,10 @@ class _FakeCompanion {
   /// [garbageStatusReads].
   bool statusCommandThrows = false;
 
+  /// Test seam: refuse every `ota stage` arm (e.g. the inactive slot is too
+  /// small for this image).
+  bool stageRefused = false;
+
   /// Test seam: abort() invocations.
   int abortCount = 0;
 
@@ -133,6 +137,9 @@ class _FakeCompanion {
   void _onCommandFrame(Uint8List frame) {
     if (frame.isEmpty) return;
     switch (frame[0]) {
+      case cmdAppStart:
+        _pushSelfInfo();
+        break;
       case cmdGetContacts:
         _pushContacts();
         break;
@@ -149,6 +156,28 @@ class _FakeCompanion {
   }
 
   // --- companion side ------------------------------------------------------
+
+  /// `RESP_CODE_SELF_INFO`, in the field order [ParsedSelfInfo.parse] reads.
+  void _pushSelfInfo() {
+    final w = BufferWriter();
+    w.writeByte(respCodeSelfInfo);
+    w.writeByte(advTypeRepeater);
+    w.writeByte(20); // tx power dBm
+    w.writeByte(22); // max tx power dBm
+    w.writeBytes(target.publicKey);
+    w.writeInt32Le(0); // latitude
+    w.writeInt32Le(0); // longitude
+    w.writeByte(0); // multi_acks
+    w.writeByte(0); // advert_loc_policy
+    w.writeByte(0); // telemetry
+    w.writeByte(0); // manual_add_contacts
+    w.writeUInt32Le(910525); // frequency, kHz
+    w.writeUInt32Le(62500); // bandwidth, Hz
+    w.writeByte(7); // spreading factor
+    w.writeByte(5); // coding rate
+    w.writeCString('bench-companion', 32);
+    link.simulatePush(w.toBytes());
+  }
 
   void _pushContacts() {
     link.simulatePush(Uint8List.fromList([respCodeContactsStart, 1, 0, 0, 0]));
@@ -252,6 +281,7 @@ class _FakeCompanion {
       return 'OK - aborted';
     }
     if (command.startsWith('ota stage ')) {
+      if (stageRefused) return 'Err - image is larger than the inactive slot';
       final parts = command.split(' ');
       // ota stage <size> <sha256hex> <ver>
       final size = int.tryParse(parts.length > 2 ? parts[2] : '');
@@ -905,5 +935,57 @@ void main() {
     await app.applyAndVerify(expectedVersion: 'a-stamp-that-matches-nothing');
     expect(app.updatePhase, UpdatePhase.done);
     expect(app.verifyMatched, isTrue);
+  });
+
+  test('probe reads the node facts and the capability handshake', () async {
+    final app = AppState();
+    final lib = FakeLibrary();
+    app.library = lib;
+    app.tcpLinkFactory = (_, __) => fake.link;
+    await app.connectTcp(host: 'unused', port: 0);
+    // Board detection maps the node's target id back into the names the app
+    // knows, so the environment has to be known to it.
+    lib.addImage(Uint8List(16), env: 'Xiao_S3_WIO_repeater', version: 'v1.1.0');
+    app.libraryEntries = await lib.list();
+    app.selectTarget(fake.target);
+
+    await app.probe();
+
+    expect(app.probeError, isNull);
+    expect(app.nodeStatus, isNotNull);
+    expect(app.nodeInfo, isNotNull);
+    expect(app.nodeInfo!.supportsDelta, isTrue);
+    expect(app.detectedBoard, 'Xiao_S3_WIO_repeater');
+    // The companion's own preset is adopted as the live mesh when the node
+    // does not answer `get radio`.
+    expect(app.companionPreset, isNotNull);
+    expect(app.livePreset, isNotNull);
+    expect(app.probing, isFalse);
+  });
+
+  test('a refused arm leaves the update failed, not stuck staging', () async {
+    final app = AppState();
+    final lib = FakeLibrary();
+    app.library = lib;
+    app.tcpLinkFactory = (_, __) => fake.link;
+    await app.connectTcp(host: 'unused', port: 0);
+    fake.stageRefused = true;
+    app.selectTarget(fake.target);
+    await app.probe();
+    final entry = lib.addImage(
+      Uint8List.fromList(List<int>.generate(300, (i) => i & 0xFF)),
+      env: 'Xiao_S3_WIO_repeater',
+      version: 'v1.18.0-r4-filter-d1ebd2f',
+    );
+    await app.selectLibraryEntryForUpdate(entry);
+
+    await expectLater(
+      app.runUpdate(version: entry.version),
+      throwsA(isA<UpdateFlowException>()),
+    );
+    // The transfer screen keys its footer off the phase: leaving it at
+    // `staging` would show a dead Cancel button forever.
+    expect(app.updatePhase, UpdatePhase.failed);
+    expect(app.cancelRequested, isFalse);
   });
 }

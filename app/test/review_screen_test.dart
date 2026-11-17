@@ -312,7 +312,7 @@ void reviewSummaryTests() {
     await tester.pumpAndSettle();
 
     expect(find.text('5 KB'), findsOneWidget);
-    expect(find.text('~68s'), findsOneWidget);
+    expect(find.text('~81s'), findsOneWidget);
   });
 
   testWidgets('minute-level ETAs are shown for typical images', (tester) async {
@@ -331,7 +331,7 @@ void reviewSummaryTests() {
     await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pumpAndSettle();
 
-    expect(find.text('~18 min'), findsOneWidget);
+    expect(find.text('~24 min'), findsOneWidget);
   });
 
   testWidgets('hour-level ETAs are shown for large images', (tester) async {
@@ -351,7 +351,7 @@ void reviewSummaryTests() {
     await tester.pumpAndSettle();
 
     expect(find.text('1.14 MB'), findsOneWidget);
-    expect(find.text('~2.9 h'), findsOneWidget);
+    expect(find.text('~3.8 h'), findsOneWidget);
   });
 
   testWidgets('Start update opens the transfer step', (tester) async {

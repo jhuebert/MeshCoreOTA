@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:mesh_protocol/mesh_protocol.dart';
 import 'package:path/path.dart' as p;
 
 /// Pseudo-environment for a `.bin` whose name does not carry a build
@@ -76,8 +77,7 @@ class FirmwareLibrary {
   /// such image (the caller falls back to the version stamp, then to a full
   /// image).
   Future<LibraryEntry?> findBaseForSha(List<int> runningSha256) async {
-    final id =
-        runningSha256.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    final id = bytesToHex(runningSha256);
     for (final entry in await list()) {
       if (entry.sha256 == id) return entry;
     }

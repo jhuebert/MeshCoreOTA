@@ -41,9 +41,6 @@ class DeltaResult {
   final int copyBytes;
 
   int get opCount => ops.length;
-
-  /// Fraction of the target image that had to be sent as literal bytes.
-  double get literalRatio => literalBytes / (literalBytes + copyBytes);
 }
 
 /// Block size for the rolling hash matcher. Matches are extended block by

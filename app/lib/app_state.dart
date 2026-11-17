@@ -103,7 +103,6 @@ class AppState extends ChangeNotifier {
   GitHubSource? _source;
   Catalog? catalog;
   bool catalogLoading = false;
-  bool catalogFromCache = false;
   ReleaseTrack releaseTrack = ReleaseTrack.stable;
   String? catalogError;
 
@@ -113,10 +112,8 @@ class AppState extends ChangeNotifier {
   bool offlineMode = false;
   File? _settingsFile;
 
-  /// The release currently being saved for offline use, and how far along it
-  /// is (0..1 when known).
+  /// The release currently being saved for offline use (a second save waits).
   String? downloadingReleaseTag;
-  double? releaseDownloadProgress;
 
   /// The board (build environment) the firmware picker is scoped to. It is
   /// pre-filled from the node's `OP_INFO` target id as soon as the catalog or
@@ -124,7 +121,6 @@ class AppState extends ChangeNotifier {
 
   FirmwareLibrary? library;
   List<LibraryEntry> libraryEntries = const [];
-  bool libraryLoading = false;
 
   /// A GitHub asset chosen for install.
   FirmwareAsset? selectedAsset;
@@ -150,9 +146,6 @@ class AppState extends ChangeNotifier {
       forceFullImage ? null : (baseOverride ?? autoBaseEntry);
   bool get baseIsManual => !forceFullImage && baseOverride != null;
   DeltaResult? deltaResult;
-
-  // download bookkeeping
-  double? downloadProgress; // 0..1 when known, else null (indeterminate)
 
   // ---------------- radio ----------------
 
@@ -187,9 +180,14 @@ class AppState extends ChangeNotifier {
   TransferProgress? progress;
   final List<String> log = [];
   bool cancelRequested = false;
-  String? updateError;
-  bool verifyStateKnown = false;
+
+  /// Whether the node answered with the newly sent image's hash (the only
+  /// proof an update worked — see AGENTS.md).
   bool verifyMatched = false;
+
+  /// Whether the last completed action was a rollback. The verify screen must
+  /// never present a rollback as a verified update.
+  bool rolledBack = false;
 
   // ---------------- lifecycle ----------------
 
@@ -291,7 +289,7 @@ class AppState extends ChangeNotifier {
   Future<void> _adoptLink(RadioLink link) async {
     _link = link;
     _client = CompanionClient(link, onUnexpectedMessage: (m) {
-      log_('unrelated msg from ${_hex(m.senderPrefix)}: ${m.text}');
+      log_('unrelated msg from ${bytesToHex(m.senderPrefix)}: ${m.text}');
     });
     _flow = UpdateFlow(client: _client!, link: link, onLog: log_);
     try {
@@ -376,10 +374,8 @@ class AppState extends ChangeNotifier {
   Contact? addManualTarget(String pubkeyHex, {String name = 'manual target'}) {
     final hex = pubkeyHex.trim().toLowerCase().replaceAll(RegExp(r'\s'), '');
     if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(hex)) return null;
-    final bytes = Uint8List.fromList(List<int>.generate(
-        32, (i) => int.parse(hex.substring(i * 2, i * 2 + 2), radix: 16)));
-    final contact =
-        Contact(publicKey: bytes, name: name, advType: advTypeRepeater);
+    final contact = Contact(
+        publicKey: hexToBytes(hex), name: name, advType: advTypeRepeater);
     target = contact;
     _resetNodeFacts();
     notifyListeners();
@@ -397,6 +393,9 @@ class AppState extends ChangeNotifier {
     baseOverride = null;
     autoBaseEntry = null;
     forceFullImage = false;
+    // The delta was computed against the previous node's running image, so it
+    // is not a plan for this one: drop it until a base is matched again.
+    deltaResult = null;
     _radioPresetAuto = true;
     _radioDurationAuto = true;
     manualRoutePath = '';
@@ -494,7 +493,6 @@ class AppState extends ChangeNotifier {
         forceRefresh: forceRefresh && !offlineMode,
         cacheOnly: offlineMode,
       );
-      catalogFromCache = catalog!.fromCache;
     } catch (e) {
       // Offline with no cache is not an error: the GitHub tab shows what
       // this device holds.
@@ -552,15 +550,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> refreshLibrary() async {
-    libraryLoading = true;
+    final lib = await _openLibrary();
+    libraryEntries = await lib.list();
     notifyListeners();
-    try {
-      final lib = await _openLibrary();
-      libraryEntries = await lib.list();
-    } finally {
-      libraryLoading = false;
-      notifyListeners();
-    }
   }
 
   /// The releases for the selected track with an image built for [env], newest
@@ -595,7 +587,6 @@ class AppState extends ChangeNotifier {
     forceFullImage = false;
     imageLoading = true;
     imageError = null;
-    downloadProgress = null;
     notifyListeners();
     try {
       // A version saved for offline use is already on disk; selecting it must
@@ -630,7 +621,6 @@ class AppState extends ChangeNotifier {
       _selectedImage = null;
     } finally {
       imageLoading = false;
-      downloadProgress = null;
       notifyListeners();
     }
   }
@@ -664,7 +654,6 @@ class AppState extends ChangeNotifier {
       return 0;
     }
     downloadingReleaseTag = release.tag;
-    releaseDownloadProgress = (total - missing.length) / total;
     notifyListeners();
     var saved = 0;
     try {
@@ -679,7 +668,6 @@ class AppState extends ChangeNotifier {
           fileName: asset.name,
         );
         saved++;
-        releaseDownloadProgress = (total - missing.length + saved) / total;
         notifyListeners();
       }
       log_(saved == 0
@@ -689,7 +677,6 @@ class AppState extends ChangeNotifier {
       log_('saving ${release.tag} failed after $saved image(s): $e');
     } finally {
       downloadingReleaseTag = null;
-      releaseDownloadProgress = null;
       notifyListeners();
     }
     return saved;
@@ -932,10 +919,6 @@ class AppState extends ChangeNotifier {
   String? get selectedDisplayVersion =>
       selectedAsset?.displayVersion ?? selectedLibraryEntry?.version;
 
-  /// Whether radio2 is enabled on the checked node (null: not asked / old
-  /// firmware).
-  bool? get radio2State => radio2Enabled;
-
   /// The preset the node's live mesh runs on (falls back to the companion's —
   /// the same mesh when the update path works at all).
   LoRaPreset? get livePreset => nodePreset ?? companionPreset;
@@ -1041,17 +1024,13 @@ class AppState extends ChangeNotifier {
     return deltaResult != null ? 'delta ~$text' : 'full $text';
   }
 
-  /// Bytes to send total — delta estimated, or full image.
-  int get transferBytesEstimate =>
-      deltaResult?.literalBytes ?? _selectedImage?.length ?? 0;
-
   /// Wall time per op on a stock companion, in seconds.
   ///
-  /// The node is deaf while each 173-byte literal is committed to flash, so
-  /// the rate limiter is the node's flash write latency, not airtime — an
-  /// airtime model is ~15x optimistic on real hardware (measured ~1.4–1.5 s
-  /// per literal op: a 426 KB delta took ~1 hour on an expected ~4 minutes).
-  /// Synchronous so a settings screen can compare modes while the user types.
+  /// The node is deaf while each literal op is committed to flash, so the rate
+  /// limiter is the node's flash write latency, not airtime — an airtime model
+  /// is ~15x optimistic on real hardware (measured ~1.4–1.5 s per literal op:
+  /// a 426 KB delta took ~1 hour on an expected ~4 minutes). Synchronous so a
+  /// settings screen can compare modes while the user types.
   static const double estimateOpSeconds = 1.5;
 
   /// Transfer estimate in seconds for the selected image. [factor] scales for
@@ -1059,7 +1038,9 @@ class AppState extends ChangeNotifier {
   int? estimateSecondsForPreset(LoRaPreset? preset, {double factor = 1.0}) {
     final bytes = estimatedTransferBytes;
     if (preset == null || bytes == null || bytes <= 0) return null;
-    final ops = (bytes / otaLiteralChunk).ceil() + 16;
+    // The literal size the transfer actually sends — the stock companion's
+    // frame limit, not the on-air maximum (see wireOpsFor).
+    final ops = (bytes / otaLiteralChunkForBinaryReq()).ceil() + 16;
     return (ops * estimateOpSeconds * factor).ceil();
   }
 
@@ -1107,9 +1088,9 @@ class AppState extends ChangeNotifier {
   }
 
   /// Full pipeline: move the radio if asked, stage → transfer → report ready,
-  /// then put the radio back. Throws on any failure; callers rethrow or
-  /// surface via [updateError]. The caller (transfer screen) maps exceptions
-  /// to UI.
+  /// then put the radio back. Throws on any failure and leaves [updatePhase]
+  /// at `failed` (or `idle` after a cancel) so the screen can show the way
+  /// back; the transfer screen maps the exception to UI.
   Future<void> runUpdate({required String version}) async {
     final t = target;
     final flow = _flow;
@@ -1148,13 +1129,19 @@ class AppState extends ChangeNotifier {
       log_(
           'armed: size=${stage.size} token=${stage.token.toRadixString(16).padLeft(8, '0')}');
 
+      // Compute the op stream from the base this update will actually use, so
+      // a stale plan (a base matched against another node's running image)
+      // can never be sent.
       List<DeltaOp> ops;
-      if (baseEntry != null) {
+      final base = baseEntry;
+      if (base != null) {
         final lib = await _openLibrary();
-        final baseBytes = await lib.read(baseEntry!);
-        ops = computeDelta(baseBytes, image).ops;
+        final baseBytes = await lib.read(base);
+        final delta = computeDelta(baseBytes, image);
+        deltaResult = delta;
+        ops = delta.ops;
         log_(
-            'delta: ${deltaResult?.copyBytes ?? 0} bytes reused, ${deltaResult?.literalBytes ?? 0} to send');
+            'delta: ${delta.copyBytes} bytes reused, ${delta.literalBytes} to send');
       } else {
         ops = computeDelta(Uint8List(0), image).ops;
         log_('full image: ${image.length} bytes');
@@ -1211,6 +1198,17 @@ class AppState extends ChangeNotifier {
       updatePhase = UpdatePhase.readyToApply;
       log_('staged and verified — ready to apply');
       notifyListeners();
+    } catch (e) {
+      // Stage/arm/verification failures land here. The transfer path already
+      // sets failed (or idle on cancel) before rethrowing — keep those — but
+      // anything earlier would otherwise leave the phase stuck at staging or
+      // transferring with no way forward.
+      if (updatePhase != UpdatePhase.failed &&
+          updatePhase != UpdatePhase.idle) {
+        updatePhase = UpdatePhase.failed;
+        notifyListeners();
+      }
+      rethrow;
     } finally {
       // Put the radios back before the operator commits: the apply (and its
       // verification) belongs on the live mesh, and the temporary preset was
@@ -1271,8 +1269,12 @@ class AppState extends ChangeNotifier {
         // preset, so the reply has a chance to get out.
         final reply = await _nodeCommandOrNull(t, 'radio2 off');
         _enabledRadio2ForUpdate = false;
-        radio2Enabled = false;
-        log_(reply != null && reply.toLowerCase().contains('ok')
+        final acknowledged =
+            reply != null && reply.trim().toLowerCase().startsWith('ok');
+        // Only believe radio2 is off when the node said so; a lost reply leaves
+        // the question open rather than recording a false "off".
+        radio2Enabled = acknowledged ? false : null;
+        log_(acknowledged
             ? 'radio2 turned back off'
             : 'radio2 restore not acknowledged — check the node');
       } else if (radioPlan.mode == RadioMode.tempRadio && live != null) {
@@ -1322,24 +1324,30 @@ class AppState extends ChangeNotifier {
     if (t == null || flow == null) throw StateError('no target');
     updatePhase = UpdatePhase.applying;
     notifyListeners();
-    await flow.apply(t);
+    try {
+      await flow.apply(t);
+    } catch (e) {
+      updatePhase = UpdatePhase.failed;
+      notifyListeners();
+      rethrow;
+    }
     log_('applied — node is rebooting');
     updatePhase = UpdatePhase.verifying;
-    verifyStateKnown = false;
     verifyMatched = false;
+    rolledBack = false;
     notifyListeners();
     final ok = await flow.awaitVersion(t, adminPassword, expectedVersion,
         expectedImageSha256:
             selectedImage == null ? null : sha256List(selectedImage!));
-    verifyStateKnown = true;
     verifyMatched = ok;
     updatePhase = ok ? UpdatePhase.done : UpdatePhase.failed;
     notifyListeners();
   }
 
   /// Roll back the freshly applied update. We cannot know the previous
-  /// version string on this node, so "verified" after a rollback means
-  /// only that the node answered admin CLI again.
+  /// version string on this node, so [verifyMatched] after a rollback means
+  /// only that the node answered admin CLI again — [rolledBack] is what the UI
+  /// reports, never "the sent image is running".
   Future<void> rollback() async {
     final t = target;
     final flow = _flow;
@@ -1351,7 +1359,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final ok = await flow.awaitVersion(t, adminPassword, '');
     verifyMatched = ok;
-    updatePhase = UpdatePhase.done;
+    rolledBack = ok;
+    updatePhase = ok ? UpdatePhase.done : UpdatePhase.failed;
     notifyListeners();
   }
 
@@ -1393,9 +1402,6 @@ class AppState extends ChangeNotifier {
     }
     return name.isEmpty ? 'custom' : name;
   }
-
-  static String _hex(List<int> bytes) =>
-      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 
   static Uint8List sha256List(List<int> data) =>
       Uint8List.fromList(sha256.convert(data).bytes);

@@ -148,7 +148,7 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 ### Changed
 
 - **The transfer estimate is op-round-trip based, not airtime.** The node is
-  deaf while each 173-byte literal commits to flash (~1.4–1.5 s/op measured);
+  deaf while each literal op commits to flash (~1.4–1.5 s/op measured);
   the old airtime model was ~15x optimistic. The radio screens, the review
   step and the tempradio duration suggestion all use the new model, and the
   transfer screen now shows **time left at the measured rate** plus KB/s once
@@ -159,7 +159,27 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 - **A mid-transfer transport failure no longer leaves a dead Cancel button.**
   The companion's binary-request timeout (5 s) crashed the transfer while
   the UI stayed in `transferring`; the update now unwinds to `failed` with a
-  Back action.
+  Back action. A failure *before* the transfer (a refused arm, a rejected
+  radio move) now unwinds the same way instead of sitting on `staging` with a
+  Cancel button that can never finish.
+- **The transfer estimate now counts the ops the app actually sends.** The
+  estimate divided the image by the on-air literal size (173 bytes) while a
+  stock companion carries 132, so every estimate and every suggested
+  `tempradio` duration was about a third short. Estimates and the duration
+  suggestion are correspondingly longer.
+- **Progress can no longer read more than 100%.** The node advances its
+  `next_expected` watermark for `OP_END` too, which is one more than the op
+  count the app displays; the reported figure is clamped.
+- **Rolling back no longer claims the update was verified.** The verify step
+  said "Update verified — its image matches the one that was sent" after a
+  rollback, which only proves the node answered admin CLI again. It now
+  reports the rollback, and the rollback action is unavailable while an
+  apply/verify is still deciding (it would race the in-flight reboot).
+- **Changing the repeater drops the old node's delta plan.** The review step
+  could show (and the transfer could use) a delta computed against the
+  previous repeater's running image; the plan is now invalidated with the
+  rest of the node facts, and the op stream is always rebuilt from the base
+  the update will actually use.
 
 - **An imported or downloaded image now appears immediately.** The library
   updated its in-memory list without notifying listeners, so newly imported
