@@ -24,6 +24,9 @@ echo "== pub get =="
 for pkg in mesh_protocol device_link test_support companion_client ota_core; do
   (cd "packages/$pkg" && "$DART" pub get >/dev/null)
 done
+# Formatting uses the language version from .dart_tool/package_config.json;
+# without it the bench falls back to the SDK's version and reformats.
+(cd bench && "$DART" pub get >/dev/null)
 (cd app && "$FLUTTER" pub get >/dev/null)
 
 echo "== format =="
@@ -46,7 +49,6 @@ done
 echo "== bench =="
 (
   cd bench
-  "$DART" pub get >/dev/null
   "$DART" analyze
 )
 
