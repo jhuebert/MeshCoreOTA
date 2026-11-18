@@ -6,6 +6,13 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The app icon is now a connected mesh delivering a firmware update to its
+  centre node**, replacing the repeater-mast-and-loop mark. Every platform
+  target (Android launcher and adaptive icons, the macOS app icon and the
+  Windows `.ico`) is regenerated from the new SVG source.
+
 ## [1.0.0] - 2026-11-17
 
 MeshCoreOTA 1.0.0 — first signed release.

@@ -1,23 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- MeshCoreOTA app icon: a repeater mast inside an update loop. -->
-  <rect width="1024" height="1024" rx="228" fill="#0F1420"/>
-  <circle cx="512" cy="512" r="330" fill="#171E2E"/>
+  <!-- MeshCoreOTA app icon: a connected mesh delivering a firmware update to its centre node. -->
+  <rect width="1024" height="1024" rx="224" fill="#0B1220"/>
+  <circle cx="512" cy="512" r="348" fill="#152238"/>
 
-  <!-- Update loop -->
-  <path d="M 286 512 A 226 226 0 0 1 738 512" fill="none" stroke="#38BDF8" stroke-width="30" stroke-linecap="round"/>
-  <path d="M 738 512 A 226 226 0 0 1 286 512" fill="none" stroke="#38BDF8" stroke-width="30" stroke-linecap="round"/>
-  <polygon points="738,560 708,514 768,514" fill="#38BDF8"/>
-  <polygon points="286,464 256,510 316,510" fill="#38BDF8"/>
+  <!-- mesh links -->
+  <g fill="none" stroke="#38BDF8" stroke-width="14" stroke-linecap="round" opacity="0.5">
+    <path d="M 762 512 L 637 728 L 387 728 L 262 512 L 387 296 L 637 296 Z"/>
+    <path d="M 762 512 L 262 512"/>
+    <path d="M 637 728 L 387 296"/>
+    <path d="M 387 728 L 637 296"/>
+  </g>
 
-  <!-- Signal arcs -->
-  <path d="M 592 292 A 104 104 0 0 1 592 396" fill="none" stroke="#F59E0B" stroke-width="22" stroke-linecap="round"/>
-  <path d="M 432 292 A 104 104 0 0 0 432 396" fill="none" stroke="#F59E0B" stroke-width="22" stroke-linecap="round"/>
-  <path d="M 642 254 A 168 168 0 0 1 642 434" fill="none" stroke="#F59E0B" stroke-width="18" stroke-linecap="round" opacity="0.55"/>
-  <path d="M 382 254 A 168 168 0 0 0 382 434" fill="none" stroke="#F59E0B" stroke-width="18" stroke-linecap="round" opacity="0.55"/>
+  <!-- outer nodes -->
+  <g fill="#FBBF24">
+    <circle cx="762" cy="512" r="30"/>
+    <circle cx="637" cy="728" r="30"/>
+    <circle cx="387" cy="728" r="30"/>
+    <circle cx="262" cy="512" r="30"/>
+    <circle cx="387" cy="296" r="30"/>
+    <circle cx="637" cy="296" r="30"/>
+  </g>
 
-  <!-- Repeater mast -->
-  <circle cx="512" cy="344" r="34" fill="#F59E0B"/>
-  <rect x="496" y="378" width="32" height="236" rx="16" fill="#F59E0B"/>
-  <path d="M 452 676 L 572 676 L 540 626 L 484 626 Z" fill="#F59E0B"/>
-  <rect x="438" y="676" width="148" height="30" rx="15" fill="#F59E0B"/>
+  <!-- centre node + update arrow -->
+  <circle cx="512" cy="512" r="98" fill="#1E3A5F" stroke="#38BDF8" stroke-width="14"/>
+  <rect x="494" y="468" width="36" height="72" rx="8" fill="#38BDF8"/>
+  <path d="M 466 524 L 558 524 L 512 574 Z" fill="#38BDF8"/>
 </svg>
