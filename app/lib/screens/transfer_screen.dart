@@ -31,15 +31,33 @@ class _TransferScreenState extends State<TransferScreen> {
   bool _started = false;
   String? _error;
   bool _paused = false;
+  int? _lastNotifiedOps;
+  late final AppState _app;
 
   @override
   void initState() {
     super.initState();
+    // Keep the ancestor reference before disposal makes ancestor lookup
+    // unsafe (the listener must be removed in dispose()).
+    _app = context.read<AppState>();
+    _app.addListener(_onAppChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+  }
+
+  void _onAppChanged() {
+    if (!mounted) return;
+    final ops = _app.progress?.opsApplied;
+    if (ops == null || ops == _lastNotifiedOps) return;
+    _lastNotifiedOps = ops;
+    final total = _app.progress?.opsTotal;
+    unawaited(TransferForegroundService.update(
+      total == null ? '$ops ops applied' : '$ops of $total ops applied',
+    ));
   }
 
   @override
   void dispose() {
+    _app.removeListener(_onAppChanged);
     _logController.dispose();
     super.dispose();
   }
@@ -50,11 +68,18 @@ class _TransferScreenState extends State<TransferScreen> {
     final app = context.read<AppState>();
     final nodeName = app.target?.name ?? 'node';
     try {
+      await TransferForegroundService.setScreenOn(true);
       await TransferForegroundService.start('Preparing update for $nodeName');
     } catch (e) {
-      // foreground start failure: log and continue — the update itself is
-      // unaffected, but say so honestly.
-      app.log_('foreground service unavailable: $e — keep the screen on');
+      // The foreground service is what keeps a minutes-long transfer alive
+      // when the operator goes Home. Continuing without it risks a dead
+      // update, so refuse to start rather than fail silently later.
+      await TransferForegroundService.setScreenOn(false);
+      if (mounted) {
+        setState(() =>
+            _error = 'The update could not keep running in the background: $e');
+      }
+      return;
     }
     try {
       if (widget.resuming) {
@@ -69,6 +94,7 @@ class _TransferScreenState extends State<TransferScreen> {
         setState(() => _error = '$e');
       }
     } finally {
+      await TransferForegroundService.setScreenOn(false);
       await TransferForegroundService.stop();
     }
   }

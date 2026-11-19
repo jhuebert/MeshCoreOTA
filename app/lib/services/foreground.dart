@@ -1,5 +1,7 @@
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../main.dart' show transferServiceEntry;
@@ -9,12 +11,31 @@ import '../main.dart' show transferServiceEntry;
 /// Android/iOS only — desktop runs the transfer in-process (keep the window
 /// open).
 class TransferForegroundService {
-  static bool get supported => Platform.isAndroid || Platform.isIOS;
+  static const _screenChannel = MethodChannel('org.huebert.meshcoreota/screen');
+
+  /// Host-platform check, overridable in tests. Widget tests run on a Linux
+  /// host where `defaultTargetPlatform` is Android by default; using the real
+  /// host here keeps plugin calls out of them.
+  static bool Function() isSupported =
+      () => Platform.isAndroid || Platform.isIOS;
+
+  static bool get supported => isSupported();
+
+  static bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
 
   static Future<void> start(String notificationText) async {
     if (!supported) return;
+    if (_isAndroid) {
+      // POST_NOTIFICATIONS is dangerous on API 33+. The plugin does not ask
+      // on its own; without a grant the ongoing notification is hidden in the
+      // shade and the operator cannot see that the transfer is still running.
+      await FlutterForegroundTask.requestNotificationPermission();
+    }
     final result = await FlutterForegroundTask.startService(
       serviceId: 1001,
+      // Match the manifest's declared type on Android 14+.
+      serviceTypes:
+          _isAndroid ? [ForegroundServiceTypes.connectedDevice] : null,
       notificationTitle: 'MeshCoreOTA — firmware update',
       notificationText: notificationText,
       callback: transferServiceEntry,
@@ -26,6 +47,9 @@ class TransferForegroundService {
     }
   }
 
+  /// Called as the op count advances. The notification otherwise stays at
+  /// "Preparing update" for the whole transfer, with no way to tell it is
+  /// still alive from the home screen.
   static Future<void> update(String text) async {
     if (!supported) return;
     try {
@@ -41,6 +65,21 @@ class TransferForegroundService {
       await FlutterForegroundTask.stopService();
     } catch (_) {
       // Sibling of start(): a service that never started must not throw here.
+    }
+  }
+
+  /// Keep the screen on while the app is in the foreground during a transfer.
+  /// Android uses a window flag (no wake-lock permission needed, and it is
+  /// released automatically when the activity window goes away). Other
+  /// platforms are no-ops.
+  static Future<void> setScreenOn(bool enabled) async {
+    if (!supported || !_isAndroid) return;
+    try {
+      await _screenChannel.invokeMethod<bool>('setScreenOn', {
+        'enabled': enabled,
+      });
+    } catch (_) {
+      // A host that does not implement the channel must not block an update.
     }
   }
 }

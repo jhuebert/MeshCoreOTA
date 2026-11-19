@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
+import '../services/foreground.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/wizard.dart';
@@ -31,10 +32,22 @@ class _VerifyScreenState extends State<VerifyScreen> {
     if (_started) return;
     _started = true;
     final app = context.read<AppState>();
+    // Apply and verification can take a couple of minutes while the node
+    // reboots. TransferScreen has already stopped its own guard by now.
+    try {
+      await TransferForegroundService.setScreenOn(true);
+      await TransferForegroundService.start('Applying the new firmware');
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+      return;
+    }
     try {
       await app.applyAndVerify(expectedVersion: app.selectedVersion ?? '');
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
+    } finally {
+      await TransferForegroundService.setScreenOn(false);
+      await TransferForegroundService.stop();
     }
   }
 
@@ -172,6 +185,17 @@ class _VerifyScreenState extends State<VerifyScreen> {
     );
     if (confirmed != true || !mounted) return;
     try {
+      await TransferForegroundService.setScreenOn(true);
+      await TransferForegroundService.start('Rolling the firmware back');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not keep the rollback in view: $e')),
+        );
+      }
+      return;
+    }
+    try {
       await app.rollback();
     } catch (e) {
       if (mounted) {
@@ -179,6 +203,9 @@ class _VerifyScreenState extends State<VerifyScreen> {
           SnackBar(content: Text('Rollback failed: $e')),
         );
       }
+    } finally {
+      await TransferForegroundService.setScreenOn(false);
+      await TransferForegroundService.stop();
     }
   }
 }

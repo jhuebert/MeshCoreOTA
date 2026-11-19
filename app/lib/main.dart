@@ -27,7 +27,8 @@ void main() {
     foregroundTaskOptions: ForegroundTaskOptions(
       eventAction: ForegroundTaskEventAction.nothing(),
       allowWakeLock: true,
-      allowWifiLock: false,
+      // TCP companions are common here; keep the Wi-Fi on screen-off too.
+      allowWifiLock: true,
     ),
   );
   runApp(
