@@ -19,9 +19,14 @@ class _Probe {
   OtaStatus? status = nodeStatus(
       state: OtaPhase.staging, size: 1000, offset: 600, shaPrefix: '00');
   int? next = 7;
+  OtaNodeStatus? live;
+  String? stagedProblem;
+  bool stagedChecked = false;
   final Uint8List runningSha;
 
-  ResumePlan plan({String? runningShaHex, int frames = 10}) => ResumePlan(
+  ResumePlan plan(
+          {String? runningShaHex, int frames = 10, int sessionId = 0}) =>
+      ResumePlan(
         createdAt: 1,
         targetPublicKeyHex: contact('XiaoS3').publicKeyHex,
         targetName: 'XiaoS3',
@@ -40,6 +45,7 @@ class _Probe {
         tcpHost: '127.0.0.1',
         tcpPort: 5000,
         bleDeviceId: null,
+        sessionId: sessionId,
       );
 
   ResumeController controller(ResumePlan plan) {
@@ -52,9 +58,38 @@ class _Probe {
       nodeInfo: (_) async => info,
       status: (_) async => status,
       nextExpected: (_) async => next,
+      nodeStatus: (_) async => live,
+      verifyStaged: (_, __) async {
+        stagedChecked = true;
+        return stagedProblem;
+      },
     );
   }
 }
+
+OtaNodeStatus liveStatus({
+  int sessionId = 7,
+  int nextExpected = 7,
+  int written = 600,
+  int features = otaFeatStagedHash,
+}) =>
+    OtaNodeStatus(
+      wireVersion: otaWireVersion,
+      targetId: targetIdForEnvironment('Xiao_S3_WIO_repeater_observer'),
+      slotSize: 0x200000,
+      maxLiteral: 173,
+      features: features,
+      runningVersion: 'v1.18.0',
+      runningSha256: Uint8List(32),
+      sessionId: sessionId,
+      state: otaStateStaging,
+      error: 0,
+      imageSize: 1000,
+      written: written,
+      nextExpected: nextExpected,
+      codecs: otaCodecDeflate,
+      extensions: const [],
+    );
 
 void main() {
   late _Probe probe;
@@ -211,5 +246,51 @@ void main() {
     final decision = await check();
     expect(decision.check, ResumeCheck.unavailable);
     expect(decision.problem, contains('upload position'));
+  });
+
+  test('structured status supplies the watermark without a separate ask',
+      () async {
+    probe.live = liveStatus();
+    probe.next = null; // the legacy OP_ASK is not consulted at all
+    final decision = await check();
+    expect(decision.check, ResumeCheck.ready);
+    expect(decision.nextExpected, 7);
+    expect(probe.stagedChecked, isTrue);
+  });
+
+  test('a matching session id confirms the staged bytes survived', () async {
+    plan = probe.plan(sessionId: 7);
+    probe.live = liveStatus(sessionId: 7);
+    expect((await check()).check, ResumeCheck.ready);
+  });
+
+  test('a changed session id blocks resume after a repeater reboot', () async {
+    plan = probe.plan(sessionId: 7);
+    probe.live = liveStatus(sessionId: 9);
+    final decision = await check();
+    expect(decision.check, ResumeCheck.unavailable);
+    expect(decision.problem, contains('repeater restarted'));
+  });
+
+  test('a staged-prefix mismatch stops before more ops are sent', () async {
+    probe.live = liveStatus();
+    probe.stagedProblem = 'staged bytes differ from the saved firmware';
+    final decision = await check();
+    expect(decision.check, ResumeCheck.unavailable);
+    expect(decision.problem, probe.stagedProblem);
+  });
+
+  test('a node without staged hash skips the read-back check', () async {
+    probe.live = liveStatus(features: 0);
+    expect((await check()).check, ResumeCheck.ready);
+    expect(probe.stagedChecked, isFalse);
+  });
+
+  test('structured status absent falls back to the legacy watermark', () async {
+    probe.live = null;
+    final decision = await check();
+    expect(decision.check, ResumeCheck.ready);
+    expect(decision.nextExpected, 7);
+    expect(probe.stagedChecked, isFalse);
   });
 }

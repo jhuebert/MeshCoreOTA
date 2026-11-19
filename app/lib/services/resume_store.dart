@@ -33,6 +33,7 @@ class ResumePlan {
     required this.tcpPort,
     required this.bleDeviceId,
     this.nextExpected = 1,
+    this.sessionId = 0,
   });
 
   final int createdAt;
@@ -58,6 +59,11 @@ class ResumePlan {
 
   /// Last known node watermark, for display before the node is asked again.
   final int nextExpected;
+
+  /// Per-arm id from `OP_STATUS_REPORT`. Non-zero only on nodes with the
+  /// structured status op; a mismatch on reconnect means the repeater itself
+  /// restarted and the staged bytes are gone. Zero is the legacy value.
+  final int sessionId;
 
   static const int format = 1;
 
@@ -88,6 +94,7 @@ class ResumePlan {
         'port': tcpPort,
         'ble': bleDeviceId,
         'next': nextExpected,
+        'sid': sessionId,
       };
 
   static ResumePlan? fromJson(
@@ -122,6 +129,8 @@ class ResumePlan {
       return null;
     }
     if (next is! int) return null;
+    final sid = json['sid'];
+    final sessionId = sid is int ? sid : 0; // old records had no session id
     String? str(String key) => json[key] is String ? json[key] as String : null;
     final pub = str('pub');
     final sha = str('sha');
@@ -146,6 +155,7 @@ class ResumePlan {
       tcpPort: port,
       bleDeviceId: str('ble'),
       nextExpected: next,
+      sessionId: sessionId,
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:companion_client/companion_client.dart';
@@ -7,6 +8,7 @@ import 'package:device_link/device_link.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mesh_protocol/mesh_protocol.dart';
 import 'package:meshcore_ota/app_state.dart';
+import 'package:meshcore_ota/services/resume_store.dart';
 import 'package:meshcore_ota/services/update_flow.dart';
 import 'package:ota_core/ota_core.dart';
 
@@ -78,6 +80,11 @@ class _FakeCompanion {
   /// Test seam: refuse every `ota stage` arm (e.g. the inactive slot is too
   /// small for this image).
   bool stageRefused = false;
+
+  /// Test seam: advertise the new capability API and answer its ops.
+  bool advertiseNewOps = false;
+  bool pingSilent = false;
+  int _sessionId = 0; // minted at OP_START, like the firmware
 
   /// Test seam: abort() invocations.
   int abortCount = 0;
@@ -362,12 +369,65 @@ class _FakeCompanion {
       ..._le32(infoTargetOverride != 0 ? infoTargetOverride : _targetIdForTest),
       ..._le32(0x200000), // slot size
       ..._le16(maxLiteral),
-      ..._le32(otaFeatDelta | otaFeatApply),
+      ..._le32(otaFeatDelta |
+          otaFeatApply |
+          (advertiseNewOps
+              ? otaFeatStagedHash | otaFeatStatus | otaFeatPing
+              : 0)),
       ..._padded32(utf8.encode(_nodeVersion)),
       ...sha,
     ];
     return buildOp(otaOpInfoReport, body: body);
   }
+
+  Uint8List _handleStatusRequest() {
+    final body = <int>[
+      otaWireVersion,
+      ..._le32(_targetIdForTest),
+      ..._le32(0x200000),
+      ..._le16(173),
+      ..._le32(otaFeatDelta |
+          otaFeatApply |
+          otaFeatStagedHash |
+          otaFeatStatus |
+          otaFeatPing),
+      ..._padded32(utf8.encode(_nodeVersion)),
+      ...Uint8List(32),
+      ..._le32(_sessionId), // zero until OP_START
+      _ready ? otaStateReady : (_stagingArmed ? otaStateStaging : otaStateIdle),
+      _error,
+      ..._le32(_size),
+      ..._le32(_written),
+      ..._le16(_expect),
+      otaCodecDeflate,
+      0,
+      0, // no extension TLVs
+    ];
+    return buildOp(otaOpStatusReport, body: body);
+  }
+
+  Uint8List? _handleStagedHash(Uint8List req) {
+    if (req.isEmpty || _staging == null) return null;
+    final count = req[0];
+    if (count == 0 || count > 4 || req.length != 1 + 8 * count) return null;
+    final out = <int>[..._le32(_written), count];
+    for (var i = 0; i < count; i++) {
+      final off = _le32At(req, 1 + i * 8);
+      final len = _le32At(req, 5 + i * 8);
+      out.addAll(_le32(off));
+      if (len == 0 || off + len > _written) {
+        out.add(1);
+        out.addAll(List<int>.filled(32, 0));
+      } else {
+        out.add(0);
+        out.addAll(sha256.convert(_staging!.sublist(off, off + len)).bytes);
+      }
+    }
+    return buildOp(otaOpStagedHashReport, body: out);
+  }
+
+  static int _le32At(List<int> p, int at) =>
+      p[at] | (p[at + 1] << 8) | (p[at + 2] << 16) | (p[at + 3] << 24);
 
   static List<int> _le16(int v) => [v & 0xFF, (v >> 8) & 0xFF];
 
@@ -388,6 +448,15 @@ class _FakeCompanion {
     final op = body[2];
 
     if (op == otaOpInfo) return infoSilent ? const [] : [_handleInfoRequest()];
+    if (op == otaOpStatus) return [_handleStatusRequest()];
+    if (op == otaOpPing) {
+      if (pingSilent) return const [];
+      return [buildOp(otaOpPingReport, body: body.sublist(3))];
+    }
+    if (op == otaOpStagedHash) {
+      final report = _handleStagedHash(body.sublist(3));
+      return report == null ? const [] : [report];
+    }
 
     if (op == otaOpAsk) {
       if (!_stagingArmed) return const [];
@@ -413,6 +482,7 @@ class _FakeCompanion {
         return const []; // rejected, silently dropped like the firmware
       }
       _armValid = false;
+      _sessionId = 0x5EED1234;
       _staging = Uint8List(size);
       _written = 0;
       _size = size;
@@ -998,5 +1068,120 @@ void main() {
     // `staging` would show a dead Cancel button forever.
     expect(app.updatePhase, UpdatePhase.failed);
     expect(app.cancelRequested, isFalse);
+  });
+
+  test('nodeStatus and ping use the structured ops on the live link', () async {
+    final link = FakeDeviceLink(snr: 6.0, rssi: -70);
+    final target = contact('tower');
+    List<int> le16(int v) => [v & 0xFF, (v >> 8) & 0xFF];
+    List<int> le32(int v) =>
+        [v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF, (v >> 24) & 0xFF];
+
+    link.binaryRequestHandler = (c, req, tag) async {
+      final frame = unwrapFrame(Uint8List.fromList(req.sublist(2, 2 + req[1])));
+      if (frame == null) return;
+      Uint8List? report;
+      if (frame[2] == otaOpStatus) {
+        report = buildOp(otaOpStatusReport, body: [
+          otaWireVersion,
+          ...le32(0x9F19BCD1),
+          ...le32(0x200000),
+          ...le16(173),
+          ...le32(
+              otaFeatDelta | otaFeatStatus | otaFeatPing | otaFeatStagedHash),
+          ...Uint8List(32),
+          ...Uint8List(32),
+          ...le32(0x12345678), // session id
+          otaStateStaging,
+          0,
+          ...le32(4096),
+          ...le32(1024),
+          ...le16(7),
+          otaCodecDeflate,
+          ...le16(0), // no TLVs
+        ]);
+      } else if (frame[2] == otaOpPing) {
+        report = buildOp(otaOpPingReport, body: frame.sublist(3));
+      }
+      if (report == null) return;
+      link.simulatePush(Uint8List.fromList([
+        pushCodeBinaryResponse,
+        0,
+        ...le32(tag),
+        ...report,
+      ]));
+    };
+
+    final flow = UpdateFlow(client: CompanionClient(link), link: link);
+    final status = await flow.nodeStatus(target);
+    expect(status, isNotNull);
+    expect(status!.sessionId, 0x12345678);
+    expect(status.nextExpected, 7);
+    expect(status.supportsCodec(otaCodecDeflate), isTrue);
+    expect(await flow.ping(target), Uint8List.fromList([1, 2, 3, 4]));
+  });
+
+  test('the new capability API drives ping, session and codec choices',
+      () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    final base = _FakeCompanion._pattern(0x33, 4096);
+    final image = Uint8List.fromList(base);
+    image[10] ^= 0xFF;
+    fake.setRunningForTest(base);
+    fake.advertiseNewOps = true;
+
+    final dir = await Directory.systemTemp.createTemp('new_api_test');
+    final app = AppState();
+    app.resumeStore = ResumeStore(File('${dir.path}/ota_resume.bin'));
+    final lib = FakeLibrary();
+    app.library = lib;
+    app.tcpLinkFactory = (_, __) => fake.link;
+    await app.connectTcp(host: 'unused', port: 0);
+    final entry = lib.addImage(image, env: env, version: 'v1.18.0-r4');
+    app.libraryEntries = await lib.list();
+    app.selectTarget(fake.target);
+    await app.probe();
+    await app.selectLibraryEntryForUpdate(entry);
+    app.remoteDiff = remoteDiff(ops: computeDelta(base, image).ops);
+
+    await app.runUpdate(version: entry.version);
+
+    expect(app.updatePhase, UpdatePhase.readyToApply);
+    expect(app.log.any((line) => line.contains('link check ok')), isTrue);
+    expect(app.resumePlan?.sessionId, 0x5EED1234);
+    // The staged prefix read back with OP_STAGED_HASH matches the saved image.
+    expect(await app.verifyStagedPrefix(fake.target, image.length), isNull);
+    // Oversized requests are refused locally without touching the radio.
+    expect(await app.verifyStagedPrefix(fake.target, image.length + 1),
+        contains('could not be checked'));
+    await dir.delete(recursive: true);
+  });
+
+  test('a lost ping is advisory — the update still proceeds', () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    final base = _FakeCompanion._pattern(0x44, 512);
+    final image = Uint8List.fromList(base);
+    image[4] ^= 0xFF;
+    fake.setRunningForTest(base);
+    fake.advertiseNewOps = true;
+    fake.pingSilent = true;
+
+    final app = AppState();
+    final lib = FakeLibrary();
+    app.library = lib;
+    app.tcpLinkFactory = (_, __) => fake.link;
+    await app.connectTcp(host: 'unused', port: 0);
+    final entry = lib.addImage(image, env: env, version: 'v1.18.0-r4');
+    app.libraryEntries = await lib.list();
+    app.selectTarget(fake.target);
+    await app.probe();
+    await app.selectLibraryEntryForUpdate(entry);
+    app.remoteDiff = remoteDiff(ops: computeDelta(base, image).ops);
+
+    await app.runUpdate(version: entry.version);
+
+    expect(app.updatePhase, UpdatePhase.readyToApply);
+    expect(app.log.any((line) => line.contains('link check had no answer')),
+        isTrue);
   });
 }

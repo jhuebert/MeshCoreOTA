@@ -1187,6 +1187,24 @@ class AppState extends ChangeNotifier {
       if (radioPlan.requiresZeroHop) {
         await _applyRadioPlan(t);
       }
+      // Prove the REQ/RESPONSE route is live on the chosen path before arming:
+      // a dead path would otherwise leave an armed session nobody can feed.
+      if (resume == null && nodeInfo?.supportsPing == true) {
+        final started = DateTime.now();
+        final echo = await flow.ping(t);
+        // Advisory only: the arm below is itself a round trip, so a lost
+        // ping must never block an update that would otherwise work.
+        log_(echo == null
+            ? 'link check had no answer — continuing'
+            : 'link check ok '
+                '(${DateTime.now().difference(started).inMilliseconds} ms)');
+      }
+      // Capabilities are available before arming; the session id is not —
+      // it is minted by OP_START, which the transfer sends later.
+      OtaNodeStatus? caps;
+      if (resume == null && nodeInfo?.supportsStatus == true) {
+        caps = await flow.nodeStatus(t);
+      }
       var token = 0;
       if (resume == null) {
         final stage = await flow.stage(t, image,
@@ -1199,8 +1217,13 @@ class AppState extends ChangeNotifier {
       // The op stream comes from step 5's hash comparison against this node's
       // running image. Nothing from a local library can be stale here. A
       // resume replays the exact frames saved at arm time instead.
-      final ops =
-          resume == null ? compressLiteralRuns(diff!.ops) : const <DeltaOp>[];
+      // The codec mask says what the node can actually inflate. Nodes that
+      // do not advertise DEFLATE get raw literals instead of a stream they
+      // would refuse at staging.
+      final canCompress = caps == null || caps.supportsCodec(otaCodecDeflate);
+      final ops = resume == null
+          ? (canCompress ? compressLiteralRuns(diff!.ops) : diff!.ops)
+          : const <DeltaOp>[];
       final wireOps = resume != null
           ? WireOps(resume.plan.frames)
           : wireOpsFor(ops, literalChunk: otaLiteralChunkForBinaryReq());
@@ -1224,7 +1247,8 @@ class AppState extends ChangeNotifier {
             image: image,
             targetId: targetId,
             frames: wireOps.frames,
-            version: version);
+            version: version,
+            sessionId: 0); // no OP_START yet: no session id to record
       }
 
       final sha = sha256List(image);
@@ -1284,6 +1308,23 @@ class AppState extends ChangeNotifier {
         throw UpdateFlowException('transfer failed: $e');
       }
 
+      // OP_START has run by now, so the node has a session id. Record it on
+      // the saved plan: on reconnect an id mismatch proves the repeater
+      // restarted and its staged bytes are gone.
+      if (resume == null && nodeInfo?.supportsStatus == true) {
+        final live = await flow.nodeStatus(t);
+        if (live != null && live.sessionId != 0) {
+          await saveResumePlan(
+              t: t,
+              image: image,
+              targetId: targetId,
+              frames: wireOps.frames,
+              version: version,
+              nextExpected: (progress?.opsApplied ?? 0) + 1,
+              sessionId: live.sessionId);
+        }
+      }
+
       // Confirm the staged image passed the node's SHA gate.
       await flow.awaitReady(t);
       updatePhase = UpdatePhase.readyToApply;
@@ -1315,6 +1356,7 @@ class AppState extends ChangeNotifier {
     required List<Uint8List> frames,
     required String version,
     int nextExpected = 1,
+    int? sessionId,
   }) async {
     final store = resumeStore;
     if (store == null) return;
@@ -1340,6 +1382,9 @@ class AppState extends ChangeNotifier {
         tcpPort: tcpPort,
         bleDeviceId: _bleDeviceId,
         nextExpected: nextExpected,
+        // A pause or the post-transfer save keeps the id already on the plan;
+        // the first save of a fresh update has no OP_START yet, so no id.
+        sessionId: sessionId ?? resumePlan?.sessionId ?? 0,
       );
       await store.save(plan);
       resumePlan = plan;
@@ -1391,6 +1436,37 @@ class AppState extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  /// Hash the bytes the node already staged and compare them with the saved
+  /// image's prefix. Called on resume, before any more ops are sent: a match
+  /// proves the saved frame stream still lines up with the node's flash.
+  Future<String?> verifyStagedPrefix(Contact t, int written) async {
+    final image = _selectedImage;
+    final link = _link;
+    if (image == null || link == null || written > image.length) {
+      return 'The saved firmware could not be checked against the repeater.';
+    }
+    try {
+      final client = BlockHashClient(
+          link: link,
+          contact: t,
+          staged: true,
+          timeout: const Duration(seconds: 10));
+      final result =
+          (await client.query([BlockHashRange(0, written)])).results.single;
+      if (!result.ok) {
+        return 'The repeater could not read back its staged bytes.';
+      }
+      final expected = sha256List(Uint8List.sublistView(image, 0, written));
+      if (bytesToHex(result.sha256) != bytesToHex(expected)) {
+        return 'The repeater holds different bytes than the saved firmware. '
+            'Start a new update.';
+      }
+      return null;
+    } catch (e) {
+      return 'Could not verify the staged bytes: $e';
+    }
   }
 
   /// Load the image and radio choice recorded with an interrupted update.
@@ -1474,6 +1550,8 @@ class AppState extends ChangeNotifier {
                 return s;
               },
               nextExpected: (t) => _flow!.nextExpected(t),
+              nodeStatus: (t) => _flow!.nodeStatus(t),
+              verifyStaged: verifyStagedPrefix,
             );
       final decision = await controller.check(password);
       adminPassword = password;

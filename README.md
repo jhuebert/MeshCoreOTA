@@ -205,7 +205,9 @@ If the app crashes or the phone reboots partway through a transfer, the
 repeater keeps the part it already received. When you reopen the app, the
 **Unfinished update** row on the Connect screen takes you to a recovery screen.
 Enter the admin password again (it is never saved), and the app checks how far
-the repeater got:
+the repeater got. On firmware with the capability API it also compares a
+per-session id to prove the repeater did not restart, and reads back the bytes
+already staged to confirm they match the saved image before sending more:
 
 - **Resume upload** — only the missing part is sent. The firmware image and
   the exact op stream were saved on the phone, so there is no re-download and

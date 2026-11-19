@@ -43,6 +43,8 @@ class ResumeController {
     required this.nodeInfo,
     required this.status,
     required this.nextExpected,
+    this.nodeStatus,
+    this.verifyStaged,
   });
 
   final ResumePlan plan;
@@ -62,6 +64,15 @@ class ResumeController {
   final Future<OtaNodeInfo?> Function(Contact target) nodeInfo;
   final Future<OtaStatus?> Function(Contact target) status;
   final Future<int?> Function(Contact target) nextExpected;
+
+  /// The structured status op, when the node implements it. One query yields
+  /// the session id and the upload position, so no separate OP_ASK is needed.
+  /// Null on a node that predates the op.
+  final Future<OtaNodeStatus?> Function(Contact target)? nodeStatus;
+
+  /// Hash the node's staged prefix against the saved image. Null means the
+  /// bytes match (or the check is unavailable); otherwise a reason to stop.
+  final Future<String?> Function(Contact target, int written)? verifyStaged;
 
   Future<ResumeDecision> check(String password) async {
     final connectionProblem = await connect();
@@ -118,16 +129,30 @@ class ResumeController {
         problem: 'The repeater’s firmware changed since this update was saved.',
       );
     }
-    final nodeStatus = await status(target);
-    if (nodeStatus == null) {
+    // The structured report is available on nodes with the new capability
+    // API. Its session id turns "did the repeater reboot?" from a guess into a
+    // fact, and it carries the upload position so no separate OP_ASK is sent.
+    final live = nodeStatus == null ? null : await nodeStatus!(target);
+    if (live != null &&
+        plan.sessionId != 0 &&
+        live.sessionId != plan.sessionId) {
+      return ResumeDecision(
+        check: ResumeCheck.unavailable,
+        target: target,
+        problem: 'The repeater restarted since the update was saved, so the '
+            'uploaded part is gone. Start a new update.',
+      );
+    }
+
+    final cliStatus = await status(target);
+    if (cliStatus == null) {
       return ResumeDecision(
         check: ResumeCheck.unavailable,
         target: target,
         problem: 'The repeater did not answer `ota status`.',
       );
     }
-    if (nodeStatus.size != plan.imageSize ||
-        nodeStatus.offset > plan.imageSize) {
+    if (cliStatus.size != plan.imageSize || cliStatus.offset > plan.imageSize) {
       return ResumeDecision(
         check: ResumeCheck.unavailable,
         target: target,
@@ -135,14 +160,14 @@ class ResumeController {
             'The repeater is staging a different image than the saved one.',
       );
     }
-    if (nodeStatus.state == OtaPhase.ready) {
+    if (cliStatus.state == OtaPhase.ready) {
       return ResumeDecision(
         check: ResumeCheck.readyToApply,
         target: target,
         nextExpected: plan.frames.length,
       );
     }
-    if (nodeStatus.state != OtaPhase.staging) {
+    if (cliStatus.state != OtaPhase.staging) {
       return ResumeDecision(
         check: ResumeCheck.unavailable,
         target: target,
@@ -150,7 +175,25 @@ class ResumeController {
             'is still saved here, but the upload must start over.',
       );
     }
-    final next = await nextExpected(target);
+    // Before sending more ops, prove the bytes already staged are the prefix
+    // of the saved image. A node that kept its session but lost flash contents
+    // is otherwise only caught by the SHA gate at OP_END — after the whole
+    // remainder has been uploaded.
+    if (live != null &&
+        live.supports(otaFeatStagedHash) &&
+        verifyStaged != null &&
+        live.written > 0) {
+      final problem = await verifyStaged!(target, live.written);
+      if (problem != null) {
+        return ResumeDecision(
+          check: ResumeCheck.unavailable,
+          target: target,
+          problem: problem,
+        );
+      }
+    }
+    int? next = live?.nextExpected;
+    next ??= await nextExpected(target);
     if (next == null || next < 2 || next - 1 > plan.frames.length) {
       return ResumeDecision(
         check: ResumeCheck.unavailable,

@@ -41,6 +41,7 @@ ResumePlan _plan({
       tcpPort: 5000,
       bleDeviceId: ble,
       nextExpected: 42,
+      sessionId: 0x12345678,
     );
 
 void main() {
@@ -84,6 +85,7 @@ void main() {
     expect(decoded.tcpPort, 5000);
     expect(decoded.bleDeviceId, 'AA:BB:CC:DD:EE:FF');
     expect(decoded.nextExpected, 42);
+    expect(decoded.sessionId, 0x12345678);
     expect(decoded.createdAt, plan.createdAt);
   });
 
@@ -214,5 +216,9 @@ void main() {
     expect(decodeChanged({'size': 'big'}), isNull);
     expect(decodeChanged({'next': null}), isNull);
     expect(decodeChanged({'pub': 42}), isNull);
+    // Records saved before the session id existed still decode cleanly.
+    final legacy = _plan().toJson();
+    legacy['sid'] = null;
+    expect(ResumePlan.fromJson(legacy, const [])!.sessionId, 0);
   });
 }

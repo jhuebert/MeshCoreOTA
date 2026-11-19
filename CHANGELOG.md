@@ -24,6 +24,13 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Changed
 
+- **Resuming is now verified against the repeater, not just its status line.**
+  Firmware with the new capability API reports a per-session id and a
+  structured upload position, so the app can tell a phone restart from a
+  repeater restart and reads back the staged bytes to confirm they match the
+  saved image before sending the rest. It also checks the node's codec support
+  before compressing and logs a best-effort link check before arming; all of
+  these fall back to the existing behaviour on older firmware.
 - **Updates transfer faster and Compare no longer times out on slower nodes.**
   The repeater now bulk-reads its running image during block searches instead
   of one 4-byte read per step — a 128 KB scan dropped from ~8 s to under 1 s on

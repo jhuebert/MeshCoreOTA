@@ -68,6 +68,29 @@ class UpdateFlow {
     }
   }
 
+  /// Best-effort `OP_STATUS` query: the structured counterpart of `ota status`
+  /// that also carries the session id, upload position and capability bits.
+  /// Null when the node does not implement the op or the reply is lost.
+  Future<OtaNodeStatus?> nodeStatus(Contact target,
+      {Duration timeout = const Duration(seconds: 3)}) async {
+    try {
+      return await queryNodeStatus(link, target, timeout: timeout);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Echo a small payload over the op path to check the live REQ/RESPONSE
+  /// route before committing to a transfer. Null on timeout/unsupported.
+  Future<Uint8List?> ping(Contact target,
+      {Duration timeout = const Duration(seconds: 3)}) async {
+    try {
+      return await pingNode(link, target, timeout: timeout);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// `ota status`, or null when the node does not answer with the frozen
   /// reply (pre-OTA firmware, link failure).
   Future<OtaStatus?> status(Contact target) async {
