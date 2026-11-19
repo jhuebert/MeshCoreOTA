@@ -27,9 +27,18 @@ Layered controls, in order:
 4. **SHA-256 gate at `OP_END`.** The staged slot is hashed; mismatch → staged
    slot scrapped, `state=error`, `err=4`. This is the only integrity decision
    in the design; the op stream itself is trustless once armed.
-5. **Commit requires an admin.** `ota apply` refuses unless staging is
+5. **The diff oracle is admin-only and read-only.** `OP_BLOCK_HASH` (0x09)
+   and `OP_BLOCK_FIND` (0x0B) ride the same admin-gated `REQ_TYPE_OTA` path as
+   every other op. They answer SHA-256 hashes of bounded ranges and the offsets
+   where 64-bit rolling fingerprints occur, are answered in every session
+   state, and never write flash or change the session. They leak nothing
+   beyond the public firmware's contents and version; brute-forcing bytes from
+   a range hash is infeasible, and a 64-bit fingerprint collision only costs an
+   extra literal. A stale or wrong diff can therefore waste airtime but cannot
+   boot a wrong image — the SHA gate (4) still decides.
+6. **Commit requires an admin.** `ota apply` refuses unless staging is
    `state=ready`, then flips the boot partition and reboots.
-6. **Boot health check + auto rollback.** The freshly applied image runs a
+7. **Boot health check + auto rollback.** The freshly applied image runs a
    boot health check (LoRa init + one zero-hop packet TX). Failure flips the
    boot partition back to the previous slot and reboots — with no app at all.
    The app *additionally* re-logs in and checks `version` after the reboot.

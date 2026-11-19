@@ -215,7 +215,7 @@ Uint8List? unpadFrame(List<int> payload) {
 /// Returns the OTA frame with the crypto layer's padding stripped, or null
 /// when the push does not parse.
 Uint8List? binaryResponseReport(Uint8List frame,
-    {required Uint8List contactPubKey, int? askTag}) {
+    {required Uint8List contactPubKey, int? askTag, int? exactLength}) {
   if (frame.isEmpty || frame[0] != 0x8C) return null;
   // Candidate frame layouts: tag at 2 (no pubkey prefix) or tag at 8.
   for (final tagAt in [2, 8]) {
@@ -238,7 +238,19 @@ Uint8List? binaryResponseReport(Uint8List frame,
     // The tag-at-2 layout is ambiguous (the first four bytes of a pubkey
     // prefix would read as a tag), so the payload must frame before we
     // accept it; otherwise fall through to the pubkey-prefix layout.
-    final report = unpadFrame(frame.sublist(tagAt + 4));
+    final payload = frame.sublist(tagAt + 4);
+    // When the caller knows the report's exact length (the OTA hash report is
+    // fixed by its range count), slice it directly. CRC-based unpadding can
+    // otherwise mistake zero padding for a frame whose CRC is 0x0000.
+    Uint8List? report;
+    if (exactLength != null) {
+      if (payload.length >= exactLength &&
+          unwrapFrame(payload.sublist(0, exactLength)) != null) {
+        report = Uint8List.fromList(payload.sublist(0, exactLength));
+      }
+    } else {
+      report = unpadFrame(payload);
+    }
     if (report == null) continue;
     return report;
   }

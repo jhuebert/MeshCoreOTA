@@ -33,6 +33,20 @@ void main() {
     expect(find.textContaining('Choose a repeater'), findsOneWidget);
   });
 
+  testWidgets('the step bar sits in the app bar above the tabs',
+      (tester) async {
+    final app = AppState();
+    await tester.pumpWidget(wrap(app, const TargetScreen()));
+    await tester.pump();
+
+    final wizard = find.text('Step 2 of 9');
+    expect(wizard, findsOneWidget);
+    expect(find.ancestor(of: wizard, matching: find.byType(AppBar)),
+        findsOneWidget);
+    expect(tester.getRect(wizard).bottom,
+        lessThan(tester.getRect(find.text('Repeaters')).top));
+  });
+
   testWidgets('selecting a repeater unlocks the next step', (tester) async {
     final app = AppState();
     app.contacts = [contact('riley')];

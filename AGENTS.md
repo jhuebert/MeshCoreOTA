@@ -66,8 +66,8 @@ admin/ACL login, `OP_INFO` handshake, board-scoped version picker, delta or
 full-image staging, windowed transfer, `ota apply`, post-reboot verification
 and `ota rollback`. The app also carries a version-based offline library, a
 three-way radio plan (live mesh / temporary private preset / the repeater's
-radio2), and automatic before/after image matching (the delta base is the
-repeater's running image, hash-matched against the library).
+radio2). The diff is computed by the repeater hashing its own running image;
+no previous image is needed on the device.
 
 Planned and explicitly deferred:
 
@@ -123,8 +123,11 @@ spec.
   running firmware version (NUL-padded 32 bytes) and the **running image's
   SHA-256** — taken over exactly the bytes an update wrote (image length from
   the ESP image header, appended digest included), so it equals the hash of
-  the app's own `.bin`. That hash, not the version stamp, is the delta base
-  identity: two builds of one commit share a stamp and can still differ.
+  the app's own `.bin`. It is still used for post-reboot verification, but the
+  app no longer needs a local image matching it: `OP_BLOCK_HASH` (0x09/0x0A,
+  feature bit `0x00000004`) hashes ranges of the running image, and
+  `OP_BLOCK_FIND` (0x0B/0x0C) locates up to twelve 64-bit rolling fingerprints
+  in one scan of a window of it. Matches are found by content, not offset.
   All zeros means "cannot tell" (no readable image).
 - `target id` is the **build environment** id (`sha256(pio_env)[0..3]`), not a
   hardware id. The app maps it back to an environment by hashing the names it
@@ -154,8 +157,8 @@ spec.
 
 ## App UX contract
 
-The app is an eight-step wizard: Connect → Repeater → Sign in → Firmware →
-Radio → Review → Transfer → Verify. Every screen carries `WizardBar`
+The app is a nine-step wizard: Connect → Repeater → Sign in → Firmware →
+Compare → Radio → Review → Transfer → Verify. Every screen carries `WizardBar`
 (step + label); the next action lives in a `WizardFooter` or an equivalent
 bottom bar. Keep the flow linear — an action that belongs on the next
 screen does not belong below the fold on the current one. One screen, one
@@ -184,15 +187,18 @@ accounted for (e.g. `radio2`, `tempradio` on the node CLI itself).
   is tapped. Releases with no image for the detected board are hidden. The
   save button downloads **all** assets of a release (every board); the cloud
   icon shows the version's save state (not saved / partial / saved) and a
-  trash icon deletes the whole version (the delta base and any selected
-  image are repaired). There is no Offline tab: offline mode shows only
+  trash icon deletes the whole version (any selected image is repaired).
+  There is no Offline tab: offline mode shows only
   saved versions in the GitHub tab. Imported `.bin` files live on the
-  Imported tab — one row per file — and match by SHA-256 like any other
-  entry (delta base and update image alike). The **Firmware library** on
+  Imported tab — one row per file — and are selected as the image to install;
+  they are never used as a local delta base. The **Firmware library** on
   the main screen is this same screen in manager mode
   (`FirmwareScreen(updateMode: false)`): tapping a version downloads the
   whole version instead of selecting an update. The offline switch is
   persisted and must prevent every GitHub request (catalog included).
+- **Compare**: read-only step that queries the repeater's running-image
+   hashes, shows bytes reused / to send / exchanges, and offers a safe stop
+   before anything is staged. There is deliberately no base picker.
 - **Radio**: three radio plans (live mesh with the path override, temporary
   private preset on both ends, or the repeater's radio2). Off-mesh modes are
   implicit zero-hop. The duration input defaults to the recommended time for
@@ -200,12 +206,11 @@ accounted for (e.g. `radio2`, `tempradio` on the node CLI itself).
   never continue with an invalid one.
 - **Review**: a summary of everything selected before the update — companion
   and how it is connected, repeater name and board, current firmware, the
-  firmware to install, image size, full-vs-delta and how much will be sent,
-  an estimated time, and the radio choice. The delta base is matched
-  automatically (running-image hash, then version stamp); there is
-  deliberately no base picker — if no base is found the screen says a full
-  image will be sent, and the user can turn back instead. Show the plan's
-  validation before Start, and never start with an invalid one.
+  firmware to install, image size, how much the repeater can reuse and how
+  much will be sent, an estimated time, and the radio choice. The comparison
+  comes from step 5; Start is disabled until it completes. An identical image
+  stops the wizard there. Show the plan's validation before Start, and never
+  start with an invalid one.
 - **Transfer/Verify**: no screen may claim success until the node answers
   with the newly sent image's hash. A lost reply from `ota apply`/`rollback`
   is an unknown outcome, decided by re-login and the reported image hash.

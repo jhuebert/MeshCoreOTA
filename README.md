@@ -52,9 +52,10 @@ the project's app key, so upgrading an existing install keeps your data.
 
 ## Getting started
 
-The app walks you through eight steps. You can go back at any point; nothing
+The app walks you through nine steps. You can go back at any point; nothing
 is changed on the repeater until the transfer starts, and nothing boots until
-you confirm.
+you confirm. Step 5 compares the firmware with the repeater's running image —
+it only reads from the repeater, so it is another safe place to stop.
 
 ### 1. Connect the companion
 
@@ -99,6 +100,10 @@ for you — there is no board picker and no per-device list to manage.
 
 - Tapping a version downloads **its file for your board** (if it is not
   already on the device) and selects it for this update.
+- If the repeater did not answer its capability check (Sign in shows **Board:
+  unknown**), the app cannot detect the board. All versions stay listed and
+  tapping one asks you to pick the image for your board; a mismatched image
+  is still refused by the repeater.
 - The **cloud button** on a version saves **that whole version** (the file
   for every board) on your device for offline use. The cloud icon shows the
   state: outlined cloud = nothing saved, filled cloud = partly saved, cloud
@@ -108,9 +113,33 @@ for you — there is no board picker and no per-device list to manage.
 - **Imported** shows your `.bin` files — one row per file — and is where you
   add your own build.
 
-### 5. Radio settings
+### 5. Compare with the repeater
 
-![Radio settings](docs/images/05-radio.png)
+![Compare](docs/images/05-compare.png)
+
+The repeater hashes its **own running firmware** and answers questions about
+it. First it reports its image size, segment table and whole-image hash. Then
+the app sends short fingerprints of blocks of the image you picked — up to
+twelve blocks per exchange — and the repeater replies with the offsets where
+each block occurs in its running firmware. Blocks that are already there are
+copied from those offsets; only the rest are sent. Because matches are found by
+content, a code change that shifts every later byte does not force a full
+upload. You do **not** need the old firmware on this device to get a small
+update.
+
+The step shows how much will be reused, how much will be sent, and how many
+exchanges it took. If the repeater is already running exactly this image, the
+app says so and stops here — nothing is sent. This step is read-only: the
+repeater's firmware and radio settings are untouched until you press **Start
+update** at Review.
+
+The block size is a trade-off: smaller blocks find more reusable bytes but
+need more exchanges. The default (512 bytes) is a good middle ground on a
+multi-hop mesh; on a fast zero-hop link smaller blocks can save airtime.
+
+### 6. Radio settings
+
+![Radio settings](docs/images/06-radio.png)
 
 A firmware transfer uses a lot of airtime, so choose where it runs:
 
@@ -127,21 +156,21 @@ A firmware transfer uses a lot of airtime, so choose where it runs:
 The app suggests a frequency and a time limit from the repeater's settings and
 the size of the update; you can change either.
 
-### 6. Review
+### 7. Review
 
-![Review](docs/images/06-review.png)
+![Review](docs/images/07-review.png)
 
 The review screen shows everything you picked before anything goes on air:
 the companion and how it is connected, the repeater and its board, the
-firmware it runs now, the firmware you are installing, the file size, whether
-the app can reuse parts of the firmware you already have (and how much it will
-send), a time estimate, and the channel choice. **Start update** begins the
+firmware it runs now, the firmware you are installing, the file size, how much of it the repeater can reuse (and how much will be
+sent), a time estimate, and the channel choice. **Start update** begins the
 transfer — the new firmware does not start until you confirm at the end.
 
-The app works out what it can reuse by comparing the repeater's current
-firmware with your library. If nothing matches, it sends the whole file.
+The comparison with the repeater's running firmware was done in step 5; the
+repeater itself supplies the bytes it already has. If it cannot hash its
+image, the review says the whole file will be sent.
 
-### 7. Transfer
+### 8. Transfer
 
 The app puts the new firmware into the repeater's **spare** slot, sends the
 changes as normal encrypted requests, and the repeater asks for anything it
@@ -151,7 +180,7 @@ speed alone suggests, because the repeater pauses to write each batch to its
 storage. You can cancel at any time; a cancelled transfer throws away the
 partly received firmware.
 
-### 8. Commit and verify
+### 9. Commit and verify
 
 Once the transfer is complete, the repeater has already checked the file.
 **Commit update** switches to the new firmware and restarts the repeater.
@@ -175,9 +204,8 @@ The setting is remembered, so a device that goes into the field stays offline
 across restarts. Switch it back on when you have a connection.
 
 To prepare: while on Wi-Fi, open **Choose firmware → GitHub** and tap the
-cloud button on the version you want. Its file for every board is saved. Do
-the same for the version the repeater currently runs; that second file is what
-lets the app send only what changed. The **Firmware library** on the main
+cloud button on the version you want. Its file for every board is saved. You no longer need to save the version
+the repeater currently runs — it hashes its own firmware for the comparison. The **Firmware library** on the main
 screen manages what is stored: download versions, delete ones you no longer
 need, and see downloaded versions (one row per version) and imported `.bin`
 files (one row per file) separately.
@@ -194,10 +222,9 @@ clears that selection.
 
 Imported files and downloaded versions are listed separately on purpose:
 downloaded files come from releases (labelled with the board and version),
-while an imported `.bin` is identified by its fingerprint alone. When the
-repeater reports the fingerprint of the firmware it is running, the app
-automatically uses the matching file — imported or downloaded — as the
-starting point for a smaller update.
+while an imported `.bin` is just a file you supplied. Neither is used as a
+delta base: the repeater hashes its own running image in step 5, so a smaller
+update does not depend on what is stored here.
 
 ## Custom firmware
 
@@ -208,14 +235,16 @@ Your own builds work just like releases:
 3. Select it on the **Imported** tab (or a saved version on the **GitHub**
    tab, in either mode).
 
-The app works out the starting point automatically by matching the repeater's
-current firmware against your library. If nothing matches, it sends the whole
-file. To pick a specific file, use **Use as delta base** on its row in the
-**Imported** tab.
+The app compares the file with the repeater's running firmware in step 5 and
+sends only the parts that differ. If the repeater cannot hash its image, it
+sends the whole file.
 
 A custom file has no board name, so the app uses the board the repeater
-reports. The repeater still refuses firmware built for another board and
-still checks the fingerprint, so a wrong file cannot be installed by mistake.
+reports. If the repeater did not answer that check, the app retries the handshake
+with a longer timeout; if that fails too, it asks you to pick a board before
+starting. The repeater still
+refuses firmware built for another board and still checks the fingerprint, so
+a wrong file cannot be installed by mistake.
 
 ![Firmware library](docs/images/09-library.png)
 
@@ -257,7 +286,7 @@ still checks the fingerprint, so a wrong file cannot be installed by mistake.
 
 | Radio settings | Review |
 |---|---|
-| ![Radio settings](docs/images/05-radio.png) | ![Review](docs/images/06-review.png) |
+| ![Radio settings](docs/images/06-radio.png) | ![Review](docs/images/07-review.png) |
 
 | Repeater list | Firmware library |
 |---|---|

@@ -11,7 +11,7 @@ import '../services/github_source.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/wizard.dart';
-import 'review_screen.dart';
+import 'compare_screen.dart';
 
 /// Step 4: pick what to install — or the standalone library manager.
 ///
@@ -69,6 +69,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final update = widget.updateMode;
+    final detected = app.detectedBoard;
 
     return Scaffold(
       appBar: AppBar(
@@ -86,18 +87,38 @@ class _FirmwareScreenState extends State<FirmwareScreen>
           ),
           const SizedBox(width: 4),
         ],
-        bottom: TabBar(
-          controller: _tabs,
-          indicatorColor: OtaTheme.accent,
-          tabs: const [
-            Tab(text: 'GitHub'),
-            Tab(text: 'Imported'),
-          ],
-        ),
+        bottom: update
+            ? WizardTabBar(
+                step: 4,
+                label: 'Choose the image',
+                controller: _tabs,
+                tabs: const [
+                  Tab(text: 'GitHub'),
+                  Tab(text: 'Imported'),
+                ],
+              )
+            : TabBar(
+                controller: _tabs,
+                indicatorColor: OtaTheme.accent,
+                tabs: const [
+                  Tab(text: 'GitHub'),
+                  Tab(text: 'Imported'),
+                ],
+              ),
       ),
       body: Column(
         children: [
-          if (update) const WizardBar(step: 4, label: 'Choose the image'),
+          if (update && detected == null && app.nodeInfo == null)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: Text(
+                'This repeater did not answer its capability check, so the '
+                'app cannot tell which board it is. Tap a version to choose '
+                'the image yourself.',
+                style: TextStyle(
+                    color: OtaTheme.textMuted, fontSize: 12, height: 1.35),
+              ),
+            ),
           if (app.offlineMode)
             Container(
               margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
@@ -226,8 +247,12 @@ class _FirmwareScreenState extends State<FirmwareScreen>
   Widget _buildDownloadedVersions(AppState app, String? detected) {
     final update = widget.updateMode;
     final versions = app.offlineVersions;
-    // In update mode the list holds only what this node can run, here too.
-    final shown = update
+    // In update mode the list holds only what this node can run. The one
+    // exception is a node that did not answer the handshake at all: there is
+    // no board to scope against, so keep every saved version and let the row
+    // pick its image explicitly.
+    final canScope = detected != null || app.nodeInfo != null;
+    final shown = update && canScope
         ? versions
             .where((v) => v.entries.any((e) => e.env == detected))
             .toList()
@@ -364,22 +389,15 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                                   onSelected: (value) =>
                                       _importedMenuAction(app, entry, value),
                                   itemBuilder: (_) => update
-                                      ? [
-                                          const PopupMenuItem(
+                                      ? const [
+                                          PopupMenuItem(
                                               value: 'install',
                                               child:
                                                   Text('Use for the update')),
                                           PopupMenuItem(
-                                              value: 'base',
-                                              child: Text(app
-                                                          .baseOverride?.id ==
-                                                      entry.id
-                                                  ? 'Clear delta base override'
-                                                  : 'Use as delta base')),
-                                          const PopupMenuItem(
                                               value: 'details',
                                               child: Text('Details')),
-                                          const PopupMenuItem(
+                                          PopupMenuItem(
                                               value: 'delete',
                                               child: Text('Delete')),
                                         ]
@@ -411,14 +429,6 @@ class _FirmwareScreenState extends State<FirmwareScreen>
     switch (value) {
       case 'install':
         await app.selectLibraryEntryForUpdate(entry);
-      case 'base':
-        if (app.baseOverride?.id == entry.id) {
-          await app.setBaseOverride(null);
-          _showSnack('Delta base override cleared');
-        } else {
-          await app.setBaseOverride(entry);
-          _showSnack('Delta base set to ${entry.fileName}');
-        }
       case 'details':
         _inspectEntry(entry);
       case 'delete':
@@ -429,6 +439,102 @@ class _FirmwareScreenState extends State<FirmwareScreen>
           body: '${entry.fileName}\n\nThis cannot be undone.',
         );
     }
+  }
+
+  /// The node did not answer the capability handshake, so there is no board to
+  /// pick its image automatically. Let the operator choose from this version's
+  /// images instead of leaving the row inert; [choices] are sorted by label
+  /// before the dialog is shown.
+  Future<void> _pickImageForUnknownBoard(
+    BuildContext context,
+    List<(String label, Future<void> Function() select)> choices,
+  ) async {
+    final sorted = [...choices]..sort((a, b) => a.$1.compareTo(b.$1));
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Pick the image for your repeater'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Your repeater did not answer the capability check, so the '
+                'app cannot tell which board it is. Choose the image built '
+                'for your board. A mismatched image will be refused.',
+                style: TextStyle(
+                    color: OtaTheme.textMuted, fontSize: 12, height: 1.4),
+              ),
+              const SizedBox(height: 10),
+              for (var i = 0; i < sorted.length; i++)
+                ListTile(
+                  dense: true,
+                  title: Text(sorted[i].$1,
+                      style: const TextStyle(
+                          fontFamily: 'monospace', fontSize: 12)),
+                  onTap: () => Navigator.of(context).pop(i),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (picked != null) await sorted[picked].$2();
+  }
+
+  /// The selected `.bin` has no board in its name and the node never answered
+  /// OP_INFO. Ask for the build environment so the app can derive the target
+  /// id the repeater checks in the OTA start op.
+  Future<void> _pickBoardForImage(AppState app) async {
+    final envs = app.knownEnvironments.toList()..sort();
+    if (envs.isEmpty) {
+      _showSnack('No known boards — refresh the release list first');
+      return;
+    }
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Which board is this image for?'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'The repeater did not answer the capability check, so the app '
+                'cannot read its target id. Pick the build environment this '
+                'image came from. A wrong choice is refused at staging.',
+                style: TextStyle(
+                    color: OtaTheme.textMuted, fontSize: 12, height: 1.4),
+              ),
+              const SizedBox(height: 10),
+              for (final env in envs)
+                ListTile(
+                  dense: true,
+                  title: Text(env,
+                      style: const TextStyle(
+                          fontFamily: 'monospace', fontSize: 12)),
+                  onTap: () => Navigator.of(context).pop(env),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (picked != null) await app.setSelectedBoard(picked);
   }
 
   /// The row for a catalog release, wired to the update or manager context.
@@ -454,7 +560,17 @@ class _FirmwareScreenState extends State<FirmwareScreen>
       selected: selected,
       offline: false,
       onTap: update
-          ? (asset == null ? null : () => app.selectAsset(asset))
+          ? (asset != null
+              ? () => app.selectAsset(asset)
+              : app.nodeInfo == null && release.appImages.isNotEmpty
+                  ? () => _pickImageForUnknownBoard(
+                        context,
+                        [
+                          for (final a in release.appImages)
+                            (a.env, () => app.selectAsset(a)),
+                        ],
+                      )
+                  : null)
           : () => _saveRelease(context, app, release),
       onSave: () => _saveRelease(context, app, release),
       onDelete: entries.isEmpty
@@ -490,9 +606,17 @@ class _FirmwareScreenState extends State<FirmwareScreen>
       selected: selected,
       offline: true,
       onTap: update
-          ? (entry == null
-              ? null
-              : () => app.selectLibraryEntryForUpdate(entry))
+          ? (entry != null
+              ? () => app.selectLibraryEntryForUpdate(entry)
+              : app.nodeInfo == null && entries.isNotEmpty
+                  ? () => _pickImageForUnknownBoard(
+                        context,
+                        [
+                          for (final e in entries)
+                            (e.env, () => app.selectLibraryEntryForUpdate(e)),
+                        ],
+                      )
+                  : null)
           : () => _showSnack('Offline — nothing new to download for this '
               'version'),
       onSave: null,
@@ -728,7 +852,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
               Padding(
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Text(
-                  'Selected: ${package is FirmwareAsset ? package.env : (package as LibraryEntry).env} · '
+                  'Selected: ${env ?? '?'} · '
                   '${app.selectedDisplayVersion ?? '?'} · ${app.estimateLabel()}',
                   style:
                       const TextStyle(color: OtaTheme.textMuted, fontSize: 12),
@@ -748,20 +872,33 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                 app.imageError!,
                 style: const TextStyle(color: OtaTheme.bad, fontSize: 12),
               ),
-            if (!ready && app.selectedImage != null && !canTarget)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 6),
-                child: Text(
-                  'This image has no board name and the node did not answer the '
-                  'capability handshake, so the target cannot be checked. '
-                  'Import a build for a known board instead.',
-                  style: TextStyle(color: OtaTheme.warn, fontSize: 11),
+            if (app.needsBoardForImage)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'The file name has no board and the repeater did not '
+                        'answer the capability check. Choose the board this '
+                        'image was built for.',
+                        style: TextStyle(color: OtaTheme.warn, fontSize: 11),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () => _pickBoardForImage(app),
+                      child: const Text('Choose board'),
+                    ),
+                  ],
                 ),
               ),
             FilledButton.icon(
               onPressed: ready
                   ? () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const ReviewScreen()),
+                        MaterialPageRoute(
+                            builder: (_) => const CompareScreen()),
                       )
                   : null,
               icon: app.imageLoading
@@ -774,7 +911,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                       ),
                     )
                   : const Icon(Icons.arrow_forward),
-              label: Text(app.imageLoading ? 'Downloading…' : 'Review update'),
+              label: Text(app.imageLoading ? 'Downloading…' : 'Next: compare'),
             ),
           ],
         ),

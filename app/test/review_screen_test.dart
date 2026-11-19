@@ -33,6 +33,7 @@ AppState _app({RadioMode mode = RadioMode.liveMesh}) {
     preset: mode == RadioMode.liveMesh ? null : _preset,
     durationMinutes: 15,
   );
+  app.remoteDiff = remoteDiff();
   return app;
 }
 
@@ -69,6 +70,7 @@ Future<AppState> _connectedApp(WidgetTester tester,
     advType: advTypeRepeater,
   ));
   app.radioPlan = RadioPlan(mode: mode, preset: _preset, durationMinutes: 15);
+  app.remoteDiff = remoteDiff();
   return app;
 }
 
@@ -96,6 +98,7 @@ void reviewSummaryTests() {
         fileName: '$_board-v1.1.0-rc5-cd72e1a2-filter-abc1234.bin');
     app.libraryEntries = await lib.list();
     await app.selectLibraryEntryForUpdate(app.libraryEntries.single);
+    app.remoteDiff = remoteDiff();
 
     await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
@@ -106,10 +109,9 @@ void reviewSummaryTests() {
     expect(find.text(_board), findsOneWidget); // the node's board
     expect(find.text('v1.1.0-r3'), findsOneWidget); // current firmware
     expect(find.text('v1.1.0-rc5-cd72e1a2'), findsOneWidget); // update to
-    expect(find.text('Step 6 of 8'), findsOneWidget);
-    // No base could be matched, so the summary says the full image will be
-    // sent — that is the whole signal it gives.
-    expect(find.textContaining('Full image'), findsOneWidget);
+    expect(find.text('Step 7 of 9'), findsOneWidget);
+    // The step-5 comparison supplies the byte count shown here.
+    expect(find.textContaining('Changes only — send'), findsOneWidget);
     // No navigation buttons and no base picker on this screen.
     expect(find.text('Choose base'), findsNothing);
     expect(find.text('Change image'), findsNothing);
@@ -117,27 +119,20 @@ void reviewSummaryTests() {
     expect(find.text('SHA-256'), findsNothing);
   });
 
-  testWidgets('a matched delta base lists what will be sent', (tester) async {
+  testWidgets('a completed comparison lists what will be sent', (tester) async {
     _bigView(tester);
     final app = _app();
     app.nodeStatus = nodeStatus(running: 'v1.1.0-r3');
-    final lib = FakeLibrary();
-    app.library = lib;
-    final base = lib.addImage(Uint8List.fromList(List.filled(8, 1)),
-        env: _board, version: 'v1.1.0-r3');
-    lib.addImage(Uint8List.fromList(List.filled(120000, 2)),
-        env: _board, version: 'v1.1.0-rc5-cd72e1a2');
-    app.libraryEntries = await lib.list();
-    app.autoBaseEntry = base;
-    app.deltaResult = const DeltaResult(
-        ops: [CopyOp(0, 8)], literalBytes: 4096, copyBytes: 8);
+    app.remoteDiff = remoteDiff(literalBytes: 4096, copyBytes: 8);
 
     await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
 
-    expect(find.textContaining('Delta — send'), findsOneWidget);
+    expect(find.textContaining('Changes only — send'), findsOneWidget);
     expect(find.textContaining('of the image'), findsOneWidget);
-    expect(find.text('Step 6 of 8'), findsOneWidget);
+    expect(find.textContaining('Matched against the running image'),
+        findsOneWidget);
+    expect(find.text('Step 7 of 9'), findsOneWidget);
   });
 
   testWidgets('a private radio plan is summarized, path override is not',
@@ -221,9 +216,8 @@ void reviewSummaryTests() {
     // image is what the node already runs.
     app.selectedLibraryEntry = entry;
     app.selectedAsset = null;
-    app.autoBaseEntry = entry;
-    app.deltaResult =
-        const DeltaResult(ops: [], literalBytes: 0, copyBytes: 1449808);
+    app.remoteDiff =
+        remoteDiff(upToDate: true, literalBytes: 0, copyBytes: 1449808);
 
     await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
@@ -235,53 +229,25 @@ void reviewSummaryTests() {
     expect(start.onPressed, isNull);
   });
 
-  testWidgets('the full-image override re-enables a same-image re-flash',
-      (tester) async {
+  testWidgets('a missing comparison keeps Start disabled', (tester) async {
     _bigView(tester);
     final app = _app();
-    final lib = FakeLibrary();
-    app.library = lib;
-    final entry = lib.addImage(
-      Uint8List.fromList(List.filled(8, 9)),
-      env: _board,
-      version: 'v1.1.0-rc5-cd72e1a2',
-    );
-    app.selectedLibraryEntry = entry;
-    app.autoBaseEntry = entry;
-    app.deltaResult =
-        const DeltaResult(ops: [], literalBytes: 0, copyBytes: 1449808);
-    app.forceFullImage = true;
+    app.remoteDiff = null;
 
     await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
 
-    expect(find.textContaining('already running this image'), findsNothing);
+    expect(find.textContaining('Comparing with the repeater'), findsOneWidget);
     final start = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Start update'),
     );
-    expect(start.onPressed, isNotNull);
+    expect(start.onPressed, isNull);
   });
 
   testWidgets('a nonzero delta keeps Start update enabled', (tester) async {
     _bigView(tester);
     final app = _app();
-    final lib = FakeLibrary();
-    app.library = lib;
-    final base = lib.addImage(
-      Uint8List.fromList(List.filled(8, 1)),
-      env: _board,
-      version: 'v1.18.0-r3',
-    );
-    final mine = lib.addImage(
-      Uint8List.fromList(List.filled(8, 2)),
-      env: _board,
-      version: 'v1.1.0-rc5-cd72e1a2',
-    );
-    app.selectedLibraryEntry = mine;
-    // The matched base to the node's running image is a different file.
-    app.autoBaseEntry = base;
-    app.deltaResult =
-        const DeltaResult(ops: [CopyOp(0, 8)], literalBytes: 8, copyBytes: 100);
+    app.remoteDiff = remoteDiff(literalBytes: 8, copyBytes: 100);
 
     await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
@@ -367,6 +333,7 @@ void reviewSummaryTests() {
     );
     app.libraryEntries = await lib.list();
     await app.selectLibraryEntryForUpdate(entry);
+    app.remoteDiff = remoteDiff();
 
     await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pumpAndSettle();
@@ -376,37 +343,19 @@ void reviewSummaryTests() {
     // settle with bounded pumps instead of pumpAndSettle.
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('Step 7 of 8'), findsOneWidget);
+    expect(find.text('Step 8 of 9'), findsOneWidget);
   });
 
-  testWidgets('a manual base override that mismatches warns the operator',
+  testWidgets('shifted matches are called out in the comparison summary',
       (tester) async {
     _bigView(tester);
     final app = _app();
     app.nodeStatus = nodeStatus(running: 'v1.1.0-r3');
-    app.nodeInfo = nodeInfo(targetId: _targetId);
-    final lib = FakeLibrary();
-    app.library = lib;
-    // A base chosen by hand (Imported tab) that is not what the node runs.
-    final mine = lib.addImage(
-      Uint8List.fromList(List.filled(8, 2)),
-      env: _board,
-      version: 'v1.1.0-rc5-cd72e1a2',
-    );
-    app.libraryEntries = await lib.list();
-    await app.selectLibraryEntryForUpdate(mine);
-    final manual = lib.addImage(
-      Uint8List.fromList(List.filled(8, 3)),
-      env: 'custom',
-      version: 'custom',
-      fileName: 'other.bin',
-      origin: 'import',
-    );
-    await app.setBaseOverride(manual);
+    app.remoteDiff = remoteDiff(shiftProbeBatches: 3);
 
     await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
 
-    expect(find.textContaining('delta base you chose'), findsOneWidget);
+    expect(find.textContaining('including shifted matches'), findsOneWidget);
   });
 }

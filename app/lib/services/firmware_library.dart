@@ -84,6 +84,32 @@ class FirmwareLibrary {
     return null;
   }
 
+  /// Find a saved image whose SHA-256 starts with [shaPrefix]. `ota status`
+  /// reports only the first 16 hex characters (8 bytes) of the running image
+  /// hash; a byte match identifies the node's running build even when OP_INFO
+  /// never answered. All-zero means "the node could not hash its image".
+  Future<LibraryEntry?> findByShaPrefix(String shaPrefix) async {
+    final prefix = shaPrefix.trim().toLowerCase();
+    if (prefix.length < 16 || RegExp(r'[^0-9a-f]').hasMatch(prefix)) {
+      return null;
+    }
+    if (prefix.replaceAll('0', '').isEmpty) return null;
+    for (final entry in await list()) {
+      if (entry.sha256.toLowerCase().startsWith(prefix)) return entry;
+    }
+    return null;
+  }
+
+  /// As [findByShaPrefix], but only when the matching image has a board name.
+  /// A hash match against a renamed `.bin` tells us the running bytes, not
+  /// which build environment produced them, so it cannot name a target id.
+  Future<LibraryEntry?> findByShaPrefixWithBoard(String shaPrefix) async {
+    final entry = await findByShaPrefix(shaPrefix);
+    if (entry == null) return null;
+    if (entry.env == customEnvironment || entry.env == 'unknown') return null;
+    return entry;
+  }
+
   /// Find the base image for a delta against a node running [runningVersion]
   /// (the full `running=` stamp from `ota status`, e.g.
   /// `v1.18.0-r4-filter-d1ebd2f`). The version stamp is a weaker identity than

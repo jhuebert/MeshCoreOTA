@@ -8,6 +8,61 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Changed
 
+- **Updates are now diffs against the repeater's running firmware, computed on
+  the repeater.** A new **Compare** step (5 of 9) uses two read-only ops.
+  `OP_BLOCK_HASH` reports the running image's size, ESP segment table and
+  whole-image hash (and hashes up to four ranges per exchange). `OP_BLOCK_FIND`
+  sends up to twelve 64-bit rolling fingerprints in one request; the node slides
+  them once over a window of its running image and returns where each block
+  occurs. Matching blocks become `OP_COPY`s from the exact offset, changed
+  blocks become literals. Because matches are located by content, not by
+  offset, an inserted or removed byte no longer costs the rest of the image:
+  on real `filter-v1.18.0-r2/r3/r4` binaries the remote diff sends about 73% of
+  an image in ~240 exchanges (512-byte blocks), versus 100% for a full image.
+  You no longer need the previous firmware on your device, and an identical
+  image is detected in one exchange with nothing sent. The old local
+  rolling-hash matcher, delta-base matching, "Use as delta base" and the
+  full-image override are gone. The new step is read-only and is a safe place
+  to stop: staging still starts only from Review.
+- **The wizard is nine steps** (Connect, Repeater, Sign in, Firmware, Compare,
+  Radio, Review, Transfer, Verify). Firmware now continues to Compare.
+
+### Fixed
+
+- **Choose firmware no longer skips straight to Review.** When the radio
+  settings step was introduced the firmware step kept its old "Review update"
+  button; it now continues through Compare to Radio settings.
+- **A renamed or generic `.bin` can be selected without a board name.** When
+  the repeater did not answer the capability check, an imported image whose
+  file name has no board was stuck behind a dead-end warning. The app now
+  retries the handshake with a longer timeout, then offers a **Choose board**
+  action. No board is guessed from a file name or a hash — the repeater's own
+  reported target id is the only authority.
+- **The Android app no longer dies immediately on launch.** The manifest
+  resolved the launcher activity as `org.huebert.meshcoreota.MainActivity`,
+  but the Kotlin class was declared in
+  `com.github.jhuebert.meshcore_ota`. The APK built and installed cleanly,
+  then crashed with `ClassNotFoundException` before Flutter started. The
+  activity now lives in the namespace the manifest resolves against, and a
+  test keeps the two in sync.
+
+
+- **A version can now be selected when the repeater does not answer its
+  capability handshake.** When the Sign in screen shows **Board: unknown**,
+  the firmware picker still listed GitHub versions but left every row
+  untappable, so the downloaded image could never be chosen. Tapping a version
+  now offers the images in that release to pick from explicitly (the online
+  and offline views both work), and a note on the picker explains why the
+  choice is manual. Auto-detection is unchanged when the node does report its
+  board.
+
+### Changed
+
+- **The step progress bar now sits directly below the title and back arrow on
+  screens with tabs.** On **Pick a repeater** and **Choose firmware** the bar
+  used to appear below the Repeaters/Public key and GitHub/Imported tabs; it
+  is now above them, matching every other wizard step. The guide screenshots
+  for those steps were regenerated.
 - **The app icon is now a connected mesh delivering a firmware update to its
   centre node**, replacing the repeater-mast-and-loop mark. Every platform
   target (Android launcher and adaptive icons, the macOS app icon and the

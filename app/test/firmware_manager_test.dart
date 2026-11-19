@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ota_core/ota_core.dart';
 
 import 'package:meshcore_ota/app_state.dart';
 import 'package:meshcore_ota/screens/firmware_screen.dart';
@@ -239,6 +240,8 @@ void _managerModeTests() {
       (tester) async {
     _bigView(tester);
     final app = await _app();
+    // The node reported a known board, so the picker can scope to it.
+    app.nodeInfo = nodeInfo(targetId: targetIdForEnvironment(_board));
     final lib = app.library as FakeLibrary;
     // Drop the node-board image, keep the other one.
     await lib.delete(app.libraryEntries.firstWhere((e) => e.env == _board));
@@ -272,16 +275,12 @@ void _managerModeTests() {
     await tester.tap(find.widgetWithText(TextButton, 'Close'));
     await tester.pumpAndSettle();
 
-    // Use as delta base sets the override and clears the rest.
+    // There is no local delta-base picker any more: the node supplies the
+    // bytes. Selecting the file for the update is the only action.
     await tester.tap(find.byIcon(Icons.more_vert));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Use as delta base'));
-    await tester.pumpAndSettle();
-    expect(app.baseOverride?.fileName, 'my-build.bin');
+    expect(find.text('Use as delta base'), findsNothing);
 
-    // And it can be selected for the update.
-    await tester.tap(find.byIcon(Icons.more_vert));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('Use for the update'));
     await tester.pumpAndSettle();
     expect(app.selectedLibraryEntry?.fileName, 'my-build.bin');

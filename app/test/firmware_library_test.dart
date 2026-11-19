@@ -28,6 +28,37 @@ void main() {
     expect(opened.directory.path, endsWith('ota_library'));
   });
 
+  test('a running-image SHA prefix finds the board of a saved image', () async {
+    final saved = await library.importBytes(
+      _bytes(7, 400),
+      env: 'Xiao_S3_WIO_repeater',
+      version: 'v1.2.0-filter-0000001',
+      origin: 'github',
+    );
+    final prefix = saved.sha256.substring(0, 16);
+
+    final match = await library.findByShaPrefixWithBoard(prefix);
+    expect(match?.id, saved.id);
+    expect(match?.env, 'Xiao_S3_WIO_repeater');
+
+    // `ota status` uses an all-zero sha when the node cannot hash its image,
+    // and a custom-named image cannot name a board either.
+    expect(await library.findByShaPrefixWithBoard('0000000000000000'), isNull);
+    expect(await library.findByShaPrefixWithBoard('zzzzzzzzzzzzzzzz'), isNull);
+
+    final custom = await library.importBytes(
+      _bytes(9, 400),
+      env: customEnvironment,
+      version: 'custom',
+      origin: 'import',
+      fileName: 'firmware.bin',
+    );
+    final customPrefix = custom.sha256.substring(0, 16);
+    expect(await library.findByShaPrefixWithBoard(customPrefix), isNull);
+    // The bytes are still identifiable — just not nameable as a board.
+    expect((await library.findByShaPrefix(customPrefix))?.id, custom.id);
+  });
+
   test('importBytes synthesizes a file name from env and version', () async {
     final entry = await library.importBytes(
       _bytes(31, 400),

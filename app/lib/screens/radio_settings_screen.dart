@@ -9,7 +9,7 @@ import '../widgets/common.dart';
 import '../widgets/wizard.dart';
 import 'review_screen.dart';
 
-/// Step 5: where the transfer runs.
+/// Step 6: where the transfer runs.
 ///
 /// The live mesh stays untouched in a temporary-preset or radio2 transfer;
 /// both are zero-hop because nothing else is tuned there. The screen suggests
@@ -112,7 +112,7 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const WizardBar(step: 5, label: 'Radio settings'),
+          const WizardBar(step: 6, label: 'Radio settings'),
           const SectionHeader('Where the update runs'),
           RadioGroup<RadioMode>(
             groupValue: _mode,

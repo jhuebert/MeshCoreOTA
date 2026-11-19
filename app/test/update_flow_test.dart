@@ -978,6 +978,8 @@ void main() {
       version: 'v1.18.0-r4-filter-d1ebd2f',
     );
     await app.selectLibraryEntryForUpdate(entry);
+    // Step 5's comparison must be present before Start can arm anything.
+    app.remoteDiff = remoteDiff();
 
     await expectLater(
       app.runUpdate(version: entry.version),

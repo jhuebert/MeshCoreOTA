@@ -12,11 +12,15 @@ class WizardBar extends StatelessWidget implements PreferredSizeWidget {
   final int step;
   final String label;
 
+  /// Height reserved in an app bar's `bottom` for the progress line.
+  static const double height = 46;
+
   static const steps = <String>[
     'Connect',
     'Repeater',
     'Sign in',
     'Firmware',
+    'Compare',
     'Radio',
     'Review',
     'Transfer',
@@ -24,7 +28,7 @@ class WizardBar extends StatelessWidget implements PreferredSizeWidget {
   ];
 
   @override
-  Size get preferredSize => const Size.fromHeight(46);
+  Size get preferredSize => const Size.fromHeight(height);
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +76,42 @@ class WizardBar extends StatelessWidget implements PreferredSizeWidget {
       ),
     );
   }
+}
+
+/// The progress line and a screen's tabs, stacked under the app bar title.
+/// Both live in `AppBar.bottom`, so the progress line sits directly below the
+/// title and back arrow — above the tabs, as it does on every other step.
+class WizardTabBar extends StatelessWidget implements PreferredSizeWidget {
+  const WizardTabBar({
+    super.key,
+    required this.step,
+    required this.label,
+    required this.tabs,
+    this.controller,
+  });
+
+  final int step;
+  final String label;
+  final List<Widget> tabs;
+  final TabController? controller;
+
+  @override
+  Size get preferredSize => const Size.fromHeight(
+        WizardBar.height + kTextTabBarHeight,
+      );
+
+  @override
+  Widget build(BuildContext context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          WizardBar(step: step, label: label),
+          TabBar(
+            controller: controller,
+            indicatorColor: OtaTheme.accent,
+            tabs: tabs,
+          ),
+        ],
+      );
 }
 
 /// A bottom action bar for a wizard step: one primary "next" action plus an

@@ -1,19 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:mesh_protocol/mesh_protocol.dart';
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
-import '../services/firmware_library.dart';
 import '../services/radio_plan.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/wizard.dart';
 import 'transfer_screen.dart';
 
-/// Step 6: a summary of everything chosen, before anything goes on air. The
-/// radio plan is picked on the previous step; this screen only confirms what
-/// will happen. Start boots nothing — the transfer screen stages into the
-/// spare slot and the node only applies anything on the final commit.
+/// Step 7: a summary of everything chosen, before anything goes on air. The
+/// comparison with the node's running image and the radio plan are both done
+/// on earlier steps; this screen only confirms what will happen. Start boots
+/// nothing — the transfer screen stages into the spare slot and the node only
+/// applies anything on the final commit.
 class ReviewScreen extends StatelessWidget {
   const ReviewScreen({super.key});
 
@@ -46,7 +45,7 @@ class ReviewScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const WizardBar(step: 6, label: 'Review'),
+          const WizardBar(step: 7, label: 'Review'),
           const SectionHeader('Companion'),
           InfoRow(
             label: 'Companion',
@@ -105,15 +104,16 @@ class ReviewScreen extends StatelessWidget {
                     TextStyle(color: OtaTheme.warn, fontSize: 12, height: 1.45),
               ),
             ),
-          if (_manualBaseMismatch(app))
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
+          if (app.remoteDiff != null && !imageIsRunning)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
               child: Text(
-                'The delta base you chose is not the image this node reports '
-                'running. The repeater will refuse the update — clear the '
-                'override from the Imported tab.',
-                style:
-                    TextStyle(color: OtaTheme.warn, fontSize: 12, height: 1.45),
+                'Matched against the running image on the repeater: '
+                '${_fmtBytes(app.remoteDiff!.copyBytes)} reused, '
+                '${app.remoteDiff!.queries} comparisons'
+                '${app.remoteDiff!.shiftProbeBatches > 0 ? ', including shifted matches' : ''}.',
+                style: const TextStyle(
+                    color: OtaTheme.textMuted, fontSize: 11, height: 1.4),
               ),
             ),
           if (plan.mode == RadioMode.liveMesh &&
@@ -146,7 +146,10 @@ class ReviewScreen extends StatelessWidget {
       bottomNavigationBar: WizardFooter(
         label: imageIsRunning ? 'Already up to date' : 'Start update',
         icon: Icons.system_update_alt,
-        onPressed: planProblem != null || imageIsRunning
+        onPressed: planProblem != null ||
+                imageIsRunning ||
+                app.remoteDiff == null ||
+                app.comparing
             ? null
             : () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const TransferScreen()),
@@ -167,19 +170,13 @@ class ReviewScreen extends StatelessWidget {
   }
 
   String _transferLabel(AppState app, int imageBytes) {
-    final delta = app.deltaResult;
-    if (delta != null) {
-      final pct = imageBytes > 0
-          ? (delta.literalBytes * 100 / imageBytes).toStringAsFixed(0)
-          : '0';
-      return 'Delta — send ${_fmtBytes(delta.literalBytes)} '
-          '($pct% of the image)';
-    }
-    if (app.baseEntry == null) {
-      return 'Full image — no matching image on this device, '
-          'so everything will be sent';
-    }
-    return 'Full image';
+    final diff = app.remoteDiff;
+    if (diff == null) return 'Comparing with the repeater…';
+    final pct = imageBytes > 0
+        ? (diff.literalBytes * 100 / imageBytes).toStringAsFixed(0)
+        : '0';
+    return '${diff.upToDate ? 'Nothing to send' : 'Changes only'} — '
+        'send ${_fmtBytes(diff.literalBytes)} ($pct% of the image)';
   }
 
   String _radioLabel(AppState app) {
@@ -197,17 +194,4 @@ class ReviewScreen extends StatelessWidget {
         return 'The repeater’s second preset — ${plan.preset?.label ?? '?'}';
     }
   }
-
-  bool _baseMatchesRunning(AppState app, LibraryEntry base) {
-    final info = app.nodeInfo;
-    if (info == null) return false;
-    return base.sha256 == bytesToHex(info.runningSha256);
-  }
-
-  bool _manualBaseMismatch(AppState app) =>
-      !app.forceFullImage &&
-      app.baseIsManual &&
-      app.baseEntry != null &&
-      app.nodeInfo != null &&
-      !_baseMatchesRunning(app, app.baseEntry!);
 }

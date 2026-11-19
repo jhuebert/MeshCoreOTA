@@ -5,7 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ota_core/ota_core.dart';
 
 import 'package:meshcore_ota/app_state.dart';
+import 'package:meshcore_ota/screens/compare_screen.dart';
 import 'package:meshcore_ota/screens/firmware_screen.dart';
+import 'package:meshcore_ota/screens/radio_settings_screen.dart';
 
 import 'support.dart';
 
@@ -56,6 +58,26 @@ void main() {
     expect(find.text('filter-v1.0.0-old'), findsNothing);
   });
 
+  testWidgets('the step bar sits in the app bar above the tabs',
+      (tester) async {
+    _bigView(tester);
+    final app = _app();
+    await tester.pumpWidget(wrap(app, const FirmwareScreen()));
+    await tester.pump();
+
+    final wizard = find.text('Step 4 of 9');
+    expect(wizard, findsOneWidget);
+    expect(find.ancestor(of: wizard, matching: find.byType(AppBar)),
+        findsOneWidget);
+    expect(tester.getRect(wizard).bottom,
+        lessThan(tester.getRect(find.text('GitHub')).top));
+
+    // The standalone library manager has no wizard chrome.
+    await tester.pumpWidget(wrap(app, const FirmwareScreen(updateMode: false)));
+    await tester.pump();
+    expect(find.text('Step 4 of 9'), findsNothing);
+  });
+
   testWidgets('tapping a version selects the image for the node board',
       (tester) async {
     _bigView(tester);
@@ -74,9 +96,243 @@ void main() {
 
     expect(app.selectedAsset?.env, _board);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Review update'),
+      find.widgetWithText(FilledButton, 'Next: compare'),
     );
     expect(review.onPressed, isNotNull);
+  });
+
+  testWidgets('with no detected board a version lets you pick its image',
+      (tester) async {
+    _bigView(tester);
+    final app = _app();
+    // The node answered `ota status` but not OP_INFO, so there is no board to
+    // scope the picker against (the reported symptom).
+    app.nodeInfo = null;
+    final lib = app.library as FakeLibrary;
+    lib.addImage(Uint8List.fromList(List.filled(64, 7)),
+        env: 'RAK_4631_repeater',
+        version: 'v1.1.0-rc5-cd72e1a2',
+        fileName: asset('RAK_4631_repeater', 'v1.1.0-rc5-cd72e1a2').name);
+    app.libraryEntries = await lib.list();
+
+    await tester.pumpWidget(wrap(app, const FirmwareScreen()));
+    await tester.pump();
+
+    expect(find.text('filter-v1.1.0-rc5'), findsOneWidget);
+    // No auto-selection: every release in the track is listed.
+    expect(find.text('filter-v1.0.0-old'), findsOneWidget);
+    expect(find.textContaining('capability check'), findsOneWidget);
+
+    await tester.tap(find.text('filter-v1.1.0-rc5'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pick the image for your repeater'), findsOneWidget);
+    await tester.tap(find.text('RAK_4631_repeater'));
+    await tester.pumpAndSettle();
+
+    expect(app.selectedAsset?.env, 'RAK_4631_repeater');
+    final review = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Next: compare'),
+    );
+    expect(review.onPressed, isNotNull);
+  });
+
+  testWidgets('offline versions are selectable when the board is unknown',
+      (tester) async {
+    _bigView(tester);
+    final app = _app();
+    app.nodeInfo = null;
+    final lib = app.library as FakeLibrary;
+    lib.addImage(Uint8List.fromList(List.filled(64, 1)),
+        env: _board,
+        version: 'v1.1.0-rc5-cd72e1a2',
+        fileName: '$_board-v1.1.0-rc5-cd72e1a2-filter-abc1234.bin');
+    lib.addImage(Uint8List.fromList(List.filled(64, 2)),
+        env: 'RAK_4631_repeater',
+        version: 'v1.1.0-rc5-cd72e1a2',
+        fileName: 'RAK_4631_repeater-v1.1.0-rc5-cd72e1a2-filter-abc1234.bin');
+    app.libraryEntries = await lib.list();
+
+    await tester.pumpWidget(wrap(app, const FirmwareScreen()));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Go offline — never contact GitHub'));
+    await tester.pumpAndSettle();
+
+    // Both boards are saved under the same version; it is still listed.
+    expect(find.text('filter-v1.1.0-rc5'), findsOneWidget);
+    await tester.tap(find.text('filter-v1.1.0-rc5'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pick the image for your repeater'), findsOneWidget);
+    await tester.tap(find.text(_board));
+    await tester.pumpAndSettle();
+
+    expect(app.selectedLibraryEntry?.env, _board);
+    final review = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Next: compare'),
+    );
+    expect(review.onPressed, isNotNull);
+  });
+
+  testWidgets('a generic bin asks for a board when the handshake is silent',
+      (tester) async {
+    _bigView(tester);
+    final app = _app();
+    final lib = app.library as FakeLibrary;
+    final running = lib.addImage(Uint8List.fromList(List.filled(64, 9)),
+        env: _board,
+        version: 'v1.1.0-rc5-cd72e1a2',
+        fileName: '$_board-v1.1.0-rc5-cd72e1a2-filter-abc1234.bin');
+    app.nodeStatus = nodeStatus(shaPrefix: running.sha256.substring(0, 16));
+    app.nodeInfo = null; // no OP_INFO answer on sign-in
+    lib.addImage(Uint8List.fromList(List.filled(64, 5)),
+        env: 'custom',
+        version: 'custom',
+        fileName: 'firmware.bin',
+        origin: 'import');
+    app.libraryEntries = await lib.list();
+
+    await tester.pumpWidget(wrap(app, const FirmwareScreen()));
+    await tester.pump();
+    await tester.tap(find.text('Imported'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('firmware.bin'));
+    await tester.pumpAndSettle();
+
+    expect(app.selectedImage, isNotNull);
+    // No local hash lookup can name a board: the operator must choose one.
+    expect(app.needsBoardForImage, isTrue);
+    expect(find.text('Choose board'), findsOneWidget);
+    var next = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Next: compare'),
+    );
+    expect(next.onPressed, isNull);
+
+    await tester.tap(find.text('Choose board'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(_board));
+    await tester.pumpAndSettle();
+    next = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Next: compare'),
+    );
+    expect(next.onPressed, isNotNull);
+  });
+
+  testWidgets('a generic bin needs no local base, only a board',
+      (tester) async {
+    _bigView(tester);
+    final app = _app();
+    final lib = app.library as FakeLibrary;
+    lib.addImage(Uint8List.fromList(List.filled(64, 9)),
+        env: 'custom',
+        version: 'custom',
+        fileName: 'firmware.bin',
+        origin: 'import');
+    app.nodeStatus = nodeStatus(shaPrefix: '0123456789abcdef');
+    app.nodeInfo = null;
+    app.libraryEntries = await lib.list();
+
+    await tester.pumpWidget(wrap(app, const FirmwareScreen()));
+    await tester.pump();
+    await tester.tap(find.text('Imported'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('firmware.bin'));
+    await tester.pumpAndSettle();
+
+    // The node supplies the running bytes, so no local base is looked up.
+    expect(app.remoteDiff, isNull);
+    expect(app.needsBoardForImage, isTrue);
+    expect(app.selectedBoardOverride, isNull);
+  });
+
+  testWidgets('a generic bin with no board clues asks for one and proceeds',
+      (tester) async {
+    _bigView(tester);
+    final app = _app();
+    final lib = app.library as FakeLibrary;
+    app.nodeStatus = nodeStatus(shaPrefix: '0123456789abcdef');
+    app.nodeInfo = null;
+    lib.addImage(Uint8List.fromList(List.filled(64, 5)),
+        env: 'custom',
+        version: 'custom',
+        fileName: 'firmware.bin',
+        origin: 'import');
+    app.libraryEntries = await lib.list();
+
+    await tester.pumpWidget(wrap(app, const FirmwareScreen()));
+    await tester.pump();
+    await tester.tap(find.text('Imported'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('firmware.bin'));
+    await tester.pumpAndSettle();
+
+    // The image is selected; the missing board is an action, not a dead end.
+    expect(app.selectedImage, isNotNull);
+    expect(app.needsBoardForImage, isTrue);
+    expect(find.textContaining('Choose the board this image'), findsOneWidget);
+    final blocked = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Next: compare'),
+    );
+    expect(blocked.onPressed, isNull);
+
+    await tester.tap(find.text('Choose board'));
+    await tester.pumpAndSettle();
+    expect(find.text('Which board is this image for?'), findsOneWidget);
+    await tester.tap(find.text(_board));
+    await tester.pumpAndSettle();
+
+    expect(app.selectedEnvironment, _board);
+    expect(app.needsBoardForImage, isFalse);
+    final review = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Next: compare'),
+    );
+    expect(review.onPressed, isNotNull);
+  });
+
+  testWidgets('a custom build still hides saved versions offline',
+      (tester) async {
+    _bigView(tester);
+    final app = _app();
+    // The node answered the handshake, but its build is not in the catalog —
+    // there is genuinely no image the app could match to it.
+    app.nodeInfo = nodeInfo(targetId: 0x12345678);
+    final lib = app.library as FakeLibrary;
+    lib.addImage(Uint8List.fromList(List.filled(64, 1)),
+        env: _board,
+        version: 'v1.1.0-rc5-cd72e1a2',
+        fileName: '$_board-v1.1.0-rc5-cd72e1a2-filter-abc1234.bin');
+    app.libraryEntries = await lib.list();
+
+    await tester.pumpWidget(wrap(app, const FirmwareScreen()));
+    await tester.pump();
+    await tester.tap(find.byTooltip('Go offline — never contact GitHub'));
+    await tester.pumpAndSettle();
+
+    expect(find.text("This node's board is not recognized"), findsOneWidget);
+    expect(find.text('filter-v1.1.0-rc5'), findsNothing);
+  });
+
+  testWidgets('continuing from firmware opens the comparison step',
+      (tester) async {
+    _bigView(tester);
+    final app = _app();
+    final lib = app.library as FakeLibrary;
+    lib.addImage(Uint8List.fromList(List.filled(64, 3)),
+        env: _board,
+        version: 'v1.1.0-rc5-cd72e1a2',
+        fileName: '$_board-v1.1.0-rc5-cd72e1a2-filter-abc1234.bin');
+    app.libraryEntries = await lib.list();
+
+    await tester.pumpWidget(wrap(app, const FirmwareScreen()));
+    await tester.pump();
+    await tester.tap(find.text('filter-v1.1.0-rc5'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Next: compare'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CompareScreen), findsOneWidget);
+    expect(find.byType(RadioSettingsScreen), findsNothing);
   });
 
   testWidgets('stable and dev are separate, newest-first tabs', (tester) async {
@@ -172,7 +428,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(app.selectedLibraryEntry?.env, _board);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Review update'),
+      find.widgetWithText(FilledButton, 'Next: compare'),
     );
     expect(review.onPressed, isNotNull);
   });
@@ -195,7 +451,7 @@ void main() {
 
     expect(app.selectedImage, isNotNull);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Review update'),
+      find.widgetWithText(FilledButton, 'Next: compare'),
     );
     expect(review.onPressed, isNotNull);
   });

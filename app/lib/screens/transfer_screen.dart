@@ -12,7 +12,7 @@ import '../widgets/common.dart';
 import '../widgets/wizard.dart';
 import 'verify_screen.dart';
 
-/// Step 7: the transfer itself. The node re-verifies the image when the
+/// Step 8: the transfer itself. The node re-verifies the image when the
 /// stream ends. Nothing boots until the operator commits.
 class TransferScreen extends StatefulWidget {
   const TransferScreen({super.key});
@@ -80,7 +80,7 @@ class _TransferScreenState extends State<TransferScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const WizardBar(step: 7, label: 'Transfer'),
+          const WizardBar(step: 8, label: 'Transfer'),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Text(

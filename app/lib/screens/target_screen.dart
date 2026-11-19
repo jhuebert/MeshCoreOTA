@@ -39,25 +39,19 @@ class _TargetScreenState extends State<TargetScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Pick a repeater'),
-          bottom: const TabBar(
-            indicatorColor: OtaTheme.accent,
+          bottom: const WizardTabBar(
+            step: 2,
+            label: 'Pick the repeater',
             tabs: [
               Tab(text: 'Repeaters'),
               Tab(text: 'Public key'),
             ],
           ),
         ),
-        body: Column(
+        body: TabBarView(
           children: [
-            const WizardBar(step: 2, label: 'Pick the repeater'),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _buildRepeaterTab(app, selected),
-                  _buildManualTab(app),
-                ],
-              ),
-            ),
+            _buildRepeaterTab(app, selected),
+            _buildManualTab(app),
           ],
         ),
         bottomNavigationBar: WizardFooter(

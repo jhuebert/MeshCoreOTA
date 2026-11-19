@@ -48,7 +48,7 @@ void main() {
     expect(find.text('The repeater\'s second preset'), findsOneWidget);
     expect(find.text('PRIVATE PRESET'), findsOneWidget);
     expect(find.text('Keep the preset for (minutes)'), findsOneWidget);
-    expect(find.text('Step 5 of 8'), findsOneWidget);
+    expect(find.text('Step 6 of 9'), findsOneWidget);
   });
 
   testWidgets('the duration input defaults to the recommended time',
@@ -134,7 +134,7 @@ void main() {
     expect(app.radioPlan.preset!.frequencyMhz, 914);
     expect(app.radioPlan.durationMinutes, 25);
     // The next wizard step is the review summary.
-    expect(find.text('Step 6 of 8'), findsOneWidget);
+    expect(find.text('Step 7 of 9'), findsOneWidget);
   });
 
   testWidgets('switching to live mesh hides the preset and shows the path',
@@ -179,7 +179,7 @@ void main() {
     await tester.pumpWidget(wrap(app, const RadioSettingsScreen()));
     await tester.pump();
 
-    expect(find.text('Step 5 of 8'), findsOneWidget);
+    expect(find.text('Step 6 of 9'), findsOneWidget);
     expect(find.text('Direct path override (optional)'), findsOneWidget);
     await tester.enterText(
         find.widgetWithText(TextField, 'Direct path override (optional)'),

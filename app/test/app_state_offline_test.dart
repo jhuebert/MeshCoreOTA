@@ -43,16 +43,7 @@ void main() {
     );
     app.radio2Enabled = true;
     app.manualRoutePath = 'c0ff';
-    app.baseOverride = LibraryEntry(
-      id: 'b' * 64,
-      fileName: 'base.bin',
-      env: _board,
-      version: 'v1',
-      origin: 'import',
-      size: 1,
-      sha256: 'b' * 64,
-      added: DateTime(2026),
-    );
+    app.remoteDiff = remoteDiff();
 
     app.selectTarget(contact('other'));
 
@@ -61,7 +52,7 @@ void main() {
     expect(app.nodeInfo, isNull);
     expect(app.nodePreset, isNull);
     expect(app.radio2Enabled, isNull);
-    expect(app.baseOverride, isNull);
+    expect(app.remoteDiff, isNull);
     expect(app.manualRoutePath, isEmpty);
   });
 
@@ -215,11 +206,12 @@ void main() {
     expect(app.radioPlan.mode, RadioMode.radio2);
   });
 
-  test('an imported .bin is auto-matched as the delta base by hash', () async {
+  test('selecting an update needs no local copy of the running image',
+      () async {
     final app = AppState();
     final lib = FakeLibrary();
     final running = Uint8List.fromList(List.filled(64, 9));
-    final imported = lib.addImage(running,
+    lib.addImage(running,
         env: 'custom',
         version: 'custom',
         fileName: 'my-build.bin',
@@ -237,32 +229,32 @@ void main() {
 
     await app.selectLibraryEntryForUpdate(update);
 
-    expect(app.autoBaseEntry?.id, imported.id);
+    // The node is the diff oracle now — no local copy of the running image is
+    // looked up, and a previous comparison cannot leak into this selection.
+    expect(app.selectedLibraryEntry?.id, update.id);
+    expect(app.remoteDiff, isNull);
   });
 
-  test('a downloaded image is auto-matched as the delta base by hash',
-      () async {
+  test('selecting another image drops the previous comparison', () async {
     final app = AppState();
     final lib = FakeLibrary();
-    final running = Uint8List.fromList(List.filled(64, 6));
-    final downloaded = lib.addImage(running,
-        env: _board,
-        version: 'v1.1.0-rc4',
-        fileName: '$_board-v1.1.0-rc4-abc1234.bin');
-    final updateImage = Uint8List.fromList(List.filled(64, 4));
-    final update = lib.addImage(updateImage,
+    final first = lib.addImage(Uint8List.fromList(List.filled(64, 4)),
         env: _board,
         version: 'v1.1.0-rc5',
         fileName: '$_board-v1.1.0-rc5-abc1234.bin');
+    final second = lib.addImage(Uint8List.fromList(List.filled(64, 5)),
+        env: _board,
+        version: 'v1.1.0-rc6',
+        fileName: '$_board-v1.1.0-rc6-abc1234.bin');
     app.library = lib;
     app.libraryEntries = await lib.list();
-    app.nodeStatus = nodeStatus();
-    app.nodeInfo = nodeInfo(
-        runningSha256: Uint8List.fromList(sha256.convert(running).bytes));
+    app.remoteDiff = remoteDiff();
 
-    await app.selectLibraryEntryForUpdate(update);
+    await app.selectLibraryEntryForUpdate(second);
 
-    expect(app.autoBaseEntry?.id, downloaded.id);
+    expect(app.selectedLibraryEntry?.id, second.id);
+    expect(app.remoteDiff, isNull);
+    expect(first.id, isNot(second.id));
   });
 
   test('downloaded versions exclude imported bins', () async {
@@ -284,67 +276,43 @@ void main() {
     expect(app.importedEntries.map((e) => e.fileName), ['mine.bin']);
   });
 
-  test('deleting the selected image and delta base clears both', () async {
+  test('deleting the selected image clears the comparison', () async {
     final app = AppState();
     final lib = FakeLibrary();
-    final running = Uint8List.fromList(List.filled(64, 9));
-    final base = lib.addImage(running,
-        env: 'custom',
-        version: 'custom',
-        fileName: 'running.bin',
-        origin: 'import');
-    lib.addImage(Uint8List.fromList(List.filled(64, 4)),
+    final update = lib.addImage(Uint8List.fromList(List.filled(64, 4)),
         env: _board,
         version: 'v1.1.0-rc5',
         fileName: '$_board-v1.1.0-rc5-abc1234.bin');
     app.library = lib;
     app.libraryEntries = await lib.list();
-    app.nodeStatus = nodeStatus();
-    app.nodeInfo = nodeInfo(
-        runningSha256: Uint8List.fromList(sha256.convert(running).bytes));
-
-    final update = app.libraryEntries.firstWhere((e) => e.version != 'custom');
     await app.selectLibraryEntryForUpdate(update);
-    expect(app.autoBaseEntry?.id, base.id);
-    await app.setBaseOverride(base);
-    expect(app.baseOverride?.id, base.id);
+    app.remoteDiff = remoteDiff();
 
-    await app.deleteLibraryEntries([base, update]);
+    await app.deleteLibraryEntries([update]);
 
     expect(app.libraryEntries, isEmpty);
-    expect(app.baseOverride, isNull);
     expect(app.selectedLibraryEntry, isNull);
     expect(app.selectedImage, isNull);
-    expect(app.autoBaseEntry, isNull);
+    expect(app.remoteDiff, isNull);
   });
 
-  test('setFullImage forces the full image even when a base is matched',
+  test('clearComparison drops a stale plan without touching the image',
       () async {
     final app = AppState();
     final lib = FakeLibrary();
-    final running = Uint8List.fromList(List.filled(64, 9));
-    lib.addImage(running,
+    final update = lib.addImage(Uint8List.fromList(List.filled(64, 4)),
         env: _board,
         version: 'v1.1.0-rc5',
         fileName: '$_board-v1.1.0-rc5-abc1234.bin');
     app.library = lib;
     app.libraryEntries = await lib.list();
-    app.nodeStatus = nodeStatus();
-    app.nodeInfo = nodeInfo(
-        runningSha256: Uint8List.fromList(sha256.convert(running).bytes));
-    final update = app.libraryEntries.single;
     await app.selectLibraryEntryForUpdate(update);
-    expect(app.autoBaseEntry?.id, update.id);
-    expect(app.baseEntry?.id, update.id);
+    app.remoteDiff = remoteDiff();
 
-    await app.setFullImage(true);
-    expect(app.forceFullImage, isTrue);
-    expect(app.baseEntry, isNull);
-    expect(app.baseIsManual, isFalse);
+    app.clearComparison();
 
-    await app.setFullImage(false);
-    expect(app.forceFullImage, isFalse);
-    expect(app.baseEntry?.id, update.id);
+    expect(app.remoteDiff, isNull);
+    expect(app.selectedImage, isNotNull);
   });
 
   test('downloadAssetToLibrary refuses outside a connection', () async {

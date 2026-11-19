@@ -128,24 +128,40 @@ class AppState extends ChangeNotifier {
   /// A library entry chosen for install (offline mode, or a custom `.bin`).
   LibraryEntry? selectedLibraryEntry;
 
+  /// Board the operator assigned to an image whose file name has none. The
+  /// node needs its build id in the OTA start op; this is how we get one when
+  /// the handshake did not answer. Never persisted — it belongs to this
+  /// selection only.
+  String? selectedBoardOverride;
+
+  /// True when an image is selected but neither the file name nor the node
+  /// gave us a board, so the operator still has to choose one.
+  bool needsBoardForImage = false;
+
   Uint8List? _selectedImage;
   Uint8List? get selectedImage => _selectedImage;
   bool imageLoading = false;
   String? imageError;
 
-  /// The matched delta base (the image the node is running). Null → full
-  /// image. [autoBaseEntry] is the library match; [baseOverride] is the
-  /// operator's explicit choice (custom builds, or "the file the node has").
-  LibraryEntry? autoBaseEntry;
-  LibraryEntry? baseOverride;
+  /// The diff computed by hashing the node's running image (step 5). No local
+  /// copy of the old firmware is needed: the node is the oracle for its bytes.
+  RemoteDiffResult? remoteDiff;
+  RemoteDiffProgress? compareProgress;
+  bool comparing = false;
+  String? compareError;
 
-  /// The operator asked for a full image even though a base was matched.
-  bool forceFullImage = false;
+  /// The connected node must implement OP_BLOCK_HASH for a remote diff. The
+  /// app does not carry a legacy local-delta path.
+  bool get blockHashSupported =>
+      nodeInfo != null && (nodeInfo!.features & otaFeatBlockHash) != 0;
 
-  LibraryEntry? get baseEntry =>
-      forceFullImage ? null : (baseOverride ?? autoBaseEntry);
-  bool get baseIsManual => !forceFullImage && baseOverride != null;
-  DeltaResult? deltaResult;
+  /// Drop a comparison that belongs to another node or another image.
+  void clearComparison() {
+    remoteDiff = null;
+    compareProgress = null;
+    compareError = null;
+    comparing = false;
+  }
 
   // ---------------- radio ----------------
 
@@ -383,19 +399,15 @@ class AppState extends ChangeNotifier {
   }
 
   /// Everything that described the previously checked node. Changing target
-  /// must drop it: a board or delta base from another node is worse than none.
+  /// must drop it: a diff against another node's running image is worse than
+  /// none.
   void _resetNodeFacts() {
     nodeStatus = null;
     nodeInfo = null;
     nodePreset = null;
     radio2Enabled = null;
     radio2Status = null;
-    baseOverride = null;
-    autoBaseEntry = null;
-    forceFullImage = false;
-    // The delta was computed against the previous node's running image, so it
-    // is not a plan for this one: drop it until a base is matched again.
-    deltaResult = null;
+    clearComparison();
     _radioPresetAuto = true;
     _radioDurationAuto = true;
     manualRoutePath = '';
@@ -447,16 +459,8 @@ class AppState extends ChangeNotifier {
                     ? false
                     : null);
         _prefillRadioPlan();
-        // A new node's running image is a different delta base; re-match it
-        // (the old node's base would silently fail the SHA gate). A library
-        // problem must not turn a successful probe into a failure.
-        if (_selectedImage != null) {
-          try {
-            baseOverride = null;
-            await _matchBase();
-            await _refreshRadioDuration();
-          } catch (_) {}
-        }
+        // A new node needs a fresh comparison against its own running image.
+        if (_selectedImage != null) clearComparison();
       }
     } catch (e) {
       nodeStatus = null;
@@ -582,9 +586,10 @@ class AppState extends ChangeNotifier {
   Future<void> selectAsset(FirmwareAsset asset) async {
     selectedAsset = asset;
     selectedLibraryEntry = null;
+    selectedBoardOverride = null;
+    needsBoardForImage = false;
     _selectedImage = null;
-    deltaResult = null;
-    forceFullImage = false;
+    clearComparison();
     imageLoading = true;
     imageError = null;
     notifyListeners();
@@ -596,7 +601,6 @@ class AppState extends ChangeNotifier {
         final lib = await _openLibrary();
         _selectedImage = await lib.read(cached);
         selectedLibraryEntry = cached;
-        await _matchBase();
         await _refreshRadioDuration();
         return;
       }
@@ -614,7 +618,6 @@ class AppState extends ChangeNotifier {
         fileName: asset.name,
       );
       selectedLibraryEntry = entry;
-      await _matchBase();
       await _refreshRadioDuration();
     } catch (e) {
       imageError = '$e';
@@ -765,15 +768,13 @@ class AppState extends ChangeNotifier {
         removed.contains(selectedLibraryEntry!.id)) {
       selectedLibraryEntry = null;
       selectedAsset = null;
+      selectedBoardOverride = null;
+      needsBoardForImage = false;
       _selectedImage = null;
-      deltaResult = null;
+      clearComparison();
       imageError = null;
     }
-    if (baseOverride != null && removed.contains(baseOverride!.id)) {
-      baseOverride = null;
-    }
     await refreshLibrary();
-    await _matchBase();
     await _refreshRadioDuration();
     notifyListeners();
   }
@@ -819,16 +820,24 @@ class AppState extends ChangeNotifier {
   Future<void> selectLibraryEntryForUpdate(LibraryEntry entry) async {
     selectedLibraryEntry = entry;
     selectedAsset = null;
+    selectedBoardOverride = null;
+    needsBoardForImage = false;
     _selectedImage = null;
-    deltaResult = null;
-    forceFullImage = false;
+    clearComparison();
     imageLoading = true;
     imageError = null;
     notifyListeners();
     try {
       final lib = await _openLibrary();
       _selectedImage = await lib.read(entry);
-      await _matchBase();
+      // A renamed `.bin` has no board in its name. The node's own handshake is
+      // the only authority; retry it with a longer timeout, then ask the
+      // operator rather than guessing from a file name or a hash.
+      if (nodeInfo == null &&
+          (entry.env == customEnvironment || entry.env == 'unknown')) {
+        if (!await retryNodeInfo()) needsBoardForImage = true;
+        notifyListeners();
+      }
       await _refreshRadioDuration();
     } catch (e) {
       imageError = '$e';
@@ -839,77 +848,84 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Make [entry] the explicit delta base. Null restores the automatic match
-  /// (by the node's running-image hash, then the version stamp).
-  Future<void> setBaseOverride(LibraryEntry? entry) async {
-    baseOverride = entry;
-    forceFullImage = false;
-    await _recomputeDelta();
-    await _refreshRadioDuration();
-    notifyListeners();
-  }
-
-  /// Send the whole image even when a delta base was matched.
-  Future<void> setFullImage(bool value) async {
-    forceFullImage = value;
-    if (value) baseOverride = null;
-    await _recomputeDelta();
-    await _refreshRadioDuration();
-    notifyListeners();
-  }
-
-  /// Compute the delta against the matched base, if any.
-  Future<void> _matchBase() async {
-    final status = nodeStatus;
+  /// Step 5's work: ask the node to hash ranges of its running image and
+  /// derive the op stream from the answers. Read-only — nothing is staged and
+  /// the radio is untouched until the operator starts the update.
+  Future<void> planComparison() async {
+    final t = target;
+    final link = _link;
     final image = _selectedImage;
-    autoBaseEntry = null;
-    if (status == null || image == null) {
-      await _recomputeDelta();
-      return;
-    }
-    final lib = await _openLibrary();
-    final env = selectedEnvironment;
-    // The handshake's full SHA-256 identifies the running bytes exactly, so
-    // prefer it: two builds of one commit can share a version stamp and still
-    // differ. The stamp stays as the fallback for pre-handshake firmware.
-    final info = nodeInfo;
-    autoBaseEntry =
-        info == null ? null : await lib.findBaseForSha(info.runningSha256);
-    if (autoBaseEntry == null && env != null) {
-      autoBaseEntry =
-          await lib.findBaseFor(env: env, runningVersion: status.running);
-    }
-    await _recomputeDelta();
-  }
-
-  Future<void> _recomputeDelta() async {
-    deltaResult = null;
-    final image = _selectedImage;
-    final base = baseEntry;
-    if (image == null) {
+    if (t == null || link == null || image == null) return;
+    if (!blockHashSupported) {
+      compareError = 'This repeater does not support comparing its running '
+          'image. Update its firmware over USB first.';
       notifyListeners();
       return;
     }
-    if (base == null) {
-      notifyListeners();
-      return;
-    }
+    comparing = true;
+    compareError = null;
+    compareProgress = null;
+    remoteDiff = null;
+    notifyListeners();
+    final client = BlockHashClient(
+        link: link, contact: t, timeout: const Duration(seconds: 10));
     try {
-      final lib = await _openLibrary();
-      final baseBytes = await lib.read(base);
-      deltaResult = computeDelta(baseBytes, image);
-    } catch (_) {
-      // An unreadable base is not a base: fall back to a full image.
-      if (baseOverride != null) baseOverride = null;
-      autoBaseEntry = null;
-      deltaResult = null;
+      remoteDiff = await computeRemoteDiff(
+        client: client,
+        image: image,
+        onProgress: (p) {
+          compareProgress = p;
+          notifyListeners();
+        },
+        shouldCancel: () => cancelRequested,
+      );
+      await _refreshRadioDuration();
+    } catch (e) {
+      compareError = '$e';
+      remoteDiff = null;
+    } finally {
+      comparing = false;
+      notifyListeners();
     }
-    notifyListeners();
   }
 
-  /// Environment of the current selection (asset env or library env).
-  String? get selectedEnvironment =>
-      selectedAsset?.env ?? selectedLibraryEntry?.env;
+  /// Re-run step 5 (e.g. after a failed comparison or a changed image).
+  Future<void> retryComparison() async {
+    cancelRequested = false;
+    await planComparison();
+  }
+
+  /// Environment of the current selection (asset env or library env, with a
+  /// board chosen by the operator as the fallback for a custom `.bin`).
+  String? get selectedEnvironment {
+    final asset = selectedAsset;
+    if (asset != null) return asset.env;
+    final entry = selectedLibraryEntry;
+    if (entry == null) return null;
+    return selectedBoardOverride ?? entry.env;
+  }
+
+  /// Give the handshake another, longer chance before asking the operator to
+  /// name the board. Sign-in's 2 s probe is often too short over a mesh, and
+  /// the node's own target id is better than any guess from a file name.
+  Future<bool> retryNodeInfo() async {
+    final t = target;
+    final flow = _flow;
+    if (t == null || flow == null) return false;
+    final info = await flow.tryNodeInfo(t, timeout: const Duration(seconds: 8));
+    if (info == null) return false;
+    nodeInfo = info;
+    notifyListeners();
+    return true;
+  }
+
+  /// Use [env] as the board of the selected image for this session.
+  Future<void> setSelectedBoard(String env) async {
+    selectedBoardOverride = env;
+    needsBoardForImage = false;
+    notifyListeners();
+    await _refreshRadioDuration();
+  }
 
   /// Version of the current selection, full stamp.
   String? get selectedVersion =>
@@ -996,23 +1012,13 @@ class AppState extends ChangeNotifier {
     _refreshRadioDuration();
   }
 
-  /// The selected image is byte-identical to the one the node runs: the
-  /// library is content-addressed (the entry id is the SHA-256), so the
-  /// base matched to the running image resolving to this very entry means
-  /// the files are the same image. The delta still emits a 32-byte literal
-  /// from the matcher's edge handling, so equality — not the op count — is
-  /// the test. Sending the full image is allowed deliberately, so an
-  /// explicit force overrides.
-  bool get selectedImageIsRunning {
-    if (forceFullImage) return false;
-    final image = selectedLibraryEntry;
-    final base = autoBaseEntry;
-    return image != null && base != null && image.id == base.id;
-  }
+  /// The whole-image hash from step 5, not a library match, decides equality.
+  bool get selectedImageIsRunning => remoteDiff?.upToDate ?? false;
 
-  /// Estimated transfer size: literal bytes (delta) or full image.
+  /// Estimated transfer size: literal bytes from the remote diff, or the full
+  /// image before step 5 has run.
   int? get estimatedTransferBytes =>
-      deltaResult?.literalBytes ?? _selectedImage?.length;
+      remoteDiff?.literalBytes ?? _selectedImage?.length;
 
   /// A compact label for the chosen image's transfer size.
   String estimateLabel() {
@@ -1021,7 +1027,7 @@ class AppState extends ChangeNotifier {
     final text = bytes >= 1024 * 1024
         ? '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB'
         : '${(bytes / 1024).toStringAsFixed(0)} KB';
-    return deltaResult != null ? 'delta ~$text' : 'full $text';
+    return remoteDiff != null ? 'remote diff ~$text' : 'full $text';
   }
 
   /// Wall time per op on a stock companion, in seconds.
@@ -1102,6 +1108,13 @@ class AppState extends ChangeNotifier {
     if (planProblem != null) {
       throw UpdateFlowException('radio settings: $planProblem');
     }
+    final diff = remoteDiff;
+    if (diff == null) {
+      throw UpdateFlowException('compare the firmware with the node first');
+    }
+    if (diff.upToDate) {
+      throw UpdateFlowException('this node already runs that image');
+    }
     // The node's own target id is the authority when the handshake answered;
     // a custom build has no catalog environment to derive one from.
     final env = selectedEnvironment;
@@ -1129,23 +1142,11 @@ class AppState extends ChangeNotifier {
       log_(
           'armed: size=${stage.size} token=${stage.token.toRadixString(16).padLeft(8, '0')}');
 
-      // Compute the op stream from the base this update will actually use, so
-      // a stale plan (a base matched against another node's running image)
-      // can never be sent.
-      List<DeltaOp> ops;
-      final base = baseEntry;
-      if (base != null) {
-        final lib = await _openLibrary();
-        final baseBytes = await lib.read(base);
-        final delta = computeDelta(baseBytes, image);
-        deltaResult = delta;
-        ops = delta.ops;
-        log_(
-            'delta: ${delta.copyBytes} bytes reused, ${delta.literalBytes} to send');
-      } else {
-        ops = computeDelta(Uint8List(0), image).ops;
-        log_('full image: ${image.length} bytes');
-      }
+      // The op stream comes from step 5's hash comparison against this node's
+      // running image. Nothing from a local library can be stale here.
+      final ops = diff.ops;
+      log_('remote diff: ${diff.copyBytes} bytes reused, '
+          '${diff.literalBytes} to send (${diff.queries} queries)');
 
       final sha = sha256List(image);
       updatePhase = UpdatePhase.transferring;

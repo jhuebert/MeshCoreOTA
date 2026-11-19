@@ -56,11 +56,13 @@ class UpdateFlow {
 
   /// Best-effort `OP_INFO` handshake. Returns null when the node does not
   /// answer (e.g. firmware older than the handshake) — the caller treats
-  /// null as "unknown, proceed".
-  Future<OtaNodeInfo?> tryNodeInfo(Contact target) async {
+  /// null as "unknown, proceed". Sign-in uses the short default so a node
+  /// without the handshake cannot stall the wizard; callers that genuinely
+  /// need the target id can wait longer with [timeout].
+  Future<OtaNodeInfo?> tryNodeInfo(Contact target,
+      {Duration timeout = const Duration(seconds: 2)}) async {
     try {
-      return await queryNodeInfo(link, target,
-          timeout: const Duration(seconds: 2));
+      return await queryNodeInfo(link, target, timeout: timeout);
     } catch (_) {
       return null;
     }

@@ -56,9 +56,35 @@ OtaNodeInfo nodeInfo({
       targetId: targetId,
       slotSize: slotSize,
       maxLiteral: 173,
-      features: otaFeatDelta | otaFeatApply,
+      features: otaFeatDelta | otaFeatApply | otaFeatBlockHash,
       runningVersion: runningVersion,
       runningSha256: runningSha256 ?? Uint8List(32),
+    );
+
+/// A completed step-5 comparison. Tests set this instead of a local delta
+/// base: the app no longer needs the old image on the device.
+RemoteDiffResult remoteDiff({
+  List<DeltaOp>? ops,
+  int literalBytes = 64,
+  int copyBytes = 960,
+  int runningSize = 1024,
+  int queries = 4,
+  int shiftProbeBatches = 0,
+  bool upToDate = false,
+}) =>
+    RemoteDiffResult(
+      ops: ops ?? [LiteralOp(Uint8List(literalBytes))],
+      literalBytes: literalBytes,
+      copyBytes: copyBytes,
+      node: RunningImageInfo(
+        size: runningSize,
+        segments: const [],
+        sha256: Uint8List(32),
+      ),
+      queries: queries,
+      rangesHashed: queries * 2,
+      shiftProbeBatches: shiftProbeBatches,
+      upToDate: upToDate,
     );
 
 FirmwareAsset asset(String env, String version,
