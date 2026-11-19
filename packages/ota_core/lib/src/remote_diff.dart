@@ -114,7 +114,7 @@ bool _sameHash(List<int> a, List<int> b) {
 Future<RemoteDiffResult> computeRemoteDiff({
   required BlockHashClient client,
   required Uint8List image,
-  int blockSize = 512,
+  int blockSize = 256,
   int searchWindow = 131072,
   void Function(RemoteDiffProgress)? onProgress,
   bool Function()? shouldCancel,

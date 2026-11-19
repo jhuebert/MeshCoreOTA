@@ -134,8 +134,8 @@ repeater's firmware and radio settings are untouched until you press **Start
 update** at Review.
 
 The block size is a trade-off: smaller blocks find more reusable bytes but
-need more exchanges. The default (512 bytes) is a good middle ground on a
-multi-hop mesh; on a fast zero-hop link smaller blocks can save airtime.
+need more exchanges. The default is 256 bytes, tuned for a fast zero-hop link; on a
+multi-hop mesh 512–1024 bytes costs fewer exchanges and may finish sooner.
 
 ### 6. Radio settings
 

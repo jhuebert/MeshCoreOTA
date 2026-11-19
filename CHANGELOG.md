@@ -17,8 +17,8 @@ All notable changes to MeshCoreOTA are documented here. The format follows
   occurs. Matching blocks become `OP_COPY`s from the exact offset, changed
   blocks become literals. Because matches are located by content, not by
   offset, an inserted or removed byte no longer costs the rest of the image:
-  on real `filter-v1.18.0-r2/r3/r4` binaries the remote diff sends about 73% of
-  an image in ~240 exchanges (512-byte blocks), versus 100% for a full image.
+  on real `filter-v1.18.0-r2/r3/r4` binaries the remote diff sends about 69% of
+  an image in ~470 exchanges (256-byte blocks), versus 100% for a full image.
   You no longer need the previous firmware on your device, and an identical
   image is detected in one exchange with nothing sent. The old local
   rolling-hash matcher, delta-base matching, "Use as delta base" and the
