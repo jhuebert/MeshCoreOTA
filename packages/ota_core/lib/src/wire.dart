@@ -30,6 +30,13 @@ const otaLzMaxData = 120;
 const otaLzStart = 0x01;
 const otaLzEnd = 0x02;
 
+/// Bits 2..4 of `OP_LITERAL_Z.flags` carry a codec id; 0 is raw DEFLATE.
+const otaLzCodecShift = 2;
+const otaLzCodecMask = 0x1C;
+
+/// Bit in `OP_STATUS_REPORT.codecs`: the node inflates raw DEFLATE streams.
+const otaCodecDeflate = 0x01;
+
 /// `magic(2) + op(1) + seq(2) + body + crc16(2)` for op packets; ASK/REPORT/
 /// NOP carry no seq, hence the minimum payload the node accepts.
 const otaFrameOverhead = 2 + 1 + 2 + 2;

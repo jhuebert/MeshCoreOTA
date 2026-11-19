@@ -22,13 +22,13 @@ Uint8List _padded32(List<int> bytes) {
   return out;
 }
 
-Uint8List _cannedInfoReport() {
+Uint8List _cannedInfoReport({int features = otaFeatDelta | otaFeatApply}) {
   final body = <int>[
     otaWireVersion,
     ..._le32(0xDEADBEEF),
     ..._le32(0x200000),
     ..._le16(132),
-    ..._le32(otaFeatDelta | otaFeatApply),
+    ..._le32(features),
     ..._padded32('XiaoS3_WIO_repeater-ota'.codeUnits),
     ...List<int>.generate(32, (i) => i + 0xA0),
   ];
@@ -87,6 +87,22 @@ void main() {
     expect(info.supportsApply, isTrue);
     expect(info.runningVersion, 'XiaoS3_WIO_repeater-ota');
     expect(info.runningSha256, List<int>.generate(32, (i) => i + 0xA0));
+  });
+
+  test('feature getters reflect every advertised capability', () {
+    final info = parseInfoReport(_cannedInfoReport(
+        features: otaFeatDelta |
+            otaFeatApply |
+            otaFeatBlockHash |
+            otaFeatStagedHash |
+            otaFeatStatus |
+            otaFeatPing))!;
+    expect(info.supportsDelta, isTrue);
+    expect(info.supportsApply, isTrue);
+    expect(info.supportsBlockHash, isTrue);
+    expect(info.supportsStagedHash, isTrue);
+    expect(info.supportsStatus, isTrue);
+    expect(info.supportsPing, isTrue);
   });
 
   test('parseInfoReport tolerates crypto-layer zero padding', () {

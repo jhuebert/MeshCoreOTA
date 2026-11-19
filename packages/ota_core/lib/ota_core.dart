@@ -6,6 +6,7 @@ export 'src/wire.dart';
 export 'src/ota_status.dart';
 export 'src/delta.dart';
 export 'src/node_info.dart';
+export 'src/node_status.dart';
 export 'src/block_hash.dart';
 export 'src/remote_diff.dart';
 export 'src/transfer.dart';

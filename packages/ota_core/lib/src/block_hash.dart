@@ -16,10 +16,8 @@ const otaOpBlockHash = 0x09;
 const otaOpBlockHashReport = 0x0A;
 const otaOpBlockFind = 0x0B;
 const otaOpBlockFindReport = 0x0C;
-
-/// Feature bit in `OP_INFO_REPORT.features`. No layout change: old nodes simply
-/// leave this bit clear.
-const otaFeatBlockHash = 0x00000004;
+const otaOpStagedHash = 0x0E;
+const otaOpStagedHashReport = 0x0F;
 
 const blockHashLength = 32;
 const blockHashMaxRanges = 4;
@@ -129,8 +127,10 @@ void _putLe32(Uint8List p, int at, int value) {
   p[at + 3] = (value >> 24) & 0xFF;
 }
 
-/// Build the request frame. An empty [ranges] list is the metadata query.
-Uint8List buildBlockHashQuery(List<BlockHashRange> ranges) {
+/// Build a hash query for either the running image or the staged slot. An
+/// empty [ranges] list asks for metadata (size, whole hash, segment table for
+/// the running image).
+Uint8List _buildHashQuery(int op, List<BlockHashRange> ranges) {
   assert(ranges.length <= blockHashMaxRanges);
   final body = Uint8List(1 + 8 * ranges.length);
   assert(body.length <= _blockHashRangeBody);
@@ -139,18 +139,26 @@ Uint8List buildBlockHashQuery(List<BlockHashRange> ranges) {
     _putLe32(body, 1 + i * 8, ranges[i].offset);
     _putLe32(body, 5 + i * 8, ranges[i].length);
   }
-  return buildOp(otaOpBlockHash, body: body);
+  return buildOp(op, body: body);
 }
 
-/// Parse a report frame recovered from a PUSH_CODE_BINARY_RESPONSE. Returns
-/// null for anything that is not a well-formed OP_BLOCK_HASH_REPORT.
-BlockHashReport? parseBlockHashReport(List<int> payload) {
+Uint8List buildBlockHashQuery(List<BlockHashRange> ranges) =>
+    _buildHashQuery(otaOpBlockHash, ranges);
+
+/// The staged-slot counterpart of [buildBlockHashQuery]. Only the op differs:
+/// the node reads the bytes written so far instead of the running image.
+Uint8List buildStagedHashQuery(List<BlockHashRange> ranges) =>
+    _buildHashQuery(otaOpStagedHash, ranges);
+
+/// Parse a report frame recovered from a PUSH_CODE_BINARY_RESPONSE. Both hash
+/// ops share the exact report layout, so the only difference is the op code.
+BlockHashReport? _parseHashReport(List<int> payload, int expectedOp) {
   // unpadFrame finds the shortest valid framed prefix; unwrapFrame then
   // removes its CRC (parseInfoReport/parseReport do the same two steps).
   final framed = unpadFrame(payload);
   final frame = framed == null ? null : unwrapFrame(framed);
   if (frame == null || frame.length < 3) return null;
-  if (frame[2] != otaOpBlockHashReport) return null;
+  if (frame[2] != expectedOp) return null;
   final body = frame.sublist(3);
   if (body.length < 5) return null;
   final runningSize = _le32(body, 0);
@@ -191,6 +199,12 @@ BlockHashReport? parseBlockHashReport(List<int> payload) {
   }
   return BlockHashReport(runningSize, results);
 }
+
+BlockHashReport? parseBlockHashReport(List<int> payload) =>
+    _parseHashReport(payload, otaOpBlockHashReport);
+
+BlockHashReport? parseStagedHashReport(List<int> payload) =>
+    _parseHashReport(payload, otaOpStagedHashReport);
 
 /// Ask the node where a block fingerprint occurs in its running image. The
 /// search is restricted to 4-byte-aligned offsets in [start, end).
@@ -268,12 +282,17 @@ class BlockHashClient {
     required this.contact,
     this.timeout = const Duration(seconds: 10),
     this.retries = 3,
+    this.staged = false,
   });
 
   final RadioLink link;
   final Contact contact;
   final Duration timeout;
   final int retries;
+
+  /// Read the staged slot instead of the running image. The request, report
+  /// layout and retry logic are identical; only the op pair changes.
+  final bool staged;
 
   StreamSubscription<Uint8List>? _sub;
   Completer<BlockHashReport>? _waiter;
@@ -358,7 +377,8 @@ class BlockHashClient {
         : blockHashRangeReportLen(ranges.length);
     _sub ??= link.pushes.listen(_onPush);
     try {
-      final frame = buildBlockHashQuery(ranges);
+      final frame =
+          _buildHashQuery(staged ? otaOpStagedHash : otaOpBlockHash, ranges);
       final sent = await link
           .sendBinaryRequest(contact, [reqTypeOta, frame.length, ...frame]);
       _tag = sent.tag;
@@ -400,7 +420,8 @@ class BlockHashClient {
         askTag: _tag,
         exactLength: _expectedLen);
     if (payload == null) return;
-    final report = parseBlockHashReport(payload);
+    final report = _parseHashReport(
+        payload, staged ? otaOpStagedHashReport : otaOpBlockHashReport);
     if (report == null) return;
     _waiter = null;
     waiter.complete(report);

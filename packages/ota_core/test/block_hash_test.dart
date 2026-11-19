@@ -46,7 +46,7 @@ Uint8List _metaReport(int size, List<ImageSegment> segs, Uint8List hash) {
 }
 
 Uint8List _rangeReport(List<BlockHashRange> ranges, Uint8List running,
-    {int Function(int i)? statusFor}) {
+    {int Function(int i)? statusFor, int op = otaOpBlockHashReport}) {
   final body = <int>[..._le32(running.length), ranges.length];
   for (var i = 0; i < ranges.length; i++) {
     final r = ranges[i];
@@ -60,7 +60,7 @@ Uint8List _rangeReport(List<BlockHashRange> ranges, Uint8List running,
       body.addAll(List<int>.filled(blockHashLength, 0));
     }
   }
-  return buildOp(otaOpBlockHashReport, body: body);
+  return buildOp(op, body: body);
 }
 
 void main() {
@@ -208,6 +208,50 @@ void main() {
     final results = await client.query(const [BlockHashRange(0, 16)]);
     expect(calls, 2);
     expect(results.results.single.ok, isTrue);
+    await client.close();
+  });
+
+  test('staged hash query uses its own op but the same compact body', () {
+    final running = buildStagedHashQuery(const [BlockHashRange(0, 1024)]);
+    final staged = buildBlockHashQuery(const [BlockHashRange(0, 1024)]);
+    expect(running[2], otaOpStagedHash);
+    expect(staged[2], otaOpBlockHash);
+    expect(running.sublist(3, running.length - 2),
+        staged.sublist(3, staged.length - 2));
+    expect(unwrapFrame(running), isNotNull);
+  });
+
+  test('staged hash report parses with the shared decoder', () {
+    final staged = Uint8List.fromList(List<int>.generate(64, (i) => i + 3));
+    final report = _rangeReport(const [BlockHashRange(0, 16)], staged,
+        op: otaOpStagedHashReport);
+    final parsed = parseStagedHashReport([...report, 0, 0])!;
+    expect(parsed.results.single.ok, isTrue);
+    expect(parsed.results.single.sha256,
+        sha256.convert(staged.sublist(0, 16)).bytes);
+    expect(parseBlockHashReport(report), isNull); // wrong op must not parse
+  });
+
+  test('staged hash client reads the written prefix', () async {
+    final staged = Uint8List.fromList(List<int>.generate(64, (i) => i));
+    final link = FakeDeviceLink(snr: 6.0, rssi: -70);
+    link.binaryRequestHandler = (contact, reqData, tag) async {
+      expect(reqData[0], reqTypeOta);
+      final frame = Uint8List.fromList(reqData.sublist(2, 2 + reqData[1]));
+      expect(frame[2], otaOpStagedHash);
+      link.simulatePush(_push(
+          tag,
+          _rangeReport(const [BlockHashRange(0, 16)], staged,
+              op: otaOpStagedHashReport)));
+    };
+    final client = BlockHashClient(
+        link: link,
+        contact: testContact,
+        staged: true,
+        timeout: const Duration(seconds: 1));
+    final report = await client.query(const [BlockHashRange(0, 16)]);
+    expect(report.results.single.sha256,
+        sha256.convert(staged.sublist(0, 16)).bytes);
     await client.close();
   });
 }

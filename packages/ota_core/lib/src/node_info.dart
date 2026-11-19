@@ -27,8 +27,31 @@ const otaFeatDelta = 0x00000001;
 /// `features` bit: the node implements apply/rollback (dual app slot).
 const otaFeatApply = 0x00000002;
 
-const _infoBodyLen = 79;
-const _infoReportLen = 3 + _infoBodyLen + 2;
+/// `features` bit: the node implements `OP_BLOCK_HASH` / `OP_BLOCK_FIND`.
+const otaFeatBlockHash = 0x00000004;
+
+/// `features` bit: the node implements `OP_STAGED_HASH` (read-only hash of the
+/// staged slot's written bytes).
+const otaFeatStagedHash = 0x00000008;
+
+/// `features` bit: the node answers `OP_STATUS` with a structured report that
+/// carries a session id, progress and a TLV extension block.
+const otaFeatStatus = 0x00000010;
+
+/// `features` bit: the node answers `OP_PING` (link echo over the op path).
+const otaFeatPing = 0x00000020;
+
+/// Field offsets of the frozen identity block shared with OP_STATUS_REPORT.
+const infoWireVerOff = 0;
+const infoTargetOff = 1;
+const infoSlotOff = 5;
+const infoMaxLiteralOff = 9;
+const infoFeaturesOff = 11;
+const infoVersionOff = 15;
+const infoShaOff = 47;
+const infoBodyLen = 79;
+
+const _infoReportLen = 3 + infoBodyLen + 2;
 
 /// What the node says it is, what it has, and what it can do.
 class OtaNodeInfo {
@@ -68,6 +91,10 @@ class OtaNodeInfo {
 
   bool get supportsDelta => features & otaFeatDelta != 0;
   bool get supportsApply => features & otaFeatApply != 0;
+  bool get supportsBlockHash => features & otaFeatBlockHash != 0;
+  bool get supportsStagedHash => features & otaFeatStagedHash != 0;
+  bool get supportsStatus => features & otaFeatStatus != 0;
+  bool get supportsPing => features & otaFeatPing != 0;
 }
 
 /// `OP_INFO` query frame.
@@ -87,23 +114,25 @@ OtaNodeInfo? parseInfoReport(List<int> payload) {
   if (payload.length < _infoReportLen) return null;
   final frame = unwrapFrame(payload.sublist(0, _infoReportLen));
   if (frame == null) return null;
-  if (frame.length != 3 + _infoBodyLen) return null;
+  if (frame.length != 3 + infoBodyLen) return null;
   if (frame[2] != otaOpInfoReport) return null;
   for (var i = _infoReportLen; i < payload.length; i++) {
     if (payload[i] != 0) return null;
   }
   final body = frame.sublist(3);
-  final verEnd = body.indexOf(0, 15);
-  final end = verEnd < 0 ? 47 : (verEnd > 47 ? 47 : verEnd);
-  final runningVersion = String.fromCharCodes(body.sublist(15, end));
+  final verEnd = body.indexOf(0, infoVersionOff);
+  final end =
+      verEnd < 0 ? infoShaOff : (verEnd > infoShaOff ? infoShaOff : verEnd);
+  final runningVersion =
+      String.fromCharCodes(body.sublist(infoVersionOff, end));
   return OtaNodeInfo(
-    wireVersion: body[0],
-    targetId: _le32(body, 1),
-    slotSize: _le32(body, 5),
-    maxLiteral: _le16(body, 9),
-    features: _le32(body, 11),
+    wireVersion: body[infoWireVerOff],
+    targetId: _le32(body, infoTargetOff),
+    slotSize: _le32(body, infoSlotOff),
+    maxLiteral: _le16(body, infoMaxLiteralOff),
+    features: _le32(body, infoFeaturesOff),
     runningVersion: runningVersion,
-    runningSha256: Uint8List.fromList(body.sublist(47, 79)),
+    runningSha256: Uint8List.fromList(body.sublist(infoShaOff, infoBodyLen)),
   );
 }
 
