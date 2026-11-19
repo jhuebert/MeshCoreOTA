@@ -202,11 +202,13 @@ accounted for (e.g. `radio2`, `tempradio` on the node CLI itself).
 - **Compare**: read-only step that queries the repeater's running-image
    hashes, shows bytes reused / to send / exchanges, and offers a safe stop
    before anything is staged. There is deliberately no base picker.
-- **Radio**: three radio plans (live mesh with the path override, temporary
-  private preset on both ends, or the repeater's radio2). Off-mesh modes are
-  implicit zero-hop. The duration input defaults to the recommended time for
-  the selected image; show the plan's validation before the Next action, and
-  never continue with an invalid one.
+- **Radio**: three radio plans (live mesh with the path override, a temporary
+  private preset on the repeater, or the repeater's radio2). Off-mesh modes
+  are implicit zero-hop. The radio screen shows both current radio settings,
+  including radio2's preset when enabled, and there is no duration input:
+  the repeater's temporary window is renewed in fixed chunks. Show the plan's
+  validation before the Next action, and never continue with an invalid one.
+  Tempradio warns that an enabled radio2 is paused for the transfer.
 - **Review**: a summary of everything selected before the update — companion
   and how it is connected, repeater name and board, current firmware, the
   firmware to install, image size, how much the repeater can reuse and how
@@ -223,20 +225,27 @@ accounted for (e.g. `radio2`, `tempradio` on the node CLI itself).
 
 ### Radio plan rules
 
-- A temporary preset is `tempradio <freq>,<bw>,<sf>,<cr>,<minutes>` on both
-  the repeater and the companion; both revert after the timer (the app
-  restores the companion early and sends the live preset back to the node).
+- A temporary preset is `tempradio <freq>,<bw>,<sf>,<cr>,<minutes>` on the
+  repeater only. The companion is retuned directly over BLE/TCP with
+  `CMD_SET_RADIO_PARAMS` (stock companion firmware has no `tempradio` CLI).
+  The app arms 15-minute chunks and renews at a window boundary after 10
+  minutes; two failed renewals pause the transfer so a resume arms a fresh
+  chunk. At the end the app sends the live preset back to the node and tunes
+  the companion directly. A tempradio window pauses radio2 on the node and
+  the node resumes it when the window reverts.
 - radio2 is `radio2 <freq>,<bw>,<sf>,<cr>`; the node's primary keeps serving
   the mesh and the companion is moved to the secondary for the transfer. It
   must not overlap the live band (half of each bandwidth plus the 6 kHz
   guard) and must be scannable — the node validates; the app mirrors the
   overlap rule and surfaces the node's refusal.
-- If radio2 is already enabled, do **not** reconfigure it: the operator
-  enters the secondary preset it already uses, the app only tunes the
-  companion, and the node's configuration is left alone. If the app enabled
-  radio2 for the update, it turns it off again afterwards.
-- Both firmware CLIs defer the retune ~2 s so their reply leaves first; wait
-  ~3 s after arming the plan before sending ops.
+- If radio2 is already enabled, do **not** reconfigure it: the firmware
+  reports its preset in `radio2 status` (`preset=f,bw,sf,cr`), the radio screen
+  shows it read-only, the app tunes only the companion, and the node's
+  configuration is left alone. If the app enabled radio2 for the update, it
+  turns it off again afterwards.
+- The repeater's CLI defers the retune ~2 s so its reply leaves first; wait
+  ~3 s after arming the plan before sending ops. The companion's direct radio
+  write applies immediately.
 - Restore the radios **before** the operator commits: apply and verification
   belong on the live mesh.
 

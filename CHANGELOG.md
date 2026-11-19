@@ -8,6 +8,20 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Added
 
+- **The temporary channel renews itself.** The repeater arms `tempradio` in
+  15-minute chunks and the app renews it automatically at a transfer window
+  boundary after 10 minutes, so there is no duration to set and no window to
+  expire mid-update. Two failed renewals pause the transfer; continuing arms
+  a fresh chunk from the saved position.
+- **The radio screen shows the repeater's current settings**, including the
+  radio2 preset when it is enabled. An enabled radio2 is used as-is instead of
+  asking the operator to re-enter it, and the screen warns that a temporary
+  channel pauses radio2 while it is active.
+- **Android transfers keep the screen on and survive the Home screen.** A
+  foreground notification now shows op progress, and the same guard covers
+  apply and rollback. If the foreground service cannot start, the update
+  refuses to begin instead of silently running without it.
+
 - **Transfers can be paused mid-upload.** The transfer screen's Pause button
   keeps the repeater's staged bytes and the saved op stream, records the last
   known position, and returns to the Connect screen with the update ready to

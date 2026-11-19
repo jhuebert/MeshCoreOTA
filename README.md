@@ -139,8 +139,9 @@ repeater's firmware and radio settings are untouched until you press **Start
 update** at Review.
 
 The block size is a trade-off: smaller blocks find more reusable bytes but
-need more exchanges. The default is 256 bytes, tuned for a fast zero-hop link; on a
-multi-hop mesh 512–1024 bytes costs fewer exchanges and may finish sooner.
+need more exchanges. The default is 1 KB, tuned to keep the number of compare
+exchanges low even on a multi-hop mesh; smaller blocks find more reusable bytes
+but need proportionally more queries.
 
 ### 6. Radio settings
 
@@ -150,16 +151,24 @@ A firmware transfer uses a lot of airtime, so choose where it runs:
 
 - **Live mesh** — use your normal channel and the saved path to the repeater.
   You can enter a different path.
-- **Temporary private channel** — the repeater and the companion switch to a
-  private channel for the transfer, then switch back. The update goes
-  straight between them, so no other node hears it.
+- **Temporary private channel** — the repeater switches to a private channel
+  for the transfer and the companion is tuned to it directly; both go back
+  afterwards. The update goes straight between them, so no other node hears
+  it. The repeater keeps the channel on in 15-minute chunks and renews it
+  automatically while the transfer runs — there is no time limit to set. If
+  radio2 is enabled, it is paused for the duration of the private channel and
+  restored afterwards.
 - **The repeater's second channel (radio2)** — the repeater keeps serving the
   mesh on its normal channel and carries the update on its second channel.
   The companion is tuned to it for the transfer. If radio2 was already
-  enabled, the app tells you and leaves the repeater's settings alone.
+  enabled, the app uses the preset the repeater reports and leaves its
+  settings alone.
 
-The app suggests a frequency and a time limit from the repeater's settings and
-the size of the update; you can change either.
+The screen shows the repeater's current radio settings, including radio2's
+preset when it is enabled. The app suggests a frequency for a new temporary or
+second channel; you can change it. On Android the screen stays on during the
+update, and a foreground notification keeps the transfer alive if you go to
+the Home screen.
 
 ### 7. Review
 
