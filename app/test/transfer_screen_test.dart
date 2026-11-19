@@ -3,9 +3,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ota_core/ota_core.dart';
 
 import 'package:meshcore_ota/app_state.dart';
+import 'package:meshcore_ota/screens/resume_screen.dart';
 import 'package:meshcore_ota/screens/transfer_screen.dart';
+import 'package:meshcore_ota/widgets/common.dart';
 
 import 'support.dart';
+
+class _PausedAppState extends AppState {
+  @override
+  Future<void> runUpdate({required String version, ResumeRun? resume}) async {
+    updatePhase = UpdatePhase.idle;
+    throw const UpdatePausedException();
+  }
+}
 
 void _bigView(WidgetTester tester) {
   tester.view.physicalSize = const Size(1200, 2400);
@@ -75,6 +85,25 @@ void main() {
 
     expect(find.text('Pause — keep what was already uploaded'), findsOneWidget);
     expect(find.textContaining('staged image is discarded'), findsNothing);
+  });
+
+  testWidgets('pausing shows a recovery path, not an error', (tester) async {
+    _bigView(tester);
+    final app = _PausedAppState();
+    app.target = contact('riley');
+
+    await tester.pumpWidget(wrap(app, const TransferScreen()));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Update paused'), findsOneWidget);
+    expect(find.text('Continue this update'), findsOneWidget);
+    expect(find.byType(ErrorBanner), findsNothing);
+
+    await tester.tap(find.text('Continue this update'));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(ResumeScreen), findsOneWidget);
   });
 
   testWidgets('a failed update offers a way back, not a dead cancel',

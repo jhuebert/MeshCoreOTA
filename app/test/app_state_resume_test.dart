@@ -180,6 +180,26 @@ void main() {
     expect(await File('${dir.path}/ota_resume.bin').exists(), isTrue);
   });
 
+  test('pausing keeps the plan and the last known transfer position', () async {
+    app.updatePhase = UpdatePhase.transferring;
+
+    await app.pauseTransfer(
+      t: contact('XiaoS3'),
+      image: Uint8List(64),
+      targetId: 1,
+      frames: <Uint8List>[Uint8List(2)],
+      version: 'v1.18.0-r4',
+      nextExpected: 42,
+    );
+
+    expect(app.updatePhase, UpdatePhase.idle);
+    expect(app.resumePlan, isNotNull);
+    expect(app.resumePlan!.nextExpected, 42);
+    final loaded = await app.resumeStore!.load();
+    expect(loaded?.nextExpected, 42);
+    expect(loaded?.frames.length, 1);
+  });
+
   test('finishing a completed upload moves to the apply phase', () {
     app.finishResumeApply();
     expect(app.updatePhase, UpdatePhase.readyToApply);

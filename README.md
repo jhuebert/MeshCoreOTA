@@ -182,9 +182,10 @@ changes as normal encrypted requests, and the repeater asks for anything it
 missed. You can watch progress and a log, plus an **estimated time left based
 on how fast the transfer is actually going**. It takes longer than the radio
 speed alone suggests, because the repeater pauses to write each batch to its
-storage. You can cancel at any time; a cancelled transfer throws away the
-partly received firmware. When you are **resuming** an earlier transfer,
-Cancel becomes **Pause** and keeps what has already arrived.
+storage. **Pause** is available at any time: it stops the upload but keeps the
+part the repeater already received, so you can continue later from the Connect
+screen without sending it again. Nothing is applied until you explicitly
+commit.
 
 ### 9. Commit and verify
 
@@ -214,8 +215,8 @@ the repeater got:
 - **Start a different update** — cancels the resume, discards the repeater's
   staged image, and opens the firmware picker. Use this if you changed your
   mind about which version to install.
-- **Cancel resume** on a resumable update does the same thing; pausing from
-  the transfer screen keeps what has already been uploaded.
+- **Cancel resume** on the recovery screen does the same thing. Pausing from
+  the transfer screen instead keeps what has already been uploaded.
 
 This works while the **repeater** stays powered. If the repeater itself
 reboots, its staged image is lost and the upload has to start over — but the

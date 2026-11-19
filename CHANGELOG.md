@@ -8,6 +8,10 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Added
 
+- **Transfers can be paused mid-upload.** The transfer screen's Pause button
+  keeps the repeater's staged bytes and the saved op stream, records the last
+  known position, and returns to the Connect screen with the update ready to
+  continue. Nothing is aborted or applied.
 - **Interrupted updates can be resumed.** The app now saves the target image
   and the exact op stream when a transfer starts. After a crash or a rebooted
   phone, an **Unfinished update** row on the Connect screen opens a recovery

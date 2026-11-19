@@ -30,6 +30,15 @@ enum ConnectionPhase { disconnected, connecting, connected }
 enum ReleaseTrack { stable, dev }
 
 /// A saved op stream resumed from the node's current watermark.
+/// Signals that the operator paused a transfer. The node kept its staged
+/// bytes and the app kept the plan, so this is not a failure.
+class UpdatePausedException implements Exception {
+  const UpdatePausedException();
+
+  @override
+  String toString() => 'Update paused';
+}
+
 class ResumeRun {
   const ResumeRun(this.plan, this.nextExpected);
 
@@ -1245,20 +1254,21 @@ class AppState extends ChangeNotifier {
         );
       } on OtaTransferException catch (e) {
         if (cancelRequested) {
-          if (resume == null) {
-            await flow.abortQuietly(t);
-            await _discardResumeRecord();
-          }
-          updatePhase = UpdatePhase.idle;
-          log_(resume == null
-              ? 'cancelled — staged image discarded'
-              : 'paused — staged image kept for another attempt');
-          throw UpdateFlowException(
-              resume == null ? 'cancelled' : 'paused — nothing was applied');
+          // Pausing keeps both halves of the upload: the node's staged bytes
+          // and the app's saved op stream. Nothing is aborted or discarded.
+          await pauseTransfer(
+            t: t,
+            image: image,
+            targetId: targetId,
+            frames: wireOps.frames,
+            version: version,
+            nextExpected: (progress?.opsApplied ?? 0) + 1,
+          );
+          throw const UpdatePausedException();
         }
-        // A resume keeps the staged bytes and the saved frames: the node still
-        // has everything below next_expected, so the operator can reconnect
-        // and continue instead of re-uploading the whole image.
+        // A genuine transfer failure still ends the staged session on a fresh
+        // attempt. A resume keeps it: the node has everything below
+        // next_expected, so the operator can reconnect and try again.
         if (resume == null) await flow.abortQuietly(t);
         updatePhase = UpdatePhase.failed;
         throw UpdateFlowException('transfer failed: ${e.message}');
@@ -1304,6 +1314,7 @@ class AppState extends ChangeNotifier {
     required int targetId,
     required List<Uint8List> frames,
     required String version,
+    int nextExpected = 1,
   }) async {
     final store = resumeStore;
     if (store == null) return;
@@ -1328,6 +1339,7 @@ class AppState extends ChangeNotifier {
         tcpHost: tcpHost,
         tcpPort: tcpPort,
         bleDeviceId: _bleDeviceId,
+        nextExpected: nextExpected,
       );
       await store.save(plan);
       resumePlan = plan;
@@ -1336,6 +1348,30 @@ class AppState extends ChangeNotifier {
       // A failed save must never hold up the update itself.
       log_('could not save the resume record: $e');
     }
+  }
+
+  /// Stop sending without throwing away the work already done. The repeater
+  /// keeps its staged bytes and the app keeps the plan, so the operator can
+  /// pick the update up later from the Connect screen.
+  Future<void> pauseTransfer({
+    required Contact t,
+    required Uint8List image,
+    required int targetId,
+    required List<Uint8List> frames,
+    required String version,
+    required int nextExpected,
+  }) async {
+    await saveResumePlan(
+      t: t,
+      image: image,
+      targetId: targetId,
+      frames: frames,
+      version: version,
+      nextExpected: nextExpected,
+    );
+    updatePhase = UpdatePhase.idle;
+    log_('paused — staged image kept; continue from the Connect screen');
+    notifyListeners();
   }
 
   Future<void> _discardResumeRecord() async {

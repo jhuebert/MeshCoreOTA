@@ -10,6 +10,7 @@ import '../services/foreground.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/wizard.dart';
+import 'resume_screen.dart';
 import 'verify_screen.dart';
 
 /// Step 8: the transfer itself. The node re-verifies the image when the
@@ -29,6 +30,7 @@ class _TransferScreenState extends State<TransferScreen> {
   final _logController = ScrollController();
   bool _started = false;
   String? _error;
+  bool _paused = false;
 
   @override
   void initState() {
@@ -60,6 +62,8 @@ class _TransferScreenState extends State<TransferScreen> {
       } else {
         await app.runUpdate(version: app.selectedVersion ?? 'unknown');
       }
+    } on UpdatePausedException catch (_) {
+      if (mounted) setState(() => _paused = true);
     } catch (e) {
       if (mounted) {
         setState(() => _error = '$e');
@@ -163,6 +167,38 @@ class _TransferScreenState extends State<TransferScreen> {
                     ? _StepState.active
                     : _StepState.pending,
           ),
+          if (_paused) ...[
+            Card(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(Icons.pause_circle_outline,
+                            color: OtaTheme.accent),
+                        SizedBox(width: 10),
+                        Text('Update paused',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'The repeater kept the part it already received, and '
+                      'the firmware is still on this device. Nothing was '
+                      'applied. Continue any time from the Connect screen — '
+                      'only the missing part will be sent.',
+                      style: TextStyle(
+                          color: OtaTheme.textMuted, fontSize: 12, height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           if (_error != null) ErrorBanner(_error!),
           if (phase == UpdatePhase.failed)
             Padding(
@@ -212,6 +248,16 @@ class _TransferScreenState extends State<TransferScreen> {
   }
 
   Widget _buildFooter(BuildContext context, AppState app, UpdatePhase phase) {
+    if (_paused) {
+      return FilledButton.icon(
+        onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const ResumeScreen()),
+          (route) => route.isFirst,
+        ),
+        icon: const Icon(Icons.play_arrow),
+        label: const Text('Continue this update'),
+      );
+    }
     switch (phase) {
       case UpdatePhase.transferring:
       case UpdatePhase.staging:
@@ -219,9 +265,7 @@ class _TransferScreenState extends State<TransferScreen> {
         return OutlinedButton.icon(
           onPressed: () => context.read<AppState>().requestCancel(),
           icon: const Icon(Icons.close),
-          label: Text(widget.resuming
-              ? 'Pause — keep what was already uploaded'
-              : 'Cancel (safe — staged image is discarded)'),
+          label: const Text('Pause — keep what was already uploaded'),
         );
       case UpdatePhase.readyToApply:
         return FilledButton.icon(
