@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'services/ble_device_link.dart';
 import 'services/firmware_library.dart';
 import 'services/github_source.dart';
+import 'services/literal_compression.dart';
 import 'services/radio_plan.dart';
 import 'services/update_flow.dart';
 
@@ -1144,9 +1145,19 @@ class AppState extends ChangeNotifier {
 
       // The op stream comes from step 5's hash comparison against this node's
       // running image. Nothing from a local library can be stale here.
-      final ops = diff.ops;
+      final rawOps = diff.ops;
+      final ops = compressLiteralRuns(rawOps);
+      final rawLiteral = rawOps
+          .whereType<LiteralOp>()
+          .fold<int>(0, (sum, op) => sum + op.data.length);
+      final compressedLiteral = ops
+          .whereType<CompressedLiteralOp>()
+          .fold<int>(0, (sum, op) => sum + op.compressed.length);
       log_('remote diff: ${diff.copyBytes} bytes reused, '
           '${diff.literalBytes} to send (${diff.queries} queries)');
+      if (compressedLiteral > 0) {
+        log_('compressed $rawLiteral literal bytes to $compressedLiteral');
+      }
 
       final sha = sha256List(image);
       updatePhase = UpdatePhase.transferring;

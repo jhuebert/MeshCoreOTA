@@ -27,6 +27,19 @@ class LiteralOp extends DeltaOp {
   String toString() => 'LITERAL len=${data.length}';
 }
 
+/// A run of new bytes compressed with raw DEFLATE. The node inflates it into
+/// the staged slot, so the wire carries fewer literal bytes and fewer ops.
+class CompressedLiteralOp extends DeltaOp {
+  const CompressedLiteralOp(this.compressed, this.originalLength);
+
+  /// Raw DEFLATE payload (no gzip header or trailer).
+  final Uint8List compressed;
+  final int originalLength;
+
+  @override
+  String toString() => 'COMPRESSED len=$originalLength -> ${compressed.length}';
+}
+
 /// Result of [computeDelta]: the op stream in emission order (which is also
 /// application order) plus sizes for display.
 class DeltaResult {
@@ -177,6 +190,9 @@ Uint8List applyDelta(Uint8List base, List<DeltaOp> ops,
         out.add(Uint8List.sublistView(base, baseOffset, baseOffset + length));
       case LiteralOp(:final data):
         out.add(data);
+      case CompressedLiteralOp():
+        throw UnsupportedError(
+            'applyDelta cannot inflate compressed literals; use the node');
     }
   }
   final bytes = out.toBytes();

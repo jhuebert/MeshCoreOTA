@@ -87,8 +87,9 @@ class Oracle {
     for (var off = start; off + length <= end; off += 4) {
       final h = _rolling(running, off, length);
       for (var i = 0; i < count; i++) {
-        if (h == wants[i] && hits[i].length < blockFindHitsPer)
+        if (h == wants[i] && hits[i].length < blockFindHitsPer) {
           hits[i].add(off);
+        }
       }
     }
     final body = <int>[count];

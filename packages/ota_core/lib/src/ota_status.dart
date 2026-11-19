@@ -68,6 +68,7 @@ const otaErrIo = 5;
 const otaErrBounds = 6;
 const otaErrToken = 7;
 const otaErrEnd = 8;
+const otaErrCompress = 9;
 
 /// Human labels for the `err=` codes (for display only).
 String otaErrLabel(int err) => switch (err) {
@@ -80,6 +81,7 @@ String otaErrLabel(int err) => switch (err) {
       otaErrBounds => 'op out of bounds',
       otaErrToken => 'arm token missing or rejected',
       otaErrEnd => 'esp_ota_end() failed after a clean verify',
+      otaErrCompress => 'compressed literal stream failed',
       _ => 'unknown error $err',
     };
 

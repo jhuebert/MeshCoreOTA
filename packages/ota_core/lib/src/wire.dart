@@ -22,6 +22,13 @@ const otaOpLiteral = 0x03;
 const otaOpEnd = 0x04;
 const otaOpAsk = 0x05;
 const otaOpReport = 0x06;
+const otaOpLiteralZ = 0x0D;
+
+/// OP_LITERAL_Z body overhead: orig_len(u32) + comp_len(u16) + flags(u8).
+const otaLzBodyOverhead = 7;
+const otaLzMaxData = 120;
+const otaLzStart = 0x01;
+const otaLzEnd = 0x02;
 
 /// `magic(2) + op(1) + seq(2) + body + crc16(2)` for op packets; ASK/REPORT/
 /// NOP carry no seq, hence the minimum payload the node accepts.
@@ -149,6 +156,24 @@ Uint8List buildLiteralChunk({required int seq, required List<int> data}) {
   ByteData.sublistView(body).setUint16(0, data.length, Endian.little);
   body.setRange(2, body.length, data);
   return buildOp(otaOpLiteral, seq: seq, body: body);
+}
+
+/// `OP_LITERAL_Z`: one chunk of a raw-DEFLATE stream.
+Uint8List buildLiteralZChunk({
+  required int seq,
+  required int originalLength,
+  required int compressedTotal,
+  required int flags,
+  required List<int> data,
+}) {
+  assert(data.length <= otaLzMaxData);
+  final body = Uint8List(otaLzBodyOverhead + data.length);
+  final bd = ByteData.sublistView(body);
+  bd.setUint32(0, originalLength, Endian.little);
+  bd.setUint16(4, compressedTotal, Endian.little);
+  body[6] = flags;
+  body.setRange(7, body.length, data);
+  return buildOp(otaOpLiteralZ, seq: seq, body: body);
 }
 
 /// `OP_END`: no body.

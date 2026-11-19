@@ -119,4 +119,13 @@ void main() {
       expect(reassembled, target);
     });
   });
+
+  test('compressed literal ops describe themselves and refuse local apply', () {
+    final op = CompressedLiteralOp(Uint8List.fromList([1, 2, 3]), 1024);
+    expect(op.toString(), contains('1024'));
+    expect(
+      () => applyDelta(Uint8List(0), [op], expectedLength: 1024),
+      throwsUnsupportedError,
+    );
+  });
 }

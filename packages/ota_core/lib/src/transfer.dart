@@ -251,8 +251,12 @@ class WireOps {
   /// LITERAL payload bytes in the stream exactly once — the useful work.
   /// Sent bytes divided by this is the broadcast amplification.
   late final int uniqueLiteralBytes = frames.fold<int>(0, (sum, f) {
-    if (f.length < 7 || f[2] != otaOpLiteral) return sum;
-    return sum + (f[5] | (f[6] << 8));
+    if (f.length < 7) return sum;
+    if (f[2] == otaOpLiteral) return sum + (f[5] | (f[6] << 8));
+    if (f[2] == otaOpLiteralZ && (f[11] & otaLzStart) != 0) {
+      return sum + (f[5] | (f[6] << 8) | (f[7] << 16) | (f[8] << 24));
+    }
+    return sum;
   });
 }
 
@@ -283,6 +287,27 @@ WireOps wireOpsFor(List<DeltaOp> ops, {int literalChunk = otaLiteralChunk}) {
           ));
           seq++;
           offset += literalChunk;
+        }
+      case CompressedLiteralOp(:final compressed, :final originalLength):
+        final chunk = literalChunk - (otaLzBodyOverhead - 2);
+        final dataChunk = chunk < otaLzMaxData ? chunk : otaLzMaxData;
+        var offset = 0;
+        while (offset < compressed.length) {
+          final end = offset + dataChunk > compressed.length
+              ? compressed.length
+              : offset + dataChunk;
+          var flags = 0;
+          if (offset == 0) flags |= otaLzStart;
+          if (end >= compressed.length) flags |= otaLzEnd;
+          frames.add(buildLiteralZChunk(
+            seq: seq,
+            originalLength: originalLength,
+            compressedTotal: compressed.length,
+            flags: flags,
+            data: Uint8List.sublistView(compressed, offset, end),
+          ));
+          seq++;
+          offset = end;
         }
     }
   }
@@ -329,6 +354,11 @@ class OtaTransfer {
         final frame = wireOps.frames[i];
         if (frame.length >= 7 && frame[2] == otaOpLiteral) {
           literalBytesSent += frame[5] | (frame[6] << 8);
+        } else if (frame.length > 9 &&
+            frame[2] == otaOpLiteralZ &&
+            (frame[11] & otaLzStart) != 0) {
+          literalBytesSent +=
+              frame[5] | (frame[6] << 8) | (frame[7] << 16) | (frame[8] << 24);
         }
       }
     }
@@ -577,8 +607,15 @@ class OtaTransfer {
     final sent = await link
         .sendBinaryRequest(contact, [reqTypeOta, otaFrame.length, ...otaFrame]);
     packetsSent++;
-    if (otaFrame.length > 2 && otaFrame[2] == otaOpLiteral) {
+    if (otaFrame.length > 6 && otaFrame[2] == otaOpLiteral) {
       literalBytesSent += (otaFrame[5] | (otaFrame[6] << 8));
+    } else if (otaFrame.length > 9 &&
+        otaFrame[2] == otaOpLiteralZ &&
+        (otaFrame[11] & otaLzStart) != 0) {
+      literalBytesSent += otaFrame[5] |
+          (otaFrame[6] << 8) |
+          (otaFrame[7] << 16) |
+          (otaFrame[8] << 24);
     }
     if (opSpacing > Duration.zero) {
       await Future<void>.delayed(opSpacing);

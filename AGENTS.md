@@ -128,6 +128,9 @@ spec.
   feature bit `0x00000004`) hashes ranges of the running image, and
   `OP_BLOCK_FIND` (0x0B/0x0C) locates up to twelve 64-bit rolling fingerprints
   in one scan of a window of it. Matches are found by content, not offset.
+  `OP_LITERAL_Z` (0x0D) carries a chunked raw-DEFLATE stream of new bytes;
+  the node inflates it with ESP32 ROM miniz into the staged slot. The app
+  compresses at level 9 with `dart:io`'s GZipCodec minus its wrapper.
   All zeros means "cannot tell" (no readable image).
 - `target id` is the **build environment** id (`sha256(pio_env)[0..3]`), not a
   hardware id. The app maps it back to an environment by hashing the names it

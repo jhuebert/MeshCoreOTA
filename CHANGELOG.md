@@ -8,6 +8,14 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Changed
 
+- **Literal bytes are now compressed over the wire.** Consecutive new bytes are
+  DEFLATE-compressed at level 9 by the app (raw stream, no gzip wrapper) and
+  sent as `OP_LITERAL_Z` chunks; the node inflates them with the ESP32's ROM
+  miniz straight into the staging slot. On the real r3→r4 binaries the literal
+  stream shrinks to about 70% of its raw size, so a diff now sends roughly half
+  of the image instead of 69%. COPY ops, seq numbering and the node's SHA-256
+  gate are unchanged; a corrupt or truncated compressed stream fails staging
+  with `err=9` instead of producing a wrong image.
 - **Updates are now diffs against the repeater's running firmware, computed on
   the repeater.** A new **Compare** step (5 of 9) uses two read-only ops.
   `OP_BLOCK_HASH` reports the running image's size, ESP segment table and

@@ -127,6 +127,11 @@ content, a code change that shifts every later byte does not force a full
 upload. You do **not** need the old firmware on this device to get a small
 update.
 
+New bytes are compressed before they are sent, and the repeater expands them
+as they arrive — the repeater's own ROM decompressor does this, so no extra
+firmware library is needed. Only genuinely new bytes travel; unchanged bytes
+are never sent at all.
+
 The step shows how much will be reused, how much will be sent, and how many
 exchanges it took. If the repeater is already running exactly this image, the
 app says so and stops here — nothing is sent. This step is read-only: the

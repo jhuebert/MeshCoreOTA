@@ -35,7 +35,9 @@ Layered controls, in order:
    beyond the public firmware's contents and version; brute-forcing bytes from
    a range hash is infeasible, and a 64-bit fingerprint collision only costs an
    extra literal. A stale or wrong diff can therefore waste airtime but cannot
-   boot a wrong image — the SHA gate (4) still decides.
+   boot a wrong image — the SHA gate (4) still decides. Compressed literals
+   follow the same rule: a truncated or corrupt DEFLATE stream is rejected
+   with `err=9` before the SHA gate, never installed partially.
 6. **Commit requires an admin.** `ota apply` refuses unless staging is
    `state=ready`, then flips the boot partition and reboots.
 7. **Boot health check + auto rollback.** The freshly applied image runs a

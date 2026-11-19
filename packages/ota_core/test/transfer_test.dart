@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -54,6 +55,9 @@ class FakeOtaNode {
     pendingSha = sha256;
     pendingToken = token;
   }
+
+  final _lzParts = <int>[];
+  int _lzOrig = 0;
 
   List<Uint8List> handlePacket(Uint8List frame) {
     final body = unwrapFrame(frame);
@@ -146,6 +150,29 @@ class FakeOtaNode {
       _slot.setRange(_written, _written + len, body.sublist(7, 7 + len));
       _written += len;
       _received++;
+      return const [];
+    }
+
+    if (op == otaOpLiteralZ) {
+      final orig = body[5] | (body[6] << 8) | (body[7] << 16) | (body[8] << 24);
+      final flags = body[11];
+      if ((flags & otaLzStart) != 0) {
+        _lzParts.clear();
+        _lzOrig = orig;
+      }
+      _lzParts.addAll(body.sublist(12));
+      _received++;
+      if ((flags & otaLzEnd) != 0) {
+        final plain = ZLibCodec(raw: true).decode(_lzParts);
+        if (plain.length != _lzOrig || _written + _lzOrig > _size) {
+          err = 9;
+          state = FakeNodeState.error;
+          return const [];
+        }
+        _slot.setRange(_written, _written + plain.length, plain);
+        _written += plain.length;
+        _lzParts.clear();
+      }
       return const [];
     }
 
@@ -705,5 +732,79 @@ void main() {
         .where((f) => f[2] == otaOpLiteral)
         .fold<int>(0, (sum, f) => sum + (f[5] | (f[6] << 8)));
     expect(literalBytes, image.length);
+  });
+
+  test('compressed literals are chunked and count as their original bytes', () {
+    final compressed = Uint8List.fromList(List<int>.generate(260, (i) => i));
+    final wire = wireOpsFor([
+      CompressedLiteralOp(compressed, 4096),
+    ], literalChunk: otaLiteralChunkForBinaryReq());
+    final frames = wire.frames;
+    expect(frames.length, 4); // three 120/120/20-byte chunks plus OP_END
+    expect(frames.first[2], otaOpLiteralZ);
+    expect(frames.first[11] & otaLzStart, otaLzStart);
+    expect(frames[2][11] & otaLzEnd, otaLzEnd);
+    expect(wire.uniqueLiteralBytes, 4096);
+    for (final frame in frames) {
+      expect(1 + 32 + 1 + frame.length,
+          lessThanOrEqualTo(otaStockCompanionFrameLimit));
+    }
+  });
+
+  test('resume accounting counts a compressed stream once', () {
+    final image = Uint8List.fromList(List<int>.filled(4096, 0x5A));
+    final gz = GZipCodec(level: 9).encode(image);
+    final raw = Uint8List.fromList(gz.sublist(10, gz.length - 8));
+    final transfer = OtaTransfer(
+      link: FakeDeviceLink(snr: 6, rssi: -70),
+      contact: targetContact,
+      contract: OtaStartContract(
+        imageSize: image.length,
+        imageSha256: _sha256Bytes(image),
+        targetId: _testTargetId,
+        token: 1,
+      ),
+      ops: [CompressedLiteralOp(raw, image.length)],
+      resumeFrom: 2,
+    );
+    expect(transfer.literalBytesSent, image.length);
+  });
+
+  test('a compressed literal stream transfers end to end', () async {
+    final image = Uint8List.fromList(List<int>.filled(4096, 0x5A));
+    final h = _Harness()..wire(base: Uint8List(0), target: image);
+    h.node.arm(
+        size: image.length, sha256: _sha256Bytes(image), token: 0x12345678);
+    h.link.binaryRequestHandler = (contact, reqData, tag) async {
+      if (reqData.length >= 2 && reqData[0] == reqTypeOta) {
+        final flen = reqData[1];
+        if (reqData.length < 2 + flen) return;
+        final frame = Uint8List.fromList(reqData.sublist(2, 2 + flen));
+        for (final response in h.node.handlePacket(frame)) {
+          h.link.simulatePush(binaryResponsePush(contact, tag, response));
+        }
+      }
+    };
+    final gz = GZipCodec(level: 9).encode(image);
+    final raw = Uint8List.fromList(gz.sublist(10, gz.length - 8));
+    final transfer = OtaTransfer(
+      link: h.link,
+      contact: targetContact,
+      contract: OtaStartContract(
+        imageSize: image.length,
+        imageSha256: _sha256Bytes(image),
+        targetId: _testTargetId,
+        token: 0x12345678,
+      ),
+      ops: [CompressedLiteralOp(raw, image.length)],
+      windowSize: 8,
+      askTimeout: const Duration(milliseconds: 200),
+      opSpacing: Duration.zero,
+      askSettle: Duration.zero,
+    );
+    final result = await transfer.run();
+    expect(h.node.state, FakeNodeState.ready);
+    expect(h.node.stagedImage, image);
+    expect(result.literalBytesSent, image.length);
   });
 }
