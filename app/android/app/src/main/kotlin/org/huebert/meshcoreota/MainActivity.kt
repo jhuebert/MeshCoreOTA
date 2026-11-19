@@ -1,4 +1,4 @@
-package com.github.jhuebert.meshcore_ota
+package org.huebert.meshcoreota
 
 import io.flutter.embedding.android.FlutterActivity
 
