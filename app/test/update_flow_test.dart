@@ -8,6 +8,7 @@ import 'package:device_link/device_link.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mesh_protocol/mesh_protocol.dart';
 import 'package:meshcore_ota/app_state.dart';
+import 'package:meshcore_ota/services/radio_plan.dart';
 import 'package:meshcore_ota/services/resume_store.dart';
 import 'package:meshcore_ota/services/update_flow.dart';
 import 'package:ota_core/ota_core.dart';
@@ -88,6 +89,12 @@ class _FakeCompanion {
 
   /// Test seam: abort() invocations.
   int abortCount = 0;
+
+  /// Test seam: observe `tempradio` arm/restore commands.
+  final List<String> tempradioCommands = <String>[];
+
+  /// Reply to the read-only radio2 status query used during probe.
+  String radio2StatusReply = 'off; preset=0,0,0,0';
 
   bool get isStaging => _staging != null;
 
@@ -282,6 +289,11 @@ class _FakeCompanion {
           'size=$_size off=$_written err=$_error';
     }
     if (command == 'version') return '$_nodeVersion (Build: Nov 11 2026)';
+    if (command == 'radio2 status') return radio2StatusReply;
+    if (command.startsWith('tempradio ')) {
+      tempradioCommands.add(command);
+      return 'OK - temp params for ${command.split(',').last} mins';
+    }
     if (command == 'ota abort') {
       abortCount++;
       _resetStaging();
@@ -1042,6 +1054,27 @@ void main() {
     expect(app.probing, isFalse);
   });
 
+  test('probe reads the radio2 preset reported by the node', () async {
+    fake.radio2StatusReply = 'on; at=primary; preset=915,125,9,5';
+    final app = AppState();
+    final lib = FakeLibrary();
+    app.library = lib;
+    app.tcpLinkFactory = (_, __) => fake.link;
+    await app.connectTcp(host: 'unused', port: 0);
+    lib.addImage(Uint8List(16), env: 'Xiao_S3_WIO_repeater', version: 'v1.1.0');
+    app.libraryEntries = await lib.list();
+    app.selectTarget(fake.target);
+
+    await app.probe();
+
+    expect(app.radio2Enabled, isTrue);
+    expect(app.radio2Preset, isNotNull);
+    expect(app.radio2Preset!.frequencyMhz, 915);
+    expect(app.radio2Preset!.bandwidthKhz, 125);
+    expect(app.radio2Preset!.spreadingFactor, 9);
+    expect(app.radio2Preset!.codingRate, 5);
+  });
+
   test('a refused arm leaves the update failed, not stuck staging', () async {
     final app = AppState();
     final lib = FakeLibrary();
@@ -1183,5 +1216,44 @@ void main() {
     expect(app.updatePhase, UpdatePhase.readyToApply);
     expect(app.log.any((line) => line.contains('link check had no answer')),
         isTrue);
+  });
+
+  test('a temporary-channel update arms the node and tunes the companion',
+      () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    final base = _FakeCompanion._pattern(0x66, 4096);
+    final image = Uint8List.fromList(base);
+    image[10] ^= 0xFF;
+    fake.setRunningForTest(base);
+    fake.advertiseNewOps = true;
+
+    final app = AppState();
+    app.tempRadioRenewal.now = () => DateTime(2026, 11, 19, 12);
+    final lib = FakeLibrary();
+    app.library = lib;
+    app.tcpLinkFactory = (_, __) => fake.link;
+    await app.connectTcp(host: 'unused', port: 0);
+    final entry = lib.addImage(image, env: env, version: 'v1.18.0-r4');
+    app.libraryEntries = await lib.list();
+    app.selectTarget(fake.target);
+    await app.probe();
+    await app.selectLibraryEntryForUpdate(entry);
+    app.remoteDiff = remoteDiff(ops: computeDelta(base, image).ops);
+    app.radioPlan = RadioPlan(
+      mode: RadioMode.tempRadio,
+      preset: RadioPlan.suggestTempRadio(app.livePreset!),
+    );
+
+    await app.runUpdate(version: entry.version);
+
+    expect(app.updatePhase, UpdatePhase.readyToApply);
+    // One arm plus the short restore; no renewal inside a short transfer.
+    expect(fake.tempradioCommands, hasLength(2));
+    expect(fake.tempradioCommands.first,
+        endsWith(',${RadioPlan.tempRadioChunkMinutes}'));
+    expect(fake.tempradioCommands.last, endsWith(',1'));
+    expect(
+        app.log.any((l) => l.contains('temporary channel renewed')), isFalse);
+    expect(fake.link.calls.contains('setRadioParams'), isTrue);
   });
 }

@@ -189,7 +189,7 @@ class ReviewScreen extends StatelessWidget {
         return route.isEmpty ? base : '$base — direct override $route';
       case RadioMode.tempRadio:
         return 'Temporary private channel — '
-            '${plan.preset?.label ?? '?'}, ${plan.durationMinutes} min';
+            '${plan.preset?.label ?? '?'} (renews automatically)';
       case RadioMode.radio2:
         return 'The repeater’s second preset — ${plan.preset?.label ?? '?'}';
     }

@@ -354,6 +354,31 @@ void main() {
     expect(progress.last.fraction, 1.0);
   });
 
+  test('the window boundary hook is awaited between windows', () async {
+    final harness = _Harness();
+    final base = Uint8List.fromList(
+        List<int>.generate(8192, (i) => (i * 31 + 7) & 0xFF));
+    final target = _mutate(base, random);
+    harness.wire(base: base, target: target);
+    final transfer =
+        harness.makeTransfer(target: target, base: base, windowSize: 2);
+    final progress = <TransferProgress>[];
+    var boundaries = 0;
+    final result = await transfer.run(
+      onProgress: progress.add,
+      onWindowBoundary: () async {
+        boundaries++;
+        // An awaited boundary must finish before the next window is sent.
+        await Future<void>.delayed(Duration.zero);
+        expect(harness.node.nextExpected, greaterThan(0));
+      },
+    );
+    expect(harness.node.state, FakeNodeState.ready);
+    expect(boundaries, progress.length);
+    expect(boundaries, greaterThan(1));
+    expect(result.uniqueOps, greaterThan(0));
+  });
+
   test('progress never passes 100% once OP_END bumps the watermark', () async {
     final harness = _Harness();
     final base = Uint8List.fromList(

@@ -201,6 +201,8 @@ class UpdateFlow {
     required List<DeltaOp> ops,
     required OtaRoute route,
     void Function(TransferProgress)? onProgress,
+    // Awaited between windows (e.g. renewing the repeater's tempradio window).
+    Future<void> Function()? onWindowBoundary,
     int windowSize = 12,
     WireOps? wireOps,
     int resumeFrom = 1,
@@ -238,7 +240,10 @@ class UpdateFlow {
       askSettle: const Duration(milliseconds: 100),
       shouldCancel: shouldCancel,
     );
-    final result = await engine.run(onProgress: onProgress);
+    final result = await engine.run(
+      onProgress: onProgress,
+      onWindowBoundary: onWindowBoundary,
+    );
     return result;
   }
 

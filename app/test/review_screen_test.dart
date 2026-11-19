@@ -31,7 +31,6 @@ AppState _app({RadioMode mode = RadioMode.liveMesh}) {
   app.radioPlan = RadioPlan(
     mode: mode,
     preset: mode == RadioMode.liveMesh ? null : _preset,
-    durationMinutes: 15,
   );
   app.remoteDiff = remoteDiff();
   return app;
@@ -69,7 +68,7 @@ Future<AppState> _connectedApp(WidgetTester tester,
     name: 'target repeater',
     advType: advTypeRepeater,
   ));
-  app.radioPlan = RadioPlan(mode: mode, preset: _preset, durationMinutes: 15);
+  app.radioPlan = RadioPlan(mode: mode, preset: _preset);
   app.remoteDiff = remoteDiff();
   return app;
 }
@@ -145,7 +144,7 @@ void reviewSummaryTests() {
     await tester.pump();
 
     expect(find.textContaining('Temporary private channel'), findsOneWidget);
-    expect(find.textContaining('15 min'), findsOneWidget);
+    expect(find.textContaining('renews automatically'), findsOneWidget);
     expect(find.text('Direct path override (optional)'), findsNothing);
     final start = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Start update'),
@@ -187,7 +186,6 @@ void reviewSummaryTests() {
     app.radioPlan = RadioPlan(
       mode: RadioMode.radio2,
       preset: app.nodePreset,
-      durationMinutes: 10,
     );
 
     await tester.pumpWidget(wrap(app, const ReviewScreen()));

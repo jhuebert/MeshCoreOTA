@@ -20,6 +20,7 @@ import 'services/resume_controller.dart';
 
 export 'services/resume_controller.dart' show ResumeCheck;
 import 'services/resume_store.dart';
+import 'services/temp_radio_renewal.dart';
 import 'services/update_flow.dart';
 
 enum ConnectionPhase { disconnected, connecting, connected }
@@ -206,13 +207,21 @@ class AppState extends ChangeNotifier {
   /// again). False when the node already had radio2 enabled.
   bool _enabledRadio2ForUpdate = false;
 
-  /// Whether the suggested preset/duration may still follow the node/image;
-  /// an operator edit pins them.
+  /// The repeater's configured radio2 preset, when it reported one. Used as
+  /// the source of truth instead of asking the operator to guess it.
+  LoRaPreset? radio2Preset;
+
+  /// Whether the suggested preset may still follow the node/image; an
+  /// operator edit pins it.
   bool _radioPresetAuto = true;
-  bool _radioDurationAuto = true;
 
   /// Whether the radio has been moved off the live preset for this transfer.
   bool _radioMoved = false;
+
+  /// Timing and failure count for the automatic `tempradio` renewal. Two
+  /// consecutive failures pause the transfer so a resume can arm a fresh
+  /// window rather than continue on a reverted channel.
+  final TempRadioRenewal tempRadioRenewal = TempRadioRenewal();
 
   String? radioPlanError;
 
@@ -389,6 +398,7 @@ class AppState extends ChangeNotifier {
     nodePreset = null;
     radio2Enabled = null;
     radio2Status = null;
+    radio2Preset = null;
     companionName = '';
     companionPreset = null;
     manualRoutePath = '';
@@ -451,9 +461,9 @@ class AppState extends ChangeNotifier {
     nodePreset = null;
     radio2Enabled = null;
     radio2Status = null;
+    radio2Preset = null;
     clearComparison();
     _radioPresetAuto = true;
-    _radioDurationAuto = true;
     manualRoutePath = '';
     manualRouteError = null;
     probeError = null;
@@ -494,6 +504,13 @@ class AppState extends ChangeNotifier {
         final radio = await _cliQuiet(t, 'get radio');
         nodePreset = radio == null ? null : LoRaPreset.parse(radio);
         radio2Status = await _cliQuiet(t, 'radio2 status');
+        // The fork reports `preset=f,bw,sf,cr` on every status line, including
+        // `off; paused`. Older firmware omits it — then the operator enters it.
+        final presetField =
+            RegExp(r'(?:^|;)\s*preset=([^;]+)').firstMatch(radio2Status ?? '');
+        radio2Preset = presetField == null
+            ? null
+            : LoRaPreset.parse(presetField.group(1)!);
         final radio2 = radio2Status?.trim().toLowerCase();
         radio2Enabled = radio2 == null
             ? null
@@ -512,6 +529,7 @@ class AppState extends ChangeNotifier {
       nodePreset = null;
       radio2Enabled = null;
       radio2Status = null;
+      radio2Preset = null;
       probeError = '$e';
     } finally {
       probing = false;
@@ -645,7 +663,6 @@ class AppState extends ChangeNotifier {
         final lib = await _openLibrary();
         _selectedImage = await lib.read(cached);
         selectedLibraryEntry = cached;
-        await _refreshRadioDuration();
         return;
       }
       if (offlineMode) {
@@ -662,7 +679,6 @@ class AppState extends ChangeNotifier {
         fileName: asset.name,
       );
       selectedLibraryEntry = entry;
-      await _refreshRadioDuration();
     } catch (e) {
       imageError = '$e';
       _selectedImage = null;
@@ -819,7 +835,6 @@ class AppState extends ChangeNotifier {
       imageError = null;
     }
     await refreshLibrary();
-    await _refreshRadioDuration();
     notifyListeners();
   }
 
@@ -882,7 +897,6 @@ class AppState extends ChangeNotifier {
         if (!await retryNodeInfo()) needsBoardForImage = true;
         notifyListeners();
       }
-      await _refreshRadioDuration();
     } catch (e) {
       imageError = '$e';
       _selectedImage = null;
@@ -923,7 +937,6 @@ class AppState extends ChangeNotifier {
         },
         shouldCancel: () => cancelRequested,
       );
-      await _refreshRadioDuration();
     } catch (e) {
       compareError = '$e';
       remoteDiff = null;
@@ -968,7 +981,6 @@ class AppState extends ChangeNotifier {
     selectedBoardOverride = env;
     needsBoardForImage = false;
     notifyListeners();
-    await _refreshRadioDuration();
   }
 
   /// Version of the current selection, full stamp.
@@ -991,9 +1003,7 @@ class AppState extends ChangeNotifier {
     radioPlanError = null;
     if (radioPlan.usesRadio && radioPlan.preset == null) {
       _radioPresetAuto = true;
-      _radioDurationAuto = true;
       _prefillRadioPreset();
-      _refreshRadioDuration();
     }
     notifyListeners();
   }
@@ -1001,15 +1011,6 @@ class AppState extends ChangeNotifier {
   void setRadioPreset(LoRaPreset preset) {
     radioPlan = radioPlan.copyWith(preset: preset);
     _radioPresetAuto = false;
-    radioPlanError = null;
-    notifyListeners();
-  }
-
-  void setRadioDuration(int minutes) {
-    radioPlan = radioPlan.copyWith(
-        durationMinutes: minutes.clamp(
-            RadioPlan.minDurationMinutes, RadioPlan.maxDurationMinutes));
-    _radioDurationAuto = false;
     radioPlanError = null;
     notifyListeners();
   }
@@ -1027,25 +1028,20 @@ class AppState extends ChangeNotifier {
         : RadioPlan.suggestTempRadio(live);
   }
 
-  /// A transfer-duration suggestion in minutes, from the airtime estimate.
-  Future<int> suggestedRadioDurationMinutes() async =>
-      RadioPlan.suggestDurationMinutes(await estimateTransferSeconds());
-
+  /// Reuse the node's own radio2 preset when it reported one; otherwise
+  /// suggest a preset clear of the live band.
   void _prefillRadioPreset() {
     final live = livePreset;
     if (live == null) return;
+    final reuse = radioPlan.mode == RadioMode.radio2 &&
+        radio2Enabled == true &&
+        radio2Preset != null;
     radioPlan = radioPlan.copyWith(
-        preset: radioPlan.mode == RadioMode.radio2
-            ? RadioPlan.suggestRadio2(live)
-            : RadioPlan.suggestTempRadio(live));
-  }
-
-  Future<void> _refreshRadioDuration() async {
-    if (!_radioDurationAuto) return;
-    final minutes = await suggestedRadioDurationMinutes();
-    if (!_radioDurationAuto) return; // the operator typed meanwhile
-    radioPlan = radioPlan.copyWith(durationMinutes: minutes);
-    notifyListeners();
+        preset: reuse
+            ? radio2Preset
+            : radioPlan.mode == RadioMode.radio2
+                ? RadioPlan.suggestRadio2(live)
+                : RadioPlan.suggestTempRadio(live));
   }
 
   /// Called after a successful probe: the node's preset is what the plan
@@ -1053,7 +1049,6 @@ class AppState extends ChangeNotifier {
   void _prefillRadioPlan() {
     if (!radioPlan.usesRadio) return;
     if (_radioPresetAuto || radioPlan.preset == null) _prefillRadioPreset();
-    _refreshRadioDuration();
   }
 
   /// The whole-image hash from step 5, not a library match, decides equality.
@@ -1130,6 +1125,13 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  RadioParams _paramsFor(LoRaPreset preset) => RadioParams(
+        frequencyHz: preset.frequencyHz,
+        bandwidthHz: preset.bandwidthHz,
+        spreadingFactor: preset.spreadingFactor,
+        codingRate: preset.codingRate,
+      );
+
   // ---------------- update execution ----------------
 
   void requestCancel() {
@@ -1183,9 +1185,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     _radioMoved = false;
+    tempRadioRenewal.clear();
     try {
       if (radioPlan.requiresZeroHop) {
         await _applyRadioPlan(t);
+        if (radioPlan.mode == RadioMode.tempRadio) {
+          tempRadioRenewal.arm();
+        }
       }
       // Prove the REQ/RESPONSE route is live on the chosen path before arming:
       // a dead path would otherwise leave an armed session nobody can feed.
@@ -1274,9 +1280,25 @@ class AppState extends ChangeNotifier {
             progress = p;
             notifyListeners();
           },
-          shouldCancel: () => cancelRequested,
+          onWindowBoundary: () => _renewTempRadioIfNeeded(t),
+          shouldCancel: () => cancelRequested || tempRadioRenewal.abandoned,
         );
       } on OtaTransferException catch (e) {
+        if (tempRadioRenewal.abandoned) {
+          // The temporary window could not be renewed. Pause rather than
+          // abort: the node keeps its staged bytes and resuming arms a fresh
+          // chunk from the current watermark.
+          log_('temporary channel renewal failed — pausing the transfer');
+          await pauseTransfer(
+            t: t,
+            image: image,
+            targetId: targetId,
+            frames: wireOps.frames,
+            version: version,
+            nextExpected: (progress?.opsApplied ?? 0) + 1,
+          );
+          throw const UpdatePausedException();
+        }
         if (cancelRequested) {
           // Pausing keeps both halves of the upload: the node's staged bytes
           // and the app's saved op stream. Nothing is aborted or discarded.
@@ -1374,7 +1396,8 @@ class AppState extends ChangeNotifier {
         frames: List<Uint8List>.from(frames),
         radioMode: radioPlan.mode.index,
         radioPreset: radioPlan.preset,
-        radioDurationMinutes: radioPlan.durationMinutes,
+        // Legacy field kept for format compatibility; renewal is automatic.
+        radioDurationMinutes: RadioPlan.tempRadioChunkMinutes,
         enabledRadio2ForUpdate: _enabledRadio2ForUpdate,
         manualRoutePath: manualRoutePath,
         transportKind: transportKind,
@@ -1492,7 +1515,7 @@ class AppState extends ChangeNotifier {
       mode: RadioMode
           .values[plan.radioMode.clamp(0, RadioMode.values.length - 1)],
       preset: plan.radioPreset,
-      durationMinutes: plan.radioDurationMinutes,
+      // plan.radioDurationMinutes is legacy: chunks are automatic now.
     );
     _enabledRadio2ForUpdate = plan.enabledRadio2ForUpdate;
     manualRoutePath = plan.manualRoutePath;
@@ -1620,9 +1643,9 @@ class AppState extends ChangeNotifier {
     _restorePreset = companionPreset ?? await _liveParams(link);
     if (radioPlan.mode == RadioMode.radio2) {
       if (radio2Enabled == true) {
-        // Leave the node's own radio2 configuration alone; the operator
-        // entered the preset it already uses.
-        log_('radio2 already enabled — leaving the node configuration as is');
+        // Leave the node's own radio2 configuration alone; the app uses the
+        // preset the node reported in `radio2 status`.
+        log_('radio2 already enabled — reusing its preset ${preset.label}');
       } else {
         await _nodeCommand(t, radioPlan.radio2Command);
         _radioMoved = true;
@@ -1632,18 +1655,16 @@ class AppState extends ChangeNotifier {
     } else {
       await _nodeCommand(t, radioPlan.tempRadioCommand);
       _radioMoved = true;
-      log_(
-          'node moved to ${preset.label} for ${radioPlan.durationMinutes} min');
+      log_('node moved to ${preset.label} for '
+          '${RadioPlan.tempRadioChunkMinutes} min');
     }
-    final reply = await link.runCliCommand(radioPlan.tempRadioCommand);
+    // The companion is connected over BLE/TCP, so its preset can simply be
+    // written — no tempradio timer, and stock companion firmware has no such
+    // CLI command. A refused write throws out of setRadioParams.
+    await link.setRadioParams(_paramsFor(preset));
     _radioMoved = true;
-    if (!reply.trim().toLowerCase().startsWith('ok')) {
-      throw UpdateFlowException('the companion refused the temporary preset',
-          deviceReply: reply);
-    }
-    log_(
-        'companion moved to ${preset.label} for ${radioPlan.durationMinutes} min');
-    // Both ends retune 2 s after queueing the reply.
+    log_('companion tuned to ${preset.label}');
+    // The repeater retunes 2 s after queueing its CLI reply.
     await Future<void>.delayed(const Duration(seconds: 3));
   }
 
@@ -1675,18 +1696,43 @@ class AppState extends ChangeNotifier {
     } finally {
       if (link != null && live != null) {
         try {
-          final reply = await link.runCliCommand('tempradio ${live.cli},1');
-          log_(reply.trim().toLowerCase().startsWith('ok')
-              ? 'companion back on ${live.label}'
-              : 'companion radio restore said: ${reply.trim()}');
+          await link.setRadioParams(_paramsFor(live));
+          log_('companion back on ${live.label}');
         } catch (e) {
           log_('companion radio restore failed: $e');
         }
+        // The repeater's revert is deferred ~2 s; don't talk to it on the
+        // live preset before that tick has run.
         await Future<void>.delayed(const Duration(seconds: 3));
       }
     }
     _radioMoved = false;
     notifyListeners();
+  }
+
+  /// Extend the repeater's temporary radio window at a window boundary.
+  /// Called from inside the transfer engine so no op is in flight while the
+  /// node retunes (its 2 s defer re-applies the same preset, with no revert
+  /// gap when we renew before expiry).
+  Future<void> _renewTempRadioIfNeeded(Contact t) async {
+    if (radioPlan.mode != RadioMode.tempRadio) return;
+    final preset = radioPlan.preset;
+    if (preset == null) return;
+    await tempRadioRenewal.maybeRenew(renew: () async {
+      try {
+        await _nodeCommand(
+            t,
+            RadioPlan(mode: RadioMode.tempRadio, preset: preset)
+                .tempRadioCommand);
+        log_(
+            'temporary channel renewed for ${RadioPlan.tempRadioChunkMinutes} min');
+        return true;
+      } catch (e) {
+        log_('temporary channel renewal failed '
+            '(${tempRadioRenewal.failures + 1}/2): $e');
+        return false;
+      }
+    });
   }
 
   Future<void> _nodeCommand(Contact t, String command) async {

@@ -204,7 +204,6 @@ List<_Shot> _shots() {
         app.radioPlan = RadioPlan(
           mode: RadioMode.tempRadio,
           preset: RadioPlan.suggestTempRadio(_livePreset),
-          durationMinutes: 12,
         );
       },
       screen: (_) => const RadioSettingsScreen(),
@@ -233,7 +232,6 @@ List<_Shot> _shots() {
         app.radioPlan = RadioPlan(
           mode: RadioMode.tempRadio,
           preset: RadioPlan.suggestTempRadio(_livePreset),
-          durationMinutes: 12,
         );
       },
       screen: (_) => const ReviewScreen(),

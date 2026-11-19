@@ -82,26 +82,18 @@ void main() {
       final plan = RadioPlan(
         mode: RadioMode.tempRadio,
         preset: _mesh.copyWith(frequencyHz: 914000000),
-        durationMinutes: 12,
       );
       expect(plan.requiresZeroHop, isTrue);
       expect(plan.usesRadio, isTrue);
       expect(plan.error(primary: _mesh), isNull);
-      expect(plan.tempRadioCommand, 'tempradio 914,62.5,7,5,12');
+      expect(plan.tempRadioCommand,
+          'tempradio 914,62.5,7,5,${RadioPlan.tempRadioChunkMinutes}');
       expect(plan.radio2Command, 'radio2 914,62.5,7,5');
     });
 
-    test('a missing preset and a bad duration are refused', () {
+    test('a missing preset is refused', () {
       const plan = RadioPlan(mode: RadioMode.tempRadio);
       expect(plan.error(), contains('choose the radio settings'));
-
-      final badDuration = RadioPlan(
-          mode: RadioMode.tempRadio, preset: _mesh, durationMinutes: 0);
-      expect(badDuration.error(), contains('duration'));
-
-      final tooLong = RadioPlan(
-          mode: RadioMode.tempRadio, preset: _mesh, durationMinutes: 1000);
-      expect(tooLong.error(), contains('duration'));
     });
 
     test('radio2 must not overlap the live preset', () {
@@ -120,7 +112,7 @@ void main() {
       const original = RadioPlan();
       final changed = original.copyWith(mode: RadioMode.radio2);
       expect(changed.mode, RadioMode.radio2);
-      expect(changed.durationMinutes, RadioPlan.defaultDurationMinutes);
+      expect(changed.preset, original.preset);
     });
 
     test('suggested presets leave the live band and stay in range', () {
@@ -147,17 +139,17 @@ void main() {
       expect(nearTop.overlaps(high), isFalse);
     });
 
-    test('duration suggestion has a floor, a margin and a ceiling', () {
-      expect(RadioPlan.suggestDurationMinutes(null),
-          RadioPlan.defaultDurationMinutes);
-      expect(RadioPlan.suggestDurationMinutes(0),
-          RadioPlan.defaultDurationMinutes);
-      // 60 s + 240 s margin = 5 min
-      expect(RadioPlan.suggestDurationMinutes(60), 5);
-      // 600 s + 240 s = 14 min
-      expect(RadioPlan.suggestDurationMinutes(600), 14);
-      expect(RadioPlan.suggestDurationMinutes(1000000),
-          RadioPlan.maxDurationMinutes);
+    test('tempradio chunks are fixed and renewed before expiry', () {
+      expect(RadioPlan.tempRadioChunkMinutes, 15);
+      expect(RadioPlan.tempRadioRenewAfterMinutes, 10);
+      expect(RadioPlan.tempRadioRenewAfterMinutes,
+          lessThan(RadioPlan.tempRadioChunkMinutes));
+      expect(
+          RadioPlan.shouldRenewTempRadio(const Duration(minutes: 9)), isFalse);
+      expect(
+          RadioPlan.shouldRenewTempRadio(const Duration(minutes: 10)), isTrue);
+      expect(
+          RadioPlan.shouldRenewTempRadio(const Duration(minutes: 30)), isTrue);
     });
 
     test('restore preset is the live preset', () {

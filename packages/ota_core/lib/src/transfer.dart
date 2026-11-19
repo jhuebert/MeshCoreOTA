@@ -427,6 +427,12 @@ class OtaTransfer {
   /// cancel flag without holding a reference to this engine.
   final bool Function()? shouldCancel;
 
+  /// Awaited at a window boundary, before the next window is sent. Unlike
+  /// `onProgress` (which is synchronous and only reports state), this lets a
+  /// caller do ordered work — such as renewing the repeater's temporary radio
+  /// window — without racing an in-flight op.
+  Future<void> Function()? onWindowBoundary;
+
   int packetsSent = 0;
   int literalBytesSent = 0;
   int retries = 0;
@@ -453,9 +459,12 @@ class OtaTransfer {
 
   /// Run the transfer to completion. Throws [OtaTransferException] on failure
   /// (including cancellation — check [cancelRequested] to distinguish).
-  Future<TransferResult> run(
-      {void Function(TransferProgress)? onProgress}) async {
+  Future<TransferResult> run({
+    void Function(TransferProgress)? onProgress,
+    Future<void> Function()? onWindowBoundary,
+  }) async {
     this.onProgress = onProgress;
+    this.onWindowBoundary = onWindowBoundary;
     _sw
       ..reset()
       ..start();
@@ -495,6 +504,8 @@ class OtaTransfer {
           opsApplied: applied - 1, // next_expected counts START as applied
           literalBytes: literalBytesSent,
         );
+        if (this.onWindowBoundary != null) await this.onWindowBoundary!();
+        _throwIfCancelled();
       }
       return TransferResult(
         packetsSent: packetsSent,

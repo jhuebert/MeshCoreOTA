@@ -197,11 +197,6 @@ void main() {
     ));
     expect(app.radioPlan.preset!.frequencyMhz, 915);
 
-    app.setRadioDuration(45);
-    expect(app.radioPlan.durationMinutes, 45);
-    app.setRadioDuration(99999);
-    expect(app.radioPlan.durationMinutes, RadioPlan.maxDurationMinutes);
-
     app.setRadioMode(RadioMode.radio2);
     expect(app.radioPlan.mode, RadioMode.radio2);
   });

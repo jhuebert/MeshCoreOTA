@@ -1,14 +1,16 @@
 /// The radio a transfer runs on.
 ///
 /// The update traffic is heavy for a production mesh, so the operator can
-/// move it off the live preset: both ends switch to a temporary private
-/// channel (`tempradio`, on the repeater and on the companion), or the
-/// repeater keeps serving the live mesh and the transfer uses its second
-/// preset (`radio2`). Both off-mesh modes are zero-hop by definition — no
-/// relay is on those settings.
+/// move it off the live preset: the repeater switches to a temporary private
+/// channel (`tempradio`) while the companion is tuned directly over BLE/TCP,
+/// or the repeater keeps serving the live mesh and the transfer uses its
+/// second preset (`radio2`). Both off-mesh modes are zero-hop by definition —
+/// no relay is on those settings.
 ///
-/// Everything here is pure: the screens format and validate with it, and the
-/// update flow turns it into the CLI commands the node and companion accept.
+/// A temporary channel is armed in fixed chunks and renewed automatically;
+/// the operator never picks a duration. Everything here is pure: the screens
+/// format and validate with it, and the update flow turns it into the CLI
+/// commands the node accepts and the radio parameters the companion uses.
 library;
 
 /// A LoRa preset in the units the firmware's `get radio` reply uses
@@ -126,12 +128,13 @@ class RadioPlan {
   const RadioPlan({
     this.mode = RadioMode.liveMesh,
     this.preset,
-    this.durationMinutes = defaultDurationMinutes,
   });
 
-  static const int defaultDurationMinutes = 10;
-  static const int minDurationMinutes = 1;
-  static const int maxDurationMinutes = 720;
+  /// The repeater's `tempradio` window is armed in fixed chunks. It is
+  /// renewed before expiry with another chunk, so the operator does not have
+  /// to guess a duration for the whole transfer.
+  static const int tempRadioChunkMinutes = 15;
+  static const int tempRadioRenewAfterMinutes = 10;
 
   /// radio2 shares the radio with the live mesh: the repeater only listens on
   /// the secondary preset for part of each cycle (more when the primary is
@@ -144,11 +147,6 @@ class RadioPlan {
 
   /// The private preset for [RadioMode.tempRadio] / [RadioMode.radio2].
   final LoRaPreset? preset;
-
-  /// How long the temporary preset stays in place. Applies to the repeater's
-  /// `tempradio` and to the companion's (which is always a tempradio, even in
-  /// radio2 mode).
-  final int durationMinutes;
 
   /// Both off-mesh modes require zero-hop: no other node is tuned there.
   bool get requiresZeroHop => mode != RadioMode.liveMesh;
@@ -168,8 +166,14 @@ class RadioPlan {
     return '~${(seconds / 60).ceil()} min';
   }
 
-  /// `tempradio <freq>,<bw>,<sf>,<cr>,<mins>`.
-  String get tempRadioCommand => 'tempradio ${preset!.cli},$durationMinutes';
+  /// Pure renewal rule: true once a chunk has been live long enough to need
+  /// another. Kept out of the transfer engine so it is testable without time.
+  static bool shouldRenewTempRadio(Duration elapsed) =>
+      elapsed >= const Duration(minutes: tempRadioRenewAfterMinutes);
+
+  /// `tempradio <freq>,<bw>,<sf>,<cr>,<mins>` — one automatic chunk.
+  String get tempRadioCommand =>
+      'tempradio ${preset!.cli},$tempRadioChunkMinutes';
 
   /// `radio2 <freq>,<bw>,<sf>,<cr>` (setting a preset is how it is enabled).
   String get radio2Command => 'radio2 ${preset!.cli}';
@@ -182,10 +186,6 @@ class RadioPlan {
     if (p == null) return 'choose the radio settings for this mode';
     final range = p.rangeError;
     if (range != null) return range;
-    if (durationMinutes < minDurationMinutes ||
-        durationMinutes > maxDurationMinutes) {
-      return 'duration must be $minDurationMinutes–$maxDurationMinutes minutes';
-    }
     if (mode == RadioMode.radio2 && primary != null && p.overlaps(primary)) {
       return 'radio2 must not overlap the live preset '
           '(${primary.label}) — use a different frequency';
@@ -193,12 +193,9 @@ class RadioPlan {
     return null;
   }
 
-  RadioPlan copyWith(
-          {RadioMode? mode, LoRaPreset? preset, int? durationMinutes}) =>
-      RadioPlan(
+  RadioPlan copyWith({RadioMode? mode, LoRaPreset? preset}) => RadioPlan(
         mode: mode ?? this.mode,
         preset: preset ?? this.preset,
-        durationMinutes: durationMinutes ?? this.durationMinutes,
       );
 
   /// Distance in 1 MHz steps, in a fixed order, used to find a frequency that
@@ -224,21 +221,6 @@ class RadioPlan {
   /// radio2 guard, so the first step that does not overlap is chosen.
   static LoRaPreset suggestRadio2(LoRaPreset primary) =>
       suggestTempRadio(primary);
-
-  /// How long to keep a temporary preset for a transfer. [estimatedSeconds]
-  /// is the app's airtime estimate; a margin covers the arm, verification,
-  /// retries and a slow mesh round trip.
-  static int suggestDurationMinutes(
-    int? estimatedSeconds, {
-    int marginSeconds = 240,
-  }) {
-    if (estimatedSeconds == null || estimatedSeconds <= 0) {
-      return defaultDurationMinutes;
-    }
-    final total = estimatedSeconds + marginSeconds;
-    final minutes = (total / 60).ceil();
-    return minutes.clamp(minDurationMinutes, maxDurationMinutes);
-  }
 
   /// The preset to restore the companion to after the transfer: the live
   /// preset it was on before the plan moved it.
