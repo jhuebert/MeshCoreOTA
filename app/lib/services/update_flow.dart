@@ -170,16 +170,13 @@ class UpdateFlow {
       windowSize: windowSize,
       askTimeout: const Duration(seconds: 10),
       maxRetriesPerWindow: 12,
-      // Pace to the radio, not to the companion's queue. Sending ops faster
-      // than the node can commit them provokes re-sends that cost more than
-      // the delay saved: on hardware, 100 ms spacing needed 3.8x the ops over
-      // 45 s, while 400 ms needed 1.24x over 27 s. One maximum-size packet of
-      // airtime, plus a margin for the node's flash commit, is the floor.
+      // Pace to the radio, not to the companion's queue. One maximum-size
+      // packet of airtime plus a short commit margin is enough; on hardware
+      // tighter spacing travelled faster without costing extra re-sends.
       opSpacing: spacing,
-      // Let the tail of a window finish transmitting and committing before
-      // asking: a premature ask reports a lower next_expected and invites a
-      // pointless re-send of ops the node already has.
-      askSettle: const Duration(milliseconds: 250),
+      // One cheap ask after the window covers the tail's commit; a longer
+      // settle just adds latency to every window.
+      askSettle: const Duration(milliseconds: 100),
       shouldCancel: shouldCancel,
     );
     final result = await engine.run(onProgress: onProgress);
@@ -194,7 +191,7 @@ class UpdateFlow {
   /// reads as "missing" — so every window gets re-broadcast. Falls back to a
   /// safe constant when the radio parameters are unavailable.
   Future<Duration> _pacing() async {
-    const fallback = Duration(milliseconds: 250);
+    const fallback = Duration(milliseconds: 150);
     try {
       final p = await link.radioParams();
       final airtime = loraTimeOnAirMicros(
@@ -203,7 +200,7 @@ class UpdateFlow {
         bandwidthHz: p.bandwidthHz,
         codingRate: p.codingRate,
       );
-      final us = (airtime * 1.5).round() + 60000; // airtime + commit margin
+      final us = airtime.round() + 60000; // airtime + commit margin
       final candidate = Duration(microseconds: us);
       return candidate > fallback ? candidate : fallback;
     } catch (_) {

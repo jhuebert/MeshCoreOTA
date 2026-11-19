@@ -114,8 +114,11 @@ bool _sameHash(List<int> a, List<int> b) {
 Future<RemoteDiffResult> computeRemoteDiff({
   required BlockHashClient client,
   required Uint8List image,
-  int blockSize = 256,
-  int searchWindow = 131072,
+  // 1 KB blocks: four times fewer find queries than 256 B (the node-side
+  // scan, not airtime, dominates Compare) while keeping reuse within ~4% of
+  // the finest granularity on real r2->r3->r4 firmware images.
+  int blockSize = 1024,
+  int searchWindow = 32768,
   void Function(RemoteDiffProgress)? onProgress,
   bool Function()? shouldCancel,
 }) async {

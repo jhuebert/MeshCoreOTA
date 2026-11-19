@@ -8,6 +8,13 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Changed
 
+- **Updates transfer faster and Compare no longer times out on slower nodes.**
+  The repeater now bulk-reads its running image during block searches instead
+  of one 4-byte read per step — a 128 KB scan dropped from ~8 s to under 1 s on
+  the Xiao S3. The app compares in 1 KB blocks over 32 KB windows (four times
+  fewer exchanges than 256-byte blocks, at only a few percent less reuse) and
+  transfers in 16-op windows with tighter pacing. On real hardware an r3→r4
+  comparison fell from ~5 minutes to ~75 seconds with no loss of reliability.
 - **Literal bytes are now compressed over the wire.** Consecutive new bytes are
   DEFLATE-compressed at level 9 by the app (raw stream, no gzip wrapper) and
   sent as `OP_LITERAL_Z` chunks; the node inflates them with the ESP32's ROM

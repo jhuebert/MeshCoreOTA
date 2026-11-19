@@ -1176,7 +1176,7 @@ class AppState extends ChangeNotifier {
           ),
           ops: ops,
           route: route,
-          windowSize: 8,
+          windowSize: 16,
           onProgress: (p) {
             progress = p;
             notifyListeners();
