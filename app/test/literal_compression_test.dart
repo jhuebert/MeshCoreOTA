@@ -43,4 +43,27 @@ void main() {
     expect(raw[0], isNot(0x1F));
     expect(raw.length, lessThan(1024));
   });
+
+  test('a very long run is split so every comp_len fits the wire', () {
+    // ~1.4 MB of compressible data would produce a stream longer than the
+    // wire's u16 comp_len if it were compressed in one shot.
+    var x = 0x12345678;
+    final data = Uint8List.fromList(List<int>.generate(1429472, (_) {
+      x ^= (x << 13) & 0xFFFFFFFF;
+      x ^= x >> 17;
+      x ^= (x << 5) & 0xFFFFFFFF;
+      return x & 0xFF;
+    }).map((b) => b & 0x03).toList()); // compressible but large
+    final ops = compressLiteralRuns([LiteralOp(data)]);
+    expect(ops.length, greaterThan(1));
+    final streams = ops.whereType<CompressedLiteralOp>().toList();
+    expect(streams, isNotEmpty);
+    for (final stream in streams) {
+      expect(stream.compressed.length, lessThanOrEqualTo(65535));
+    }
+    expect(streams.fold<int>(0, (s, o) => s + o.originalLength), data.length);
+    // Each stream is independently framed and fits a companion frame.
+    final frames = wireOpsFor(ops).frames;
+    expect(frames.length, greaterThan(1));
+  });
 }

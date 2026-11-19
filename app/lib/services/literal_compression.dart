@@ -12,6 +12,11 @@ const _gzipTrailer = 8;
 
 final constGzip = GZipCodec(level: 9);
 
+/// OP_LITERAL_Z carries comp_len as a u16. A single stream longer than this
+/// wraps on the wire and the node rejects it, so runs are split into streams
+/// that each fit the field.
+const maxCompressedStream = 65535;
+
 Uint8List rawDeflate(List<int> bytes) {
   if (bytes.isEmpty) return Uint8List(0);
   final gz = constGzip.encode(bytes);
@@ -34,20 +39,34 @@ List<DeltaOp> compressLiteralRuns(List<DeltaOp> ops, {int minRun = 2048}) {
     run = <Uint8List>[];
     final total = runLength;
     runLength = 0;
-    if (total >= minRun) {
-      final builder = BytesBuilder(copy: false);
-      for (final chunk in original) {
-        builder.add(chunk);
-      }
-      final compressed = rawDeflate(builder.takeBytes());
-      // The wire needs a 7-byte header per compressed op plus framing; don't
-      // pay for a compressed stream that is not clearly smaller.
-      if (compressed.length + 16 < total) {
-        out.add(CompressedLiteralOp(compressed, total));
-        return;
-      }
+    if (total < minRun) {
+      out.addAll(original.map((data) => LiteralOp(data)));
+      return;
     }
-    out.addAll(original.map((data) => LiteralOp(data)));
+    final builder = BytesBuilder(copy: false);
+    for (final chunk in original) {
+      builder.add(chunk);
+    }
+    final flat = builder.takeBytes();
+    // Cap each input piece at the wire's u16 comp_len. A piece that fits also
+    // compresses to at most that many bytes (we only compress when it shrinks),
+    // so every emitted stream is representable.
+    var at = 0;
+    while (at < flat.length) {
+      final end = at + maxCompressedStream > flat.length
+          ? flat.length
+          : at + maxCompressedStream;
+      final piece = Uint8List.sublistView(flat, at, end);
+      final compressed = rawDeflate(piece);
+      // The wire needs a 7-byte header per stream plus framing; don't pay for
+      // a compressed stream that is not clearly smaller.
+      if (compressed.length + 16 < piece.length) {
+        out.add(CompressedLiteralOp(compressed, piece.length));
+      } else {
+        out.add(LiteralOp(piece));
+      }
+      at = end;
+    }
   }
 
   for (final op in ops) {

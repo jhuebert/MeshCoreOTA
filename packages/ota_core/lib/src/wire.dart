@@ -167,6 +167,7 @@ Uint8List buildLiteralZChunk({
   required List<int> data,
 }) {
   assert(data.length <= otaLzMaxData);
+  assert(compressedTotal <= 0xFFFF);
   final body = Uint8List(otaLzBodyOverhead + data.length);
   final bd = ByteData.sublistView(body);
   bd.setUint32(0, originalLength, Endian.little);

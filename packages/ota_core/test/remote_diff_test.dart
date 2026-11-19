@@ -53,6 +53,7 @@ class Oracle {
   final Uint8List running;
   late final FakeDeviceLink link;
   int queries = 0;
+  final findQueries = <(int start, int end, int length)>[];
 
   Uint8List _meta() {
     final body = <int>[..._le32(running.length), 0, 0];
@@ -71,6 +72,7 @@ class Oracle {
     final end =
         frame[11] | (frame[12] << 8) | (frame[13] << 16) | (frame[14] << 24);
     final count = frame[15];
+    findQueries.add((start, end, length));
     final wants = <int>[];
     for (var i = 0; i < count; i++) {
       final at = 16 + i * 8;
@@ -121,6 +123,30 @@ void main() {
     expect(result.upToDate, isTrue);
     expect(result.ops, isEmpty);
     expect(result.queries, 1);
+  });
+
+  test('a growing image never sends start > end or an unaligned length',
+      () async {
+    final running = _image(64 * 1024, 1);
+    // More than the 128 KB default search window bigger than the running
+    // image: the naive window start would run past running.size.
+    final image = Uint8List.fromList([
+      ...running,
+      ..._image(200 * 1024, 2),
+      0xAA, 0xBB, 0xCC, // a 3-byte unaligned tail
+    ]);
+    final oracle = Oracle(running);
+    final result = await oracle.diff(image);
+    expect(result.upToDate, isFalse);
+    expect(oracle.findQueries, isNotEmpty);
+    for (final q in oracle.findQueries) {
+      expect(q.$1, lessThanOrEqualTo(q.$2));
+      expect(q.$2, lessThanOrEqualTo(running.length));
+      expect(q.$3 % 4, 0);
+      expect(q.$3, greaterThanOrEqualTo(4));
+    }
+    expect(
+        applyDelta(running, result.ops, expectedLength: image.length), image);
   });
 
   test('a node that cannot hash its image gets a full image', () async {

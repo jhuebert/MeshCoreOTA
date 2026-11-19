@@ -188,14 +188,27 @@ Future<RemoteDiffResult> computeRemoteDiff({
     if (cancel()) throw const RemoteDiffException('cancelled');
     final remaining = image.length - offset;
     if (remaining < blockSize) {
+      // The node only hashes aligned blocks of at least four bytes, so a
+      // shorter tail cannot be looked up: send it as-is.
+      if (remaining < 4) {
+        ops.add(LiteralOp(Uint8List.sublistView(image, offset)));
+        toSend += remaining;
+        offset = image.length;
+        progress();
+        break;
+      }
       // Tail block: a single query with the exact remaining length.
       var length = remaining;
       if (length > 4) length = (length ~/ 4) * 4;
       final fingerprint = rolling64(image, offset, length);
-      final start = offset > searchWindow ? offset - searchWindow : 0;
+      final wantedStart = offset > searchWindow ? offset - searchWindow : 0;
       final end = offset + length + searchWindow < node.size
           ? offset + length + searchWindow
           : node.size;
+      // Once the new image is longer than the running image plus the search
+      // window, the window starts past the end of the running image. The node
+      // rejects start > end; clamp it so the query just finds nothing.
+      final start = wantedStart > end ? end : wantedStart;
       final hits = await client.find(
           length: length,
           start: (start ~/ 4) * 4,
@@ -223,9 +236,10 @@ Future<RemoteDiffResult> computeRemoteDiff({
       offsets.add(at);
       fingerprints.add(rolling64(image, at, blockSize));
     }
-    final start = offset > searchWindow ? offset - searchWindow : 0;
+    final wantedStart = offset > searchWindow ? offset - searchWindow : 0;
     final last = offset + count * blockSize + searchWindow;
     final end = last < node.size ? last : node.size;
+    final start = wantedStart > end ? end : wantedStart;
     final hitLists = await client.find(
         length: blockSize,
         start: (start ~/ 4) * 4,
