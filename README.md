@@ -183,7 +183,8 @@ missed. You can watch progress and a log, plus an **estimated time left based
 on how fast the transfer is actually going**. It takes longer than the radio
 speed alone suggests, because the repeater pauses to write each batch to its
 storage. You can cancel at any time; a cancelled transfer throws away the
-partly received firmware.
+partly received firmware. When you are **resuming** an earlier transfer,
+Cancel becomes **Pause** and keeps what has already arrived.
 
 ### 9. Commit and verify
 
@@ -196,6 +197,30 @@ old version by itself. Once the result is clear you can also switch back
 manually with **Roll back to previous firmware** — the app reports that as a
 rollback, never as a successful update. Until the reboot is settled the app
 waits instead of guessing, so the rollback button stays unavailable.
+
+## Resuming an interrupted update
+
+If the app crashes or the phone reboots partway through a transfer, the
+repeater keeps the part it already received. When you reopen the app, the
+**Unfinished update** row on the Connect screen takes you to a recovery screen.
+Enter the admin password again (it is never saved), and the app checks how far
+the repeater got:
+
+- **Resume upload** — only the missing part is sent. The firmware image and
+  the exact op stream were saved on the phone, so there is no re-download and
+  no re-comparison.
+- **Apply the finished update** — if the upload and the repeater's own check
+  had completed before the app died, you can go straight to the commit step.
+- **Start a different update** — cancels the resume, discards the repeater's
+  staged image, and opens the firmware picker. Use this if you changed your
+  mind about which version to install.
+- **Cancel resume** on a resumable update does the same thing; pausing from
+  the transfer screen keeps what has already been uploaded.
+
+This works while the **repeater** stays powered. If the repeater itself
+reboots, its staged image is lost and the upload has to start over — but the
+firmware is still on the phone, so you do not have to download it again. The
+saved update is cleared once the new firmware is verified, or when you cancel.
 
 ## Going offline
 

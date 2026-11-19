@@ -495,6 +495,15 @@ void main() {
     expect(status.ok, isTrue);
   });
 
+  test('nextExpected reads the node watermark after a reconnect', () async {
+    fake.forceStaging();
+    expect(await flow.nextExpected(fake.target), 5086);
+  });
+
+  test('nextExpected returns null when the node has no live staging', () async {
+    expect(await flow.nextExpected(fake.target), isNull);
+  });
+
   test('stage refuses a board that does not match the image', () async {
     const env = 'Xiao_S3_WIO_repeater';
     fake.infoTargetOverride = 0xDEADBEEF; // node is a "different board"

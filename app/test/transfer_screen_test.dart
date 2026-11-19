@@ -65,6 +65,18 @@ void main() {
     expect(find.textContaining('left at the current rate'), findsNothing);
   });
 
+  testWidgets('a resumed transfer offers Pause, not a discard', (tester) async {
+    _bigView(tester);
+    final app = _app();
+    app.updatePhase = UpdatePhase.transferring;
+
+    await tester.pumpWidget(wrap(app, const TransferScreen(resuming: true)));
+    await tester.pump();
+
+    expect(find.text('Pause — keep what was already uploaded'), findsOneWidget);
+    expect(find.textContaining('staged image is discarded'), findsNothing);
+  });
+
   testWidgets('a failed update offers a way back, not a dead cancel',
       (tester) async {
     _bigView(tester);

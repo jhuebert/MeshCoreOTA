@@ -83,8 +83,13 @@ code with no new guarantee at the arm/SHA/apply gates.
   switch disables even those: the app never contacts GitHub while it is on.
 - No persistent copy of uploaded images beyond the local **library** (explicit
   user action), which holds only public release images and their SHA-256.
-  The only other app-owned state is `ota_settings.json`, which records the
-  offline flag.
+  The only other app-owned state is `ota_settings.json` (the offline flag) and
+  `ota_resume.bin` — a record of an interrupted update. It contains the target
+  repeater's public key and name, the firmware's SHA-256 and version, the radio
+  choice, and the exact op frames already generated. It has **no admin
+  password** and no private key material. Resuming always asks for the admin
+  password again. Delete it any time with **Cancel resume** on the recovery
+  screen; it changes nothing on the repeater until an update is resumed.
 - No store listing dependency — releases are GitHub Releases (signed Android
   APKs and unsigned desktop bundles).
 

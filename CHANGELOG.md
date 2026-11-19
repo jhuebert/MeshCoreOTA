@@ -6,6 +6,18 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Interrupted updates can be resumed.** The app now saves the target image
+  and the exact op stream when a transfer starts. After a crash or a rebooted
+  phone, an **Unfinished update** row on the Connect screen opens a recovery
+  screen: sign in again, check how much the repeater received, and continue
+  from there without re-uploading it. If the upload had already finished, the
+  recovery screen offers to commit it. Cancel resume discards the staged image
+  and lets you pick a different firmware. The admin password is never stored.
+  If the repeater itself reboots, its staged bytes are gone and the upload must
+  start over, but the saved firmware image is reused.
+
 ### Changed
 
 - **Updates transfer faster and Compare no longer times out on slower nodes.**

@@ -187,6 +187,9 @@ Uint8List buildEnd({required int seq}) => buildOp(otaOpEnd, seq: seq);
 Uint8List buildAsk() => buildOp(otaOpAsk);
 
 /// The repeater's answer to an ask.
+/// `[magic(2)][OP_REPORT][next_expected:u16][crc:u16]`.
+const otaReportLen = 7;
+
 class OtaReport {
   const OtaReport(this.nextExpected);
 
@@ -290,9 +293,9 @@ Uint8List? binaryResponseReport(Uint8List frame,
 /// tag when known) and parses the OP_REPORT inside. Returns the report when
 /// the push parses, else null.
 OtaReport? parseBinaryResponse(Uint8List frame,
-    {required Uint8List contactPubKey, int? askTag}) {
-  final payload =
-      binaryResponseReport(frame, contactPubKey: contactPubKey, askTag: askTag);
+    {required Uint8List contactPubKey, int? askTag, int? exactLength}) {
+  final payload = binaryResponseReport(frame,
+      contactPubKey: contactPubKey, askTag: askTag, exactLength: exactLength);
   if (payload == null) return null;
   return parseReport(payload);
 }

@@ -707,6 +707,63 @@ void main() {
     expect(harness.node.asks, greaterThan(0));
   });
 
+  test('saved frames resume without arming or re-sending the prefix', () async {
+    final harness = _Harness();
+    final base = Uint8List.fromList(
+        List<int>.generate(8192, (i) => (i * 31 + 7) & 0xFF));
+    final target = _mutate(base, random);
+    harness.wire(base: base, target: target);
+    harness.link.binaryRequestHandler = (contact, reqData, tag) async {
+      if (reqData.length < 2 || reqData[0] != reqTypeOta) return;
+      final flen = reqData[1];
+      if (reqData.length < 2 + flen) return;
+      for (final response in harness.node
+          .handlePacket(Uint8List.fromList(reqData.sublist(2, 2 + flen)))) {
+        harness.link.simulatePush(binaryResponsePush(contact, tag, response));
+      }
+    };
+    final frames = wireOpsFor(computeDelta(base, target).ops).frames;
+    harness.node.arm(
+        size: target.length, sha256: _sha256Bytes(target), token: 0xBADC0FFE);
+    harness.node.handlePacket(buildStart(
+        size: target.length,
+        sha256: _sha256Bytes(target),
+        targetId: _testTargetId,
+        token: 0xBADC0FFE));
+    for (final frame in frames.take(5)) {
+      harness.node.handlePacket(frame);
+    }
+    // The fake commits received ops on an ask, like the real node.
+    harness.node.handlePacket(buildOp(otaOpAsk));
+    final resumeAt = harness.node.nextExpected;
+    expect(resumeAt, 6);
+
+    final transfer = OtaTransfer(
+      link: harness.link,
+      contact: targetContact,
+      contract: OtaStartContract(
+        imageSize: target.length,
+        imageSha256: _sha256Bytes(target),
+        targetId: _testTargetId,
+        token: 0, // unused on resume: OP_START is not re-sent
+      ),
+      ops: const <DeltaOp>[],
+      prebuiltOps: WireOps(frames),
+      resumeFrom: resumeAt,
+      windowSize: 4,
+      askTimeout: const Duration(milliseconds: 200),
+      maxRetriesPerWindow: 32,
+      opSpacing: Duration.zero,
+      askSettle: Duration.zero,
+    );
+    final result = await transfer.run();
+    expect(harness.node.state, FakeNodeState.ready);
+    expect(harness.node.stagedImage, target);
+    expect(result.uniqueOps, frames.length);
+    expect(result.retries, 0);
+    expect(result.duplicateOps, 0);
+  });
+
   test('every op frame fits a stock companion frame', () {
     final image = Uint8List.fromList(
         List<int>.generate(4096, (i) => (i * 31 + 7) & 0xFF));

@@ -325,11 +325,16 @@ WireOps wireOpsFor(List<DeltaOp> ops, {int literalChunk = otaLiteralChunk}) {
 /// and drops anything else, so recovery is "re-send from next_expected" after
 /// each ask.
 class OtaTransfer {
+  /// [prebuiltOps] replays an op stream saved before a crash. It must be the
+  /// exact stream the node was armed with: the node applies by sequence number,
+  /// and the app persists the frames at arm time so a reconnect can pick up at
+  /// the node's `next_expected` without rebuilding the plan.
   OtaTransfer({
     required this.link,
     required this.contact,
     required this.contract,
     required this.ops,
+    WireOps? prebuiltOps,
     this.windowSize = 12,
     this.askTimeout = const Duration(seconds: 10),
     this.maxRetriesPerWindow = 12,
@@ -341,9 +346,10 @@ class OtaTransfer {
     this.companionFrameLimit = otaStockCompanionFrameLimit,
     this.shouldCancel,
   })  : assert(windowSize >= 1),
-        wireOps = wireOpsFor(ops,
-            literalChunk:
-                otaLiteralChunkForBinaryReq(frameLimit: companionFrameLimit)) {
+        wireOps = prebuiltOps ??
+            wireOpsFor(ops,
+                literalChunk: otaLiteralChunkForBinaryReq(
+                    frameLimit: companionFrameLimit)) {
     if (resumeFrom > 1) {
       // Include the already-sent prefix in the cumulative transfer metrics.
       // The session is still the same update: those bytes went out before the

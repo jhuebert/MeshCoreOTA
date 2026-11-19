@@ -15,7 +15,11 @@ import 'verify_screen.dart';
 /// Step 8: the transfer itself. The node re-verifies the image when the
 /// stream ends. Nothing boots until the operator commits.
 class TransferScreen extends StatefulWidget {
-  const TransferScreen({super.key});
+  /// A resumed transfer keeps the staged bytes when cancelled; a fresh one
+  /// discards them.
+  const TransferScreen({super.key, this.resuming = false});
+
+  final bool resuming;
 
   @override
   State<TransferScreen> createState() => _TransferScreenState();
@@ -51,7 +55,11 @@ class _TransferScreenState extends State<TransferScreen> {
       app.log_('foreground service unavailable: $e — keep the screen on');
     }
     try {
-      await app.runUpdate(version: app.selectedVersion ?? 'unknown');
+      if (widget.resuming) {
+        await app.resumeTransfer();
+      } else {
+        await app.runUpdate(version: app.selectedVersion ?? 'unknown');
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _error = '$e');
@@ -211,7 +219,9 @@ class _TransferScreenState extends State<TransferScreen> {
         return OutlinedButton.icon(
           onPressed: () => context.read<AppState>().requestCancel(),
           icon: const Icon(Icons.close),
-          label: const Text('Cancel (safe — staged image is discarded)'),
+          label: Text(widget.resuming
+              ? 'Pause — keep what was already uploaded'
+              : 'Cancel (safe — staged image is discarded)'),
         );
       case UpdatePhase.readyToApply:
         return FilledButton.icon(

@@ -16,6 +16,10 @@ import 'services/firmware_library.dart';
 import 'services/github_source.dart';
 import 'services/literal_compression.dart';
 import 'services/radio_plan.dart';
+import 'services/resume_controller.dart';
+
+export 'services/resume_controller.dart' show ResumeCheck;
+import 'services/resume_store.dart';
 import 'services/update_flow.dart';
 
 enum ConnectionPhase { disconnected, connecting, connected }
@@ -24,6 +28,14 @@ enum ConnectionPhase { disconnected, connecting, connected }
 /// newest-first; dev builds are their own tab rather than a switch buried
 /// under the stable list.
 enum ReleaseTrack { stable, dev }
+
+/// A saved op stream resumed from the node's current watermark.
+class ResumeRun {
+  const ResumeRun(this.plan, this.nextExpected);
+
+  final ResumePlan plan;
+  final int nextExpected;
+}
 
 enum UpdatePhase {
   idle,
@@ -54,11 +66,15 @@ class AppState extends ChangeNotifier {
   ConnectionPhase connectionPhase = ConnectionPhase.disconnected;
   String? connectError;
   String companionName = '';
+  String? _bleDeviceId;
 
   /// Test seam: overrides the TCP link built by [connectTcp] (the screen
   /// cannot inject one). Null in production, where a real TcpDeviceLink is
   /// built.
   RadioLink Function(String host, int port)? tcpLinkFactory;
+
+  /// Test seam for the recovery probe; production builds a real controller.
+  ResumeController Function(ResumePlan plan)? resumeControllerFactory;
 
   RadioLink? _link;
   CompanionClient? _client;
@@ -206,6 +222,21 @@ class AppState extends ChangeNotifier {
   /// never present a rollback as a verified update.
   bool rolledBack = false;
 
+  // ---------------- interrupted update ----------------
+
+  /// A saved op stream from an update that did not finish. Null once the
+  /// update is applied, discarded, or the file fails to parse.
+  ResumePlan? resumePlan;
+  ResumeStore? resumeStore;
+
+  /// What the last reconnect check found; drives the recovery screen's one
+  /// main action. Never claims success — that still needs the node's hash.
+  ResumeCheck resumeCheck = ResumeCheck.idle;
+  String? resumeProblem;
+  int? resumeNextExpected;
+  OtaStatus? resumeStatus;
+  bool resumeBusy = false;
+
   // ---------------- lifecycle ----------------
 
   Future<FirmwareLibrary> _openLibrary() async {
@@ -233,6 +264,8 @@ class AppState extends ChangeNotifier {
     try {
       final support = await getApplicationSupportDirectory();
       _settingsFile = File('${support.path}/ota_settings.json');
+      resumeStore = ResumeStore(File('${support.path}/ota_resume.bin'));
+      resumePlan = await resumeStore?.load();
       if (await _settingsFile!.exists()) {
         final decoded = jsonDecode(await _settingsFile!.readAsString());
         if (decoded is Map && decoded['offline'] == true) offlineMode = true;
@@ -268,6 +301,7 @@ class AppState extends ChangeNotifier {
     connectionPhase = ConnectionPhase.connecting;
     connectError = null;
     transportKind = 'ble';
+    _bleDeviceId = device.remoteId.str;
     notifyListeners();
     try {
       final ble = BleDeviceLink(device: device);
@@ -1098,7 +1132,7 @@ class AppState extends ChangeNotifier {
   /// then put the radio back. Throws on any failure and leaves [updatePhase]
   /// at `failed` (or `idle` after a cancel) so the screen can show the way
   /// back; the transfer screen maps the exception to UI.
-  Future<void> runUpdate({required String version}) async {
+  Future<void> runUpdate({required String version, ResumeRun? resume}) async {
     final t = target;
     final flow = _flow;
     final image = _selectedImage;
@@ -1110,27 +1144,33 @@ class AppState extends ChangeNotifier {
       throw UpdateFlowException('radio settings: $planProblem');
     }
     final diff = remoteDiff;
-    if (diff == null) {
-      throw UpdateFlowException('compare the firmware with the node first');
-    }
-    if (diff.upToDate) {
-      throw UpdateFlowException('this node already runs that image');
+    if (resume == null) {
+      if (diff == null) {
+        throw UpdateFlowException('compare the firmware with the node first');
+      }
+      if (diff.upToDate) {
+        throw UpdateFlowException('this node already runs that image');
+      }
     }
     // The node's own target id is the authority when the handshake answered;
-    // a custom build has no catalog environment to derive one from.
+    // a custom build has no catalog environment to derive one from. A resumed
+    // session carries the id it was armed with.
     final env = selectedEnvironment;
     final expected = (env != null && env != customEnvironment)
         ? targetIdForEnvironment(env)
         : nodeInfo?.targetId;
-    final targetId = nodeInfo?.targetId ?? expected;
+    final targetId = resume?.plan.targetId ?? nodeInfo?.targetId ?? expected;
     if (targetId == null) {
       throw UpdateFlowException('choose the firmware board before starting');
     }
     // Resolve the route before arming so a bad manual path leaves no armed
     // staging session behind. Off-mesh modes are zero-hop by definition.
     final route = radioPlan.requiresZeroHop ? OtaRoute.zeroHop() : _routeFor(t);
-    updatePhase = UpdatePhase.staging;
-    log_('arming: ${image.length} bytes, version $version');
+    updatePhase =
+        resume == null ? UpdatePhase.staging : UpdatePhase.transferring;
+    log_(resume == null
+        ? 'arming: ${image.length} bytes, version $version'
+        : 'resuming update at op ${resume.nextExpected}/${resume.plan.frames.length}');
     notifyListeners();
 
     _radioMoved = false;
@@ -1138,29 +1178,47 @@ class AppState extends ChangeNotifier {
       if (radioPlan.requiresZeroHop) {
         await _applyRadioPlan(t);
       }
-      final stage = await flow.stage(t, image,
-          version: version, expectedTargetId: expected);
-      log_(
-          'armed: size=${stage.size} token=${stage.token.toRadixString(16).padLeft(8, '0')}');
+      var token = 0;
+      if (resume == null) {
+        final stage = await flow.stage(t, image,
+            version: version, expectedTargetId: expected);
+        token = stage.token;
+        log_(
+            'armed: size=${stage.size} token=${stage.token.toRadixString(16).padLeft(8, '0')}');
+      }
 
       // The op stream comes from step 5's hash comparison against this node's
-      // running image. Nothing from a local library can be stale here.
-      final rawOps = diff.ops;
-      final ops = compressLiteralRuns(rawOps);
-      final rawLiteral = rawOps
-          .whereType<LiteralOp>()
-          .fold<int>(0, (sum, op) => sum + op.data.length);
-      final compressedLiteral = ops
-          .whereType<CompressedLiteralOp>()
-          .fold<int>(0, (sum, op) => sum + op.compressed.length);
-      log_('remote diff: ${diff.copyBytes} bytes reused, '
-          '${diff.literalBytes} to send (${diff.queries} queries)');
-      if (compressedLiteral > 0) {
-        log_('compressed $rawLiteral literal bytes to $compressedLiteral');
+      // running image. Nothing from a local library can be stale here. A
+      // resume replays the exact frames saved at arm time instead.
+      final ops =
+          resume == null ? compressLiteralRuns(diff!.ops) : const <DeltaOp>[];
+      final wireOps = resume != null
+          ? WireOps(resume.plan.frames)
+          : wireOpsFor(ops, literalChunk: otaLiteralChunkForBinaryReq());
+      if (resume == null) {
+        final rawOps = diff!.ops;
+        final rawLiteral = rawOps
+            .whereType<LiteralOp>()
+            .fold<int>(0, (sum, op) => sum + op.data.length);
+        final compressedLiteral = ops
+            .whereType<CompressedLiteralOp>()
+            .fold<int>(0, (sum, op) => sum + op.compressed.length);
+        log_('remote diff: ${diff.copyBytes} bytes reused, '
+            '${diff.literalBytes} to send (${diff.queries} queries)');
+        if (compressedLiteral > 0) {
+          log_('compressed $rawLiteral literal bytes to $compressedLiteral');
+        }
+        // The node keeps staged bytes only while it stays powered. Save the
+        // frames now so a dead app can resume without rebuilding the diff.
+        await saveResumePlan(
+            t: t,
+            image: image,
+            targetId: targetId,
+            frames: wireOps.frames,
+            version: version);
       }
 
       final sha = sha256List(image);
-      updatePhase = UpdatePhase.transferring;
       cancelRequested = false;
       progress = null;
       notifyListeners();
@@ -1172,9 +1230,11 @@ class AppState extends ChangeNotifier {
             imageSize: image.length,
             imageSha256: sha,
             targetId: targetId,
-            token: stage.token,
+            token: token,
           ),
           ops: ops,
+          wireOps: wireOps,
+          resumeFrom: resume?.nextExpected ?? 1,
           route: route,
           windowSize: 16,
           onProgress: (p) {
@@ -1185,12 +1245,21 @@ class AppState extends ChangeNotifier {
         );
       } on OtaTransferException catch (e) {
         if (cancelRequested) {
-          await flow.abortQuietly(t);
+          if (resume == null) {
+            await flow.abortQuietly(t);
+            await _discardResumeRecord();
+          }
           updatePhase = UpdatePhase.idle;
-          log_('cancelled — staged image discarded');
-          throw UpdateFlowException('cancelled');
+          log_(resume == null
+              ? 'cancelled — staged image discarded'
+              : 'paused — staged image kept for another attempt');
+          throw UpdateFlowException(
+              resume == null ? 'cancelled' : 'paused — nothing was applied');
         }
-        await flow.abortQuietly(t);
+        // A resume keeps the staged bytes and the saved frames: the node still
+        // has everything below next_expected, so the operator can reconnect
+        // and continue instead of re-uploading the whole image.
+        if (resume == null) await flow.abortQuietly(t);
         updatePhase = UpdatePhase.failed;
         throw UpdateFlowException('transfer failed: ${e.message}');
       }
@@ -1199,7 +1268,7 @@ class AppState extends ChangeNotifier {
       // still end the staged session and leave the UI in the failed state,
       // never stuck with a dead cancel button.
       catch (e) {
-        await flow.abortQuietly(t);
+        if (resume == null) await flow.abortQuietly(t);
         updatePhase = UpdatePhase.failed;
         log_('transfer failed: $e');
         throw UpdateFlowException('transfer failed: $e');
@@ -1227,6 +1296,201 @@ class AppState extends ChangeNotifier {
       // only ever for the transfer.
       if (_radioMoved) await _restoreRadioPlan(t);
     }
+  }
+
+  Future<void> saveResumePlan({
+    required Contact t,
+    required Uint8List image,
+    required int targetId,
+    required List<Uint8List> frames,
+    required String version,
+  }) async {
+    final store = resumeStore;
+    if (store == null) return;
+    try {
+      final plan = ResumePlan(
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+        targetPublicKeyHex: t.publicKeyHex,
+        targetName: t.name,
+        imageSha256: bytesToHex(sha256List(image)),
+        imageSize: image.length,
+        version: version,
+        targetId: targetId,
+        runningSha256:
+            nodeInfo == null ? '' : bytesToHex(nodeInfo!.runningSha256),
+        frames: List<Uint8List>.from(frames),
+        radioMode: radioPlan.mode.index,
+        radioPreset: radioPlan.preset,
+        radioDurationMinutes: radioPlan.durationMinutes,
+        enabledRadio2ForUpdate: _enabledRadio2ForUpdate,
+        manualRoutePath: manualRoutePath,
+        transportKind: transportKind,
+        tcpHost: tcpHost,
+        tcpPort: tcpPort,
+        bleDeviceId: _bleDeviceId,
+      );
+      await store.save(plan);
+      resumePlan = plan;
+      notifyListeners();
+    } catch (e) {
+      // A failed save must never hold up the update itself.
+      log_('could not save the resume record: $e');
+    }
+  }
+
+  Future<void> _discardResumeRecord() async {
+    await resumeStore?.clear();
+    resumePlan = null;
+    resumeCheck = ResumeCheck.idle;
+    resumeProblem = null;
+    resumeNextExpected = null;
+    resumeStatus = null;
+    notifyListeners();
+  }
+
+  Contact? _contactFor(String publicKeyHex) {
+    for (final c in contacts) {
+      if (c.publicKeyHex.toLowerCase() == publicKeyHex.toLowerCase()) {
+        return c;
+      }
+    }
+    return null;
+  }
+
+  /// Load the image and radio choice recorded with an interrupted update.
+  /// Returns null on success or a message explaining what is missing.
+  Future<String?> restoreResumeSelection(ResumePlan plan) async {
+    final sha = plan.imageSha256.toLowerCase();
+    LibraryEntry? entry;
+    for (final e in libraryEntries) {
+      if (e.sha256.toLowerCase() == sha) {
+        entry = e;
+        break;
+      }
+    }
+    if (entry == null) {
+      return 'The firmware image for this update is no longer on this device. '
+          'Save it again to continue.';
+    }
+    await selectLibraryEntryForUpdate(entry);
+    if (_selectedImage == null) {
+      return 'The saved firmware image could not be read.';
+    }
+    radioPlan = RadioPlan(
+      mode: RadioMode
+          .values[plan.radioMode.clamp(0, RadioMode.values.length - 1)],
+      preset: plan.radioPreset,
+      durationMinutes: plan.radioDurationMinutes,
+    );
+    _enabledRadio2ForUpdate = plan.enabledRadio2ForUpdate;
+    manualRoutePath = plan.manualRoutePath;
+    return null;
+  }
+
+  /// Reconnect, sign in and ask the repeater how much of a saved update its
+  /// staged session still holds. The node is the authority: anything below
+  /// `next_expected` was committed and must not be sent again.
+  Future<void> prepareResume({required String password}) async {
+    final plan = resumePlan;
+    if (plan == null) return;
+    resumeBusy = true;
+    resumeCheck = ResumeCheck.checking;
+    resumeProblem = null;
+    notifyListeners();
+    try {
+      final factory = resumeControllerFactory;
+      final controller = factory != null
+          ? factory(plan)
+          : ResumeController(
+              plan: plan,
+              connect: () async {
+                if (connectionPhase == ConnectionPhase.connected) return null;
+                if (plan.transportKind == 'ble' && plan.bleDeviceId != null) {
+                  await connectBle(BluetoothDevice.fromId(plan.bleDeviceId!));
+                } else {
+                  await connectTcp(host: plan.tcpHost, port: plan.tcpPort);
+                }
+                return connectionPhase == ConnectionPhase.connected
+                    ? null
+                    : (connectError ?? 'Could not reconnect to the companion.');
+              },
+              findContact: (pub) => _contactFor(pub),
+              login: (t, pw) async {
+                final result = await _client!.login(t, pw);
+                return (ok: result.ok, admin: result.isAdmin);
+              },
+              restoreSelection: restoreResumeSelection,
+              nodeInfo: (t) async {
+                try {
+                  final info = await queryNodeInfo(_link!, t,
+                      timeout: const Duration(seconds: 5));
+                  nodeInfo = info;
+                  return info;
+                } catch (_) {
+                  nodeInfo = null;
+                  return null;
+                }
+              },
+              status: (t) async {
+                final s = await _flow!.status(t);
+                resumeStatus = s;
+                nodeStatus = s;
+                return s;
+              },
+              nextExpected: (t) => _flow!.nextExpected(t),
+            );
+      final decision = await controller.check(password);
+      adminPassword = password;
+      if (decision.target != null) target = decision.target;
+      resumeCheck = decision.check;
+      resumeProblem = decision.problem;
+      resumeNextExpected = decision.nextExpected;
+    } catch (e) {
+      resumeCheck = ResumeCheck.unavailable;
+      resumeProblem = '$e';
+    } finally {
+      resumeBusy = false;
+      notifyListeners();
+    }
+  }
+
+  /// Continue a saved op stream from the node's watermark.
+  Future<void> resumeTransfer() async {
+    final plan = resumePlan;
+    final next = resumeNextExpected;
+    if (plan == null || next == null) {
+      throw StateError('resume is not ready');
+    }
+    verifyMatched = false;
+    rolledBack = false;
+    await runUpdate(version: plan.version, resume: ResumeRun(plan, next));
+  }
+
+  /// The upload finished before the app died; only the apply is left.
+  void finishResumeApply() {
+    updatePhase = UpdatePhase.readyToApply;
+    log_('the repeater already holds the verified image — ready to apply');
+    notifyListeners();
+  }
+
+  /// Discard a saved update and clear the repeater's staged slot, so the
+  /// operator can pick a different firmware.
+  Future<void> cancelResume() async {
+    final t = target;
+    final flow = _flow;
+    if (t != null && flow != null) {
+      final status = await flow.status(t);
+      if (status != null &&
+          (status.state == OtaPhase.staging ||
+              status.state == OtaPhase.ready)) {
+        await flow.abortQuietly(t);
+      }
+    }
+    await _discardResumeRecord();
+    updatePhase = UpdatePhase.idle;
+    verifyMatched = false;
+    rolledBack = false;
+    log_('resume cancelled — staged image discarded');
   }
 
   /// Move the repeater and/or the companion onto the transfer preset. Both
@@ -1351,6 +1615,9 @@ class AppState extends ChangeNotifier {
     final ok = await flow.awaitVersion(t, adminPassword, expectedVersion,
         expectedImageSha256:
             selectedImage == null ? null : sha256List(selectedImage!));
+    // The node has committed the outcome; a saved op stream is no longer
+    // resumable either way.
+    await _discardResumeRecord();
     verifyMatched = ok;
     updatePhase = ok ? UpdatePhase.done : UpdatePhase.failed;
     notifyListeners();

@@ -78,6 +78,38 @@ class UpdateFlow {
     }
   }
 
+  /// Ask the node which op sequence it expects next. This is the authority for
+  /// a resumed transfer: the node applies ops strictly in order, so everything
+  /// below this number has already been committed and must not be sent again.
+  /// Returns null when the node did not answer (no live staging session, or a
+  /// lost reply).
+  Future<int?> nextExpected(Contact target) async {
+    final done = Completer<int?>();
+    int? askTag;
+    late StreamSubscription<Uint8List> sub;
+    sub = link.pushes.listen((frame) {
+      if (frame.isEmpty || frame[0] != pushCodeBinaryResponse) return;
+      final report = parseBinaryResponse(frame,
+          contactPubKey: target.publicKey,
+          askTag: askTag,
+          exactLength: otaReportLen);
+      if (report != null && !done.isCompleted) {
+        done.complete(report.nextExpected);
+      }
+    });
+    try {
+      final ask = buildAsk();
+      final sent = await link
+          .sendBinaryRequest(target, [reqTypeOta, ask.length, ...ask]);
+      askTag = sent.tag;
+      return await done.future.timeout(const Duration(seconds: 15));
+    } catch (_) {
+      return null;
+    } finally {
+      await sub.cancel();
+    }
+  }
+
   /// Clear a stranded staging so the next arm can take effect.
   ///
   /// A previous attempt that died mid-transfer leaves the node in
@@ -147,6 +179,8 @@ class UpdateFlow {
     required OtaRoute route,
     void Function(TransferProgress)? onProgress,
     int windowSize = 12,
+    WireOps? wireOps,
+    int resumeFrom = 1,
     // Overrides the airtime-derived pacing (tests, or a caller that already
     // knows better).
     Duration? opSpacing,
@@ -167,6 +201,8 @@ class UpdateFlow {
       contact: target,
       contract: contract,
       ops: ops,
+      prebuiltOps: wireOps,
+      resumeFrom: resumeFrom,
       windowSize: windowSize,
       askTimeout: const Duration(seconds: 10),
       maxRetriesPerWindow: 12,

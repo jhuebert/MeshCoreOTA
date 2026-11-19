@@ -11,6 +11,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/wizard.dart';
 import 'firmware_screen.dart';
+import 'resume_screen.dart';
 import 'target_screen.dart';
 
 /// Step 1: pick the companion the phone talks to. The companion is used as
@@ -133,6 +134,28 @@ class _ConnectScreenState extends State<ConnectScreen> {
           else
             ..._buildConnectedCard(context, app),
           if (app.connectError != null) ErrorBanner(app.connectError!),
+          if (app.resumePlan != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: Card(
+                child: ListTile(
+                  leading: const Icon(Icons.restore, color: OtaTheme.warn),
+                  title: const Text('Unfinished update'),
+                  subtitle: Text(
+                    '${app.resumePlan!.targetName.isEmpty ? 'Repeater' : app.resumePlan!.targetName} '
+                    '→ ${app.resumePlan!.version}. Continue without '
+                    're-uploading what already arrived.',
+                    style: const TextStyle(
+                        color: OtaTheme.textMuted, fontSize: 11),
+                  ),
+                  trailing: const Icon(Icons.chevron_right,
+                      color: OtaTheme.textMuted),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const ResumeScreen()),
+                  ),
+                ),
+              ),
+            ),
           const SectionHeader('Firmware'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
