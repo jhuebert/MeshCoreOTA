@@ -113,6 +113,9 @@ class _FakeCompanion {
   /// Test seam: observe `tempradio` arm/restore commands.
   final List<String> tempradioCommands = <String>[];
 
+  /// Number of OP_STAGED_HASH requests answered, including refusals.
+  int stagedHashQueries = 0;
+
   /// Reply to the read-only radio2 status query used during probe.
   String radio2StatusReply = 'off; preset=0,0,0,0';
 
@@ -134,6 +137,16 @@ class _FakeCompanion {
     _size = size;
     _written = off;
     _expect = 5086;
+    _ready = false;
+    _error = 0;
+  }
+
+  /// Test seam: leave the node holding [bytes] as its staged prefix.
+  void setStagedBytes(Uint8List bytes) {
+    _staging = Uint8List.fromList(bytes);
+    _size = bytes.length;
+    _written = bytes.length;
+    _expect = 2;
     _ready = false;
     _error = 0;
   }
@@ -440,6 +453,7 @@ class _FakeCompanion {
 
   Uint8List? _handleStagedHash(Uint8List req) {
     if (req.isEmpty || _staging == null) return null;
+    stagedHashQueries++;
     final count = req[0];
     if (count == 0 || count > 4 || req.length != 1 + 8 * count) return null;
     final out = <int>[..._le32(_written), count];
@@ -447,7 +461,8 @@ class _FakeCompanion {
       final off = _le32At(req, 1 + i * 8);
       final len = _le32At(req, 5 + i * 8);
       out.addAll(_le32(off));
-      if (len == 0 || off + len > _written) {
+      // Match the firmware: one range is at most 32 KB and 4-byte aligned.
+      if (len == 0 || len > 32768 || (len & 3) != 0 || off + len > _written) {
         out.add(1);
         out.addAll(List<int>.filled(32, 0));
       } else {
@@ -1294,6 +1309,30 @@ void main() {
     expect(await app.verifyStagedPrefix(fake.target, image.length + 1),
         contains('could not be checked'));
     await dir.delete(recursive: true);
+  });
+
+  test('staged prefix verification uses firmware-sized hash ranges', () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    // Larger than four 32 KB firmware hash ranges, so the verification must
+    // use more than one exchange. The old single-range query was always
+    // refused, so every legitimate resume failed.
+    final image = _FakeCompanion._pattern(0x44, 200000);
+    fake.setStagedBytes(image);
+    fake.stagedHashQueries = 0;
+
+    final app = AppState();
+    final lib = FakeLibrary();
+    app.library = lib;
+    app.tcpLinkFactory = (_, __) => fake.link;
+    await app.connectTcp(host: 'unused', port: 0);
+    final entry = lib.addImage(image, env: env, version: 'v1.18.0-r5');
+    app.libraryEntries = await lib.list();
+    app.selectTarget(fake.target);
+    await app.probe();
+    await app.selectLibraryEntryForUpdate(entry);
+
+    expect(await app.verifyStagedPrefix(fake.target, image.length), isNull);
+    expect(fake.stagedHashQueries, greaterThan(1));
   });
 
   test('a lost ping is advisory — the update still proceeds', () async {

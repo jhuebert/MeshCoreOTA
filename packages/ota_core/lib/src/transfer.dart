@@ -211,7 +211,7 @@ class OtaRoute {
   }) {
     if (outPathLen == 0xFF || outPathLen < 0) {
       throw OtaTransferException(
-          'contact has no direct route — set the route first');
+          'contact has no direct route. Set the route first');
     }
     final byteLength = PathUtils.getByteLength(outPathLen);
     if (outPath.length < byteLength) {

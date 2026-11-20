@@ -25,7 +25,9 @@ class LibraryEntry {
     required this.added,
   });
 
-  /// sha256 of the image bytes (also the file stem).
+  /// The file stem. Release images use their SHA-256; imports hash the file
+  /// name together with the bytes so two files with identical content can
+  /// still appear as two rows in the Imported tab.
   final String id;
   final String fileName;
 
@@ -40,8 +42,8 @@ class LibraryEntry {
   final DateTime added;
 }
 
-/// Persistent local firmware library. Every entry is `<sha256>.bin` plus a
-/// `<sha256>.json` sidecar with env/version/origin metadata. The app finds
+/// Persistent local firmware library. Every entry is `<id>.bin` plus an
+/// `<id>.json` sidecar with env/version/origin metadata. The app finds
 /// delta bases by matching the node's reported running image SHA-256 (the
 /// `OP_INFO` handshake), falling back to the `running=` version stamp; and
 /// never uploads anything to this directory implicitly — images land here
@@ -135,12 +137,18 @@ class FirmwareLibrary {
   }) async {
     final sha = sha256.convert(bytes).toString();
     final name = fileName ?? '$env-$version.bin';
-    final binFile = File(p.join(directory.path, '$sha.bin'));
+    // Releases are identified by content so the same version is saved once.
+    // Imports are identified by the file as well: importing a second .bin
+    // with identical bytes must not silently replace the first one.
+    final id = origin == 'github'
+        ? sha
+        : sha256.convert(utf8.encode('$name|$sha')).toString();
+    final binFile = File(p.join(directory.path, '$id.bin'));
     if (!await binFile.exists()) {
       await binFile.writeAsBytes(bytes, flush: true);
     }
     final entry = LibraryEntry(
-      id: sha,
+      id: id,
       fileName: name,
       env: env,
       version: version,

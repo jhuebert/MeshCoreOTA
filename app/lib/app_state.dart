@@ -78,7 +78,7 @@ class AppState extends ChangeNotifier {
 
   // ---------------- transport ----------------
 
-  /// 'ble' or 'tcp' — the bench-validation path is TCP to 127.0.0.1.
+  /// 'ble' or 'tcp': the bench-validation path is TCP to 127.0.0.1.
   String transportKind = 'ble';
   String tcpHost = '127.0.0.1';
   int tcpPort = defaultCompanionPort;
@@ -276,7 +276,7 @@ class AppState extends ChangeNotifier {
   ResumeStore? resumeStore;
 
   /// What the last reconnect check found; drives the recovery screen's one
-  /// main action. Never claims success — that still needs the node's hash.
+  /// main action. Never claims success: that still needs the node's hash.
   ResumeCheck resumeCheck = ResumeCheck.idle;
   String? resumeProblem;
   int? resumeNextExpected;
@@ -595,7 +595,7 @@ class AppState extends ChangeNotifier {
       // this device holds.
       if (!offlineMode) catalog = null;
       catalogError = offlineMode
-          ? 'Offline — no cached release list. Downloaded versions are '
+          ? 'Offline: no cached release list. Downloaded versions are '
               'shown in the GitHub tab.'
           : '$e';
     } finally {
@@ -698,7 +698,7 @@ class AppState extends ChangeNotifier {
       }
       if (offlineMode) {
         throw StateError(
-            'offline — save this version for offline use before selecting it');
+            'offline: save this version for offline use before selecting it');
       }
       final bytes = await (await _openSource()).downloadAsset(asset);
       _selectedImage = bytes;
@@ -734,7 +734,7 @@ class AppState extends ChangeNotifier {
   /// Returns how many images were newly saved.
   Future<int> downloadReleaseToLibrary(FirmwareRelease release) async {
     if (offlineMode) {
-      log_('offline mode — go online to download a version');
+      log_('offline mode: go online to download a version');
       return 0;
     }
     if (downloadingReleaseTag != null) return 0;
@@ -1099,28 +1099,27 @@ class AppState extends ChangeNotifier {
     if (_radioPresetAuto || radioPlan.preset == null) _prefillRadioPreset();
   }
 
-  /// The whole-image hash from step 5, not a library match, decides equality.
+  /// The whole-image hash from the comparison, not a library match, decides
+  /// equality.
   bool get selectedImageIsRunning => remoteDiff?.upToDate ?? false;
 
-  /// Estimated transfer size: literal bytes from the remote diff, or the full
-  /// image before step 5 has run.
-  int? get estimatedTransferBytes =>
-      remoteDiff?.literalBytes ?? _selectedImage?.length;
+  /// Size of the chosen image. The amount to send is only known after the
+  /// comparison on the Transfer screen.
+  int? get estimatedTransferBytes => _selectedImage?.length;
 
-  /// A compact label for the chosen image's transfer size.
+  /// A compact label for the chosen image's size.
   String estimateLabel() {
     final bytes = estimatedTransferBytes;
     if (bytes == null) return 'size unknown';
-    final text = bytes >= 1024 * 1024
+    return bytes >= 1024 * 1024
         ? '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB'
         : '${(bytes / 1024).toStringAsFixed(0)} KB';
-    return remoteDiff != null ? 'remote diff ~$text' : 'full $text';
   }
 
   /// Wall time per op on a stock companion, in seconds.
   ///
   /// The node is deaf while each literal op is committed to flash, so the rate
-  /// limiter is the node's flash write latency, not airtime — an airtime model
+  /// limiter is the node's flash write latency, not airtime: an airtime model
   /// is ~15x optimistic on real hardware (measured ~1.4–1.5 s per literal op:
   /// a 426 KB delta took ~1 hour on an expected ~4 minutes). Synchronous so a
   /// settings screen can compare modes while the user types.
@@ -1131,7 +1130,7 @@ class AppState extends ChangeNotifier {
   int? estimateSecondsForPreset(LoRaPreset? preset, {double factor = 1.0}) {
     final bytes = estimatedTransferBytes;
     if (preset == null || bytes == null || bytes <= 0) return null;
-    // The literal size the transfer actually sends — the stock companion's
+    // The literal size the transfer actually sends: the stock companion's
     // frame limit, not the on-air maximum (see wireOpsFor).
     final ops = (bytes / otaLiteralChunkForBinaryReq()).ceil() + 16;
     return (ops * estimateOpSeconds * factor).ceil();
@@ -1219,7 +1218,7 @@ class AppState extends ChangeNotifier {
     updatePhase =
         resume == null ? UpdatePhase.comparing : UpdatePhase.transferring;
     log_(resume == null
-        ? 'preparing ${image.length} bytes on the selected channel, version $version'
+        ? 'preparing the update on the selected channel, version $version'
         : 'resuming update at op ${resume.nextExpected}/${resume.plan.frames.length}');
     notifyListeners();
 
@@ -1256,7 +1255,7 @@ class AppState extends ChangeNotifier {
         // Advisory only: the arm below is itself a round trip, so a lost
         // ping must never block an update that would otherwise work.
         log_(echo == null
-            ? 'link check had no answer — continuing'
+            ? 'link check had no answer: continuing'
             : 'link check ok '
                 '(${DateTime.now().difference(started).inMilliseconds} ms)');
       }
@@ -1275,7 +1274,7 @@ class AppState extends ChangeNotifier {
             'armed: size=${stage.size} token=${stage.token.toRadixString(16).padLeft(8, '0')}');
       }
 
-      // The op stream comes from step 5's hash comparison against this node's
+      // The op stream comes from the comparison against this node's
       // running image. Nothing from a local library can be stale here. A
       // resume replays the exact frames saved at arm time instead.
       // The codec mask says what the node can actually inflate. Nodes that
@@ -1296,7 +1295,7 @@ class AppState extends ChangeNotifier {
         final compressedLiteral = ops
             .whereType<CompressedLiteralOp>()
             .fold<int>(0, (sum, op) => sum + op.compressed.length);
-        log_('remote diff: ${diff.copyBytes} bytes reused, '
+        log_('comparison: ${diff.copyBytes} bytes reused, '
             '${diff.literalBytes} to send (${diff.queries} queries)');
         if (compressedLiteral > 0) {
           log_('compressed $rawLiteral literal bytes to $compressedLiteral');
@@ -1343,7 +1342,7 @@ class AppState extends ChangeNotifier {
           // The temporary window could not be renewed. Pause rather than
           // abort: the node keeps its staged bytes and resuming arms a fresh
           // chunk from the current watermark.
-          log_('temporary channel renewal failed — pausing the transfer');
+          log_('temporary channel renewal failed: pausing the transfer');
           await pauseTransfer(
             t: t,
             image: image,
@@ -1405,12 +1404,12 @@ class AppState extends ChangeNotifier {
       // Confirm the staged image passed the node's SHA gate.
       await flow.awaitReady(t);
       updatePhase = UpdatePhase.readyToApply;
-      log_('staged and verified — ready to apply');
+      log_('staged and verified: ready to apply');
       notifyListeners();
     } on UpdateComparisonCancelledException catch (_) {
       // Nothing was staged, so there is no resumable upload to keep.
       updatePhase = UpdatePhase.idle;
-      log_('comparison stopped — nothing was staged');
+      log_('comparison stopped: nothing was staged');
       notifyListeners();
       rethrow;
     } catch (e) {
@@ -1499,7 +1498,7 @@ class AppState extends ChangeNotifier {
       nextExpected: nextExpected,
     );
     updatePhase = UpdatePhase.idle;
-    log_('paused — staged image kept; continue from the Connect screen');
+    log_('paused: staged image kept; continue from the Connect screen');
     notifyListeners();
   }
 
@@ -1537,15 +1536,34 @@ class AppState extends ChangeNotifier {
           contact: t,
           staged: true,
           timeout: const Duration(seconds: 10));
-      final result =
-          (await client.query([BlockHashRange(0, written)])).results.single;
-      if (!result.ok) {
-        return 'The repeater could not read back its staged bytes.';
-      }
-      final expected = sha256List(Uint8List.sublistView(image, 0, written));
-      if (bytesToHex(result.sha256) != bytesToHex(expected)) {
-        return 'The repeater holds different bytes than the saved firmware. '
-            'Start a new update.';
+      // The node caps one hash range at 32 KB and the offset/length must be
+      // 4-byte aligned. A single request for a whole staged image is always
+      // rejected, so verify in chunks, up to four ranges per exchange.
+      final end = (written ~/ blockHashAlign) * blockHashAlign;
+      var at = 0;
+      while (at < end) {
+        final ranges = <BlockHashRange>[];
+        while (ranges.length < blockHashMaxRanges && at < end) {
+          final len = (end - at).clamp(0, blockHashMaxRange);
+          ranges.add(BlockHashRange(at, len));
+          at += len;
+        }
+        final report = await client.query(ranges);
+        if (report.results.length != ranges.length) {
+          return 'The repeater could not read back its staged bytes.';
+        }
+        for (var i = 0; i < ranges.length; i++) {
+          final result = report.results[i];
+          if (!result.ok || result.offset != ranges[i].offset) {
+            return 'The repeater could not read back its staged bytes.';
+          }
+          final expected = sha256List(Uint8List.sublistView(
+              image, ranges[i].offset, ranges[i].offset + ranges[i].length));
+          if (bytesToHex(result.sha256) != bytesToHex(expected)) {
+            return 'The repeater holds different bytes than the saved '
+                'firmware. Start a new update.';
+          }
+        }
       }
       return null;
     } catch (e) {
@@ -1667,7 +1685,7 @@ class AppState extends ChangeNotifier {
   /// The upload finished before the app died; only the apply is left.
   void finishResumeApply() {
     updatePhase = UpdatePhase.readyToApply;
-    log_('the repeater already holds the verified image — ready to apply');
+    log_('the repeater already holds the verified image: ready to apply');
     notifyListeners();
   }
 
@@ -1688,7 +1706,7 @@ class AppState extends ChangeNotifier {
     updatePhase = UpdatePhase.idle;
     verifyMatched = false;
     rolledBack = false;
-    log_('resume cancelled — staged image discarded');
+    log_('resume cancelled: staged image discarded');
   }
 
   /// Move the repeater and/or the companion onto the transfer preset. Both
@@ -1706,7 +1724,7 @@ class AppState extends ChangeNotifier {
       if (radio2Enabled == true) {
         // Leave the node's own radio2 configuration alone; the app uses the
         // preset the node reported in `radio2 status`.
-        log_('radio2 already enabled — reusing its preset ${preset.label}');
+        log_('radio2 already enabled: reusing its preset ${preset.label}');
       } else {
         await _nodeCommand(t, radioPlan.radio2Command);
         _radioMoved = true;
@@ -1748,7 +1766,7 @@ class AppState extends ChangeNotifier {
         radio2Enabled = acknowledged ? false : null;
         log_(acknowledged
             ? 'radio2 turned back off'
-            : 'radio2 restore not acknowledged — check the node');
+            : 'radio2 restore not acknowledged: check the node');
       } else if (radioPlan.mode == RadioMode.tempRadio && live != null) {
         // Send the original preset back, short-lived, so the mesh recovers
         // now instead of when the timer expires. The reply may be lost.
@@ -1843,7 +1861,7 @@ class AppState extends ChangeNotifier {
         rethrow;
       }
       log_(acknowledged
-          ? 'applied — node is rebooting'
+          ? 'applied: node is rebooting'
           : 'apply not acknowledged (attempt $attempt/$maxAttempts)');
       updatePhase = UpdatePhase.verifying;
       notifyListeners();
@@ -1872,7 +1890,7 @@ class AppState extends ChangeNotifier {
         return;
       }
       if (outcome == ApplyOutcome.stagedNotApplied && attempt < maxAttempts) {
-        log_('staged image still ready — retrying apply '
+        log_('staged image still ready: retrying apply '
             '(${attempt + 1}/$maxAttempts)');
         await Future<void>.delayed(const Duration(seconds: 3));
         continue;
@@ -1949,7 +1967,7 @@ class AppState extends ChangeNotifier {
       Uint8List.fromList(sha256.convert(data).bytes);
 }
 
-/// A firmware version this device has images for — the offline view's unit.
+/// A firmware version this device has images for: the offline view's unit.
 ///
 /// Versions are downloaded whole (every board's image), so the operator picks
 /// a version, not a device. Imported `.bin` files are not versions — they

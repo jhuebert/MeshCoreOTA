@@ -59,6 +59,36 @@ void main() {
     expect((await library.findByShaPrefix(customPrefix))?.id, custom.id);
   });
 
+  test('two imported files with identical bytes stay as two rows', () async {
+    final bytes = _bytes(17, 400);
+    final first = await library.importBytes(
+      bytes,
+      env: customEnvironment,
+      version: 'custom',
+      origin: 'import',
+      fileName: 'first.bin',
+    );
+    final second = await library.importBytes(
+      bytes,
+      env: customEnvironment,
+      version: 'custom',
+      origin: 'import',
+      fileName: 'second.bin',
+    );
+
+    expect(second.id, isNot(first.id));
+    expect(second.sha256, first.sha256);
+    final entries = await library.list();
+    expect(entries.map((e) => e.fileName),
+        containsAll(['first.bin', 'second.bin']));
+    expect((await library.read(first)), equals(bytes));
+    expect((await library.read(second)), equals(bytes));
+
+    // Deleting one import leaves the other one intact.
+    await library.delete(first);
+    expect((await library.list()).single.fileName, 'second.bin');
+  });
+
   test('importBytes synthesizes a file name from env and version', () async {
     final entry = await library.importBytes(
       _bytes(31, 400),
