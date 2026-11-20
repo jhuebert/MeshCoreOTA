@@ -1,4 +1,4 @@
-name: meshcore_ota
+name: meshcore_repeater_manager
 description: >-
   OTA firmware updates for MeshCore repeaters, over LoRa, from your phone.
 publish_to: none

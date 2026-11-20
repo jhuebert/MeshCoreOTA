@@ -1,4 +1,4 @@
-# Agent Guide — MeshCoreOTA
+# Agent Guide — MeshCoreRepeaterManager
 
 ## Project
 
@@ -6,10 +6,10 @@ Standalone Android-first Flutter/Dart app that pushes firmware updates to
 MeshCore repeaters over LoRa through a stock companion device. The app talks
 to the companion over BLE or TCP and uses it purely as a radio; the encrypted
 OTA ops ride the same REQ/RESPONSE path as an admin `ota status` request. The
-app/product name is **MeshCoreOTA**. iOS is deferred until there is hardware
+app/product name is **MeshCoreRepeaterManager**. iOS is deferred until there is hardware
 to test on; Windows, macOS and Linux desktop builds use the same TCP path.
 
-This is a personal project under `jhuebert/MeshCoreOTA`. The repeater side of
+This is a personal project under `jhuebert/MeshCoreRepeaterManager`. The repeater side of
 the feature lives in the `lora-ota` branch of `jhuebert/MeshCore`
 (`examples/simple_repeater/OtaUpdate.*`), and the two halves must stay in
 sync. The reference repos in the workspace (`MeshCore/`, `MeshChameleon/`,

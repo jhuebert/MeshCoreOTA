@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:meshcore_ota/widgets/wizard.dart';
+import 'package:meshcore_repeater_manager/widgets/wizard.dart';
 
 void main() {
   testWidgets('the wizard bar names the step and shows progress',

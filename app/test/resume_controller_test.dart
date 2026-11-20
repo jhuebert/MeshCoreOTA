@@ -2,8 +2,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mesh_protocol/mesh_protocol.dart';
-import 'package:meshcore_ota/services/resume_controller.dart';
-import 'package:meshcore_ota/services/resume_store.dart';
+import 'package:meshcore_repeater_manager/services/resume_controller.dart';
+import 'package:meshcore_repeater_manager/services/resume_store.dart';
 import 'package:ota_core/ota_core.dart';
 
 import 'support.dart';

@@ -1,4 +1,4 @@
-# MeshCoreOTA — the app
+# MeshCoreRepeaterManager — the app
 
 Flutter app that performs OTA firmware updates on MeshCore repeaters from a
 phone or a computer. This directory is the Flutter project; the repo root has

@@ -14,11 +14,11 @@
 #                             [--alias ALIAS]
 #
 # Signing inputs:
-#   MESHCOREOTA_APP_SIGNING_KEYSTORE        app signing keystore path
-#   MESHCOREOTA_APP_SIGNING_ALIAS           default app-signing
-#   MESHCOREOTA_APP_SIGNING_STORE_PASSWORD  prompted when unset
-#   MESHCOREOTA_APP_SIGNING_KEY_PASSWORD    defaults to the store password
-#   MESHCOREOTA_APP_SIGNING_SHA256          expected certificate fingerprint
+#   MESHCORE_REPEATER_MANAGER_APP_SIGNING_KEYSTORE        app signing keystore path
+#   MESHCORE_REPEATER_MANAGER_APP_SIGNING_ALIAS           default app-signing
+#   MESHCORE_REPEATER_MANAGER_APP_SIGNING_STORE_PASSWORD  prompted when unset
+#   MESHCORE_REPEATER_MANAGER_APP_SIGNING_KEY_PASSWORD    defaults to the store password
+#   MESHCORE_REPEATER_MANAGER_APP_SIGNING_SHA256          expected certificate fingerprint
 #
 # The build number defaults to one higher than the installed version code when
 # a single adb device is attached, otherwise one higher than the pubspec build
@@ -43,7 +43,7 @@ usage: scripts/build_test_apk.sh [options]
   --install          Install the signed APK with `adb install -r`
   --device SERIAL    Select an adb device when several are attached
   --keystore PATH    App signing keystore (required; can also be set with
-                     MESHCOREOTA_APP_SIGNING_KEYSTORE)
+                     MESHCORE_REPEATER_MANAGER_APP_SIGNING_KEYSTORE)
   --alias ALIAS      App signing key alias (default: app-signing)
   -h, --help         Show this help
 EOF
@@ -52,13 +52,13 @@ EOF
 build_number=""
 install=0
 device=""
-keystore="${MESHCOREOTA_APP_SIGNING_KEYSTORE:-}"
-alias="${MESHCOREOTA_APP_SIGNING_ALIAS:-app-signing}"
-# The expected fingerprint of YOUR app signing certificate. Since MeshCoreOTA
+keystore="${MESHCORE_REPEATER_MANAGER_APP_SIGNING_KEYSTORE:-}"
+alias="${MESHCORE_REPEATER_MANAGER_APP_SIGNING_ALIAS:-app-signing}"
+# The expected fingerprint of YOUR app signing certificate. Since MeshCoreRepeaterManager
 # ships no pre-baked certificate, this must be supplied (see
 # docs/releasing.md for generating one); the script otherwise signs with any
 # keystore and prints the fingerprint.
-expected_sha="${MESHCOREOTA_APP_SIGNING_SHA256:-}"
+expected_sha="${MESHCORE_REPEATER_MANAGER_APP_SIGNING_SHA256:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -102,7 +102,7 @@ if [[ -n "$build_number" && ! "$build_number" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 [[ -n "$keystore" ]] ||
-  die "pass --keystore PATH or set MESHCOREOTA_APP_SIGNING_KEYSTORE"
+  die "pass --keystore PATH or set MESHCORE_REPEATER_MANAGER_APP_SIGNING_KEYSTORE"
 [[ -f "$keystore" ]] || die "keystore not found: $keystore"
 command -v keytool >/dev/null 2>&1 || die "keytool not found; install a JDK"
 
@@ -174,23 +174,23 @@ if ((install)) && ((${#adb_cmd[@]} == 0)); then
   die "--install requires a connected device (and --device when several are attached)"
 fi
 
-if [[ -z "${MESHCOREOTA_APP_SIGNING_STORE_PASSWORD:-}" ]]; then
-  [[ -t 0 ]] || die "set MESHCOREOTA_APP_SIGNING_STORE_PASSWORD or run from a terminal"
+if [[ -z "${MESHCORE_REPEATER_MANAGER_APP_SIGNING_STORE_PASSWORD:-}" ]]; then
+  [[ -t 0 ]] || die "set MESHCORE_REPEATER_MANAGER_APP_SIGNING_STORE_PASSWORD or run from a terminal"
   printf 'App signing keystore password: ' >&2
-  IFS= read -r -s MESHCOREOTA_APP_SIGNING_STORE_PASSWORD
+  IFS= read -r -s MESHCORE_REPEATER_MANAGER_APP_SIGNING_STORE_PASSWORD
   printf '\n' >&2
 fi
-[[ -n "$MESHCOREOTA_APP_SIGNING_STORE_PASSWORD" ]] ||
+[[ -n "$MESHCORE_REPEATER_MANAGER_APP_SIGNING_STORE_PASSWORD" ]] ||
   die "empty keystore password"
-export MESHCOREOTA_APP_SIGNING_STORE_PASSWORD
-if [[ -z "${MESHCOREOTA_APP_SIGNING_KEY_PASSWORD:-}" ]]; then
-  MESHCOREOTA_APP_SIGNING_KEY_PASSWORD="$MESHCOREOTA_APP_SIGNING_STORE_PASSWORD"
+export MESHCORE_REPEATER_MANAGER_APP_SIGNING_STORE_PASSWORD
+if [[ -z "${MESHCORE_REPEATER_MANAGER_APP_SIGNING_KEY_PASSWORD:-}" ]]; then
+  MESHCORE_REPEATER_MANAGER_APP_SIGNING_KEY_PASSWORD="$MESHCORE_REPEATER_MANAGER_APP_SIGNING_STORE_PASSWORD"
 fi
-export MESHCOREOTA_APP_SIGNING_KEY_PASSWORD
+export MESHCORE_REPEATER_MANAGER_APP_SIGNING_KEY_PASSWORD
 
 keystore_cert="$(
   keytool -list -v -keystore "$keystore" -alias "$alias" \
-    -storepass:env MESHCOREOTA_APP_SIGNING_STORE_PASSWORD \
+    -storepass:env MESHCORE_REPEATER_MANAGER_APP_SIGNING_STORE_PASSWORD \
     2>/dev/null |
     awk -F': ' '/SHA256:/ { gsub(/:/, "", $2); print tolower($2); exit }'
 )"
@@ -203,14 +203,14 @@ if [[ -n "$expected_sha" ]]; then
   [[ "$keystore_cert" == "$expected_normalized" ]] ||
     die "certificate $keystore_cert does not match the expected app signing key $expected_normalized"
 else
-  echo "build_test_apk: MESHCOREOTA_APP_SIGNING_SHA256 unset; skipping fingerprint check" >&2
+  echo "build_test_apk: MESHCORE_REPEATER_MANAGER_APP_SIGNING_SHA256 unset; skipping fingerprint check" >&2
   expected_normalized="$keystore_cert"
 fi
 
 installed_code=""
 if ((${#adb_cmd[@]} > 0)); then
   installed_code="$(
-    "${adb_cmd[@]}" shell dumpsys package org.huebert.meshcoreota 2>/dev/null |
+    "${adb_cmd[@]}" shell dumpsys package org.huebert.meshcorepeatermanager 2>/dev/null |
       sed -n 's/.*versionCode=\([0-9][0-9]*\).*/\1/p' | head -n1 || true
   )"
 fi
@@ -223,7 +223,7 @@ if [[ -z "$build_number" ]]; then
 fi
 [[ "$build_number" =~ ^[1-9][0-9]*$ ]] || die "invalid build number '$build_number'"
 
-echo "Building MeshCoreOTA $version_name (version code $build_number)" >&2
+echo "Building MeshCoreRepeaterManager $version_name (version code $build_number)" >&2
 raw_apk="app/build/app/outputs/flutter-apk/app-release.apk"
 rm -f "$raw_apk"
 ./scripts/build.sh apk --release --build-number "$build_number"
@@ -231,11 +231,11 @@ rm -f "$raw_apk"
 [[ -f "$raw_apk" ]] || die "build did not produce $raw_apk"
 
 mkdir -p build/test-apk
-out="build/test-apk/MeshCoreOTA-${version_name}-${build_number}-universal-test.apk"
+out="build/test-apk/MeshCoreRepeaterManager-${version_name}-${build_number}-universal-test.apk"
 rm -f "$out"
 cp "$raw_apk" "$out"
-APP_SIGNING_KEYSTORE_PASSWORD="$MESHCOREOTA_APP_SIGNING_STORE_PASSWORD" \
-  APP_SIGNING_KEY_PASSWORD="$MESHCOREOTA_APP_SIGNING_KEY_PASSWORD" \
+APP_SIGNING_KEYSTORE_PASSWORD="$MESHCORE_REPEATER_MANAGER_APP_SIGNING_STORE_PASSWORD" \
+  APP_SIGNING_KEY_PASSWORD="$MESHCORE_REPEATER_MANAGER_APP_SIGNING_KEY_PASSWORD" \
   ./scripts/sign_apks.sh \
   --keystore "$keystore" \
   --alias "$alias" \

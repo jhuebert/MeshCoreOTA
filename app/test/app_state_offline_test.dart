@@ -4,9 +4,9 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ota_core/ota_core.dart';
 
-import 'package:meshcore_ota/app_state.dart';
-import 'package:meshcore_ota/services/firmware_library.dart';
-import 'package:meshcore_ota/services/radio_plan.dart';
+import 'package:meshcore_repeater_manager/app_state.dart';
+import 'package:meshcore_repeater_manager/services/firmware_library.dart';
+import 'package:meshcore_repeater_manager/services/radio_plan.dart';
 
 import 'support.dart';
 

@@ -3,8 +3,8 @@ import 'dart:io' show Platform;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
-import 'package:meshcore_ota/app_state.dart';
-import 'package:meshcore_ota/main.dart';
+import 'package:meshcore_repeater_manager/app_state.dart';
+import 'package:meshcore_repeater_manager/main.dart';
 
 void main() {
   testWidgets('connect screen renders the app shell',
@@ -12,10 +12,10 @@ void main() {
     await tester.pumpWidget(
       ChangeNotifierProvider(
         create: (_) => AppState(),
-        child: const MeshCoreOtaApp(),
+        child: const MeshCoreRepeaterManagerApp(),
       ),
     );
-    expect(find.text('MeshCoreOTA'), findsWidgets);
+    expect(find.text('MeshCoreRepeaterManager'), findsWidgets);
     // TCP transport is offered everywhere; Bluetooth is Android/iOS only.
     if (Platform.isAndroid || Platform.isIOS) {
       expect(find.text('Bluetooth'), findsOneWidget);

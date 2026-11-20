@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meshcore_ota/services/firmware_library.dart';
+import 'package:meshcore_repeater_manager/services/firmware_library.dart';
 
 Uint8List _bytes(int seed, int length) => Uint8List.fromList(
     List<int>.generate(length, (i) => (i * seed + 11) & 0xFF));

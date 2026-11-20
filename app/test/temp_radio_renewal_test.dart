@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:meshcore_ota/services/temp_radio_renewal.dart';
+import 'package:meshcore_repeater_manager/services/temp_radio_renewal.dart';
 
 void main() {
   late DateTime clock;

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ota_core/ota_core.dart' show ApplyOutcome;
-import 'package:meshcore_ota/app_state.dart';
-import 'package:meshcore_ota/screens/verify_screen.dart';
+import 'package:meshcore_repeater_manager/app_state.dart';
+import 'package:meshcore_repeater_manager/screens/verify_screen.dart';
 
 import 'support.dart';
 

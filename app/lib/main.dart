@@ -17,7 +17,7 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   FlutterForegroundTask.init(
     androidNotificationOptions: AndroidNotificationOptions(
-      channelId: 'meshcore_ota_transfer',
+      channelId: 'meshcore_repeater_manager_transfer',
       channelName: 'OTA firmware transfer',
       channelDescription:
           'Keeps the LoRa link and the firmware transfer alive while the screen is off.',
@@ -34,18 +34,18 @@ void main() {
   runApp(
     ChangeNotifierProvider(
       create: (_) => AppState()..initServices(),
-      child: const MeshCoreOtaApp(),
+      child: const MeshCoreRepeaterManagerApp(),
     ),
   );
 }
 
-class MeshCoreOtaApp extends StatelessWidget {
-  const MeshCoreOtaApp({super.key});
+class MeshCoreRepeaterManagerApp extends StatelessWidget {
+  const MeshCoreRepeaterManagerApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'MeshCoreOTA',
+      title: 'MeshCoreRepeaterManager',
       debugShowCheckedModeBanner: false,
       theme: OtaTheme.dark,
       home: const ConnectScreen(),

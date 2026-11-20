@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meshcore_ota/services/github_source.dart';
+import 'package:meshcore_repeater_manager/services/github_source.dart';
 
 Map<String, dynamic> _releaseJson({
   required String tag,

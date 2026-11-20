@@ -7,10 +7,10 @@ import 'package:mesh_protocol/mesh_protocol.dart';
 import 'package:ota_core/ota_core.dart';
 import 'package:provider/provider.dart';
 
-import 'package:meshcore_ota/app_state.dart';
-import 'package:meshcore_ota/services/firmware_library.dart';
-import 'package:meshcore_ota/services/github_source.dart';
-import 'package:meshcore_ota/theme.dart';
+import 'package:meshcore_repeater_manager/app_state.dart';
+import 'package:meshcore_repeater_manager/services/firmware_library.dart';
+import 'package:meshcore_repeater_manager/services/github_source.dart';
+import 'package:meshcore_repeater_manager/theme.dart';
 
 /// Shared fixtures for the app's widget tests. Screens bind to [AppState]
 /// public fields, so a test can build any screen state without a companion.
@@ -120,7 +120,8 @@ Catalog catalog(List<FirmwareRelease> releases) => Catalog(
 /// A real on-disk library in a temp directory, so selection/delete paths run
 /// against actual files.
 Future<FirmwareLibrary> tempLibrary() async {
-  final dir = await Directory.systemTemp.createTemp('meshcoreota_test_');
+  final dir =
+      await Directory.systemTemp.createTemp('meshcorepeatermanager_test_');
   return FirmwareLibrary.open(dir);
 }
 
@@ -136,7 +137,7 @@ Widget wrap(AppState app, Widget child) =>
 class FakeLibrary extends FirmwareLibrary {
   FakeLibrary([List<LibraryEntry> entries = const []])
       : _entries = [...entries],
-        super(Directory('/nonexistent-meshcoreota-library'));
+        super(Directory('/nonexistent-meshcorepeatermanager-library'));
 
   final List<LibraryEntry> _entries;
   final Map<String, Uint8List> _bytes = {};

@@ -2,13 +2,13 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meshcore_ota/app_state.dart';
-import 'package:meshcore_ota/screens/connect_screen.dart';
-import 'package:meshcore_ota/screens/firmware_screen.dart';
-import 'package:meshcore_ota/screens/resume_screen.dart';
-import 'package:meshcore_ota/screens/transfer_screen.dart';
-import 'package:meshcore_ota/services/radio_plan.dart';
-import 'package:meshcore_ota/services/resume_store.dart';
+import 'package:meshcore_repeater_manager/app_state.dart';
+import 'package:meshcore_repeater_manager/screens/connect_screen.dart';
+import 'package:meshcore_repeater_manager/screens/firmware_screen.dart';
+import 'package:meshcore_repeater_manager/screens/resume_screen.dart';
+import 'package:meshcore_repeater_manager/screens/transfer_screen.dart';
+import 'package:meshcore_repeater_manager/services/radio_plan.dart';
+import 'package:meshcore_repeater_manager/services/resume_store.dart';
 import 'package:ota_core/ota_core.dart';
 
 import 'support.dart';

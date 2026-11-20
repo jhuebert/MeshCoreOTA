@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// MeshCoreOTA visual identity: deep slate with a signal-amber accent.
+/// MeshCoreRepeaterManager visual identity: deep slate with a signal-amber accent.
 /// Deliberately quiet — this is a tools app, not a consumer product.
 class OtaTheme {
   static const background = Color(0xFF0F1420);

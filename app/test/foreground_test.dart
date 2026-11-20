@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task_platform_interface.dart';
 
-import 'package:meshcore_ota/services/foreground.dart';
+import 'package:meshcore_repeater_manager/services/foreground.dart';
 
 class _FakeForegroundPlatform extends FlutterForegroundTaskPlatform {
   final List<String> calls = <String>[];
@@ -102,7 +102,7 @@ void main() {
       screenCalls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('org.huebert.meshcoreota/screen'),
+        const MethodChannel('org.huebert.meshcorepeatermanager/screen'),
         (call) async {
           screenCalls.add(call);
           return null;
@@ -114,7 +114,8 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-              const MethodChannel('org.huebert.meshcoreota/screen'), null);
+              const MethodChannel('org.huebert.meshcorepeatermanager/screen'),
+              null);
       FlutterForegroundTask.resetStatic();
     });
 

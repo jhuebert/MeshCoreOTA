@@ -158,20 +158,20 @@ jobs:
         run: |
           set -euo pipefail
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
-          export MESHCOREOTA_GIT_DIRTY=0
+          export MESHCORE_REPEATER_MANAGER_GIT_DIRTY=0
           out=app/build/app/outputs/flutter-apk
           dest=dist-test/built
           mkdir -p "$dest"
           ./scripts/build.sh apk --release --build-number "$BUILD_NUMBER"
           cp "$out/app-release.apk" \
-            "$dest/MeshCoreOTA-${VERSION_NAME}-${BUILD_NUMBER}-universal-built.apk"
+            "$dest/MeshCoreRepeaterManager-${VERSION_NAME}-${BUILD_NUMBER}-universal-built.apk"
           ./scripts/build.sh apk --release --build-number "$BUILD_NUMBER" --split-per-abi
           cp "$out/app-arm64-v8a-release.apk" \
-            "$dest/MeshCoreOTA-${VERSION_NAME}-${BUILD_NUMBER}-arm64-v8a-built.apk"
+            "$dest/MeshCoreRepeaterManager-${VERSION_NAME}-${BUILD_NUMBER}-arm64-v8a-built.apk"
           cp "$out/app-armeabi-v7a-release.apk" \
-            "$dest/MeshCoreOTA-${VERSION_NAME}-${BUILD_NUMBER}-armeabi-v7a-built.apk"
+            "$dest/MeshCoreRepeaterManager-${VERSION_NAME}-${BUILD_NUMBER}-armeabi-v7a-built.apk"
           cp "$out/app-x86_64-release.apk" \
-            "$dest/MeshCoreOTA-${VERSION_NAME}-${BUILD_NUMBER}-x86_64-built.apk"
+            "$dest/MeshCoreRepeaterManager-${VERSION_NAME}-${BUILD_NUMBER}-x86_64-built.apk"
           ls -l "$dest"
 
       - name: Upload built APKs
@@ -304,7 +304,7 @@ jobs:
             pkg="$(sed -E "s/package: name='([^']+)'.*/\1/" <<<"$badging")"
             code="$(sed -E "s/.*versionCode='([0-9]+)'.*/\1/" <<<"$badging")"
             name="$(sed -E "s/.*versionName='([^']*)'.*/\1/" <<<"$badging")"
-            if [[ "$pkg" != "org.huebert.meshcoreota" ]]; then
+            if [[ "$pkg" != "org.huebert.meshcorepeatermanager" ]]; then
               echo "::error::$file has package $pkg"
               exit 1
             fi
@@ -317,7 +317,7 @@ jobs:
               exit 1
             fi
 
-            out="dist-test/final/MeshCoreOTA-${VERSION_NAME}-${code}-${abi}-test.apk"
+            out="dist-test/final/MeshCoreRepeaterManager-${VERSION_NAME}-${code}-${abi}-test.apk"
             cp "$apk" "$out"
             bash source/scripts/sign_apks.sh \
               --keystore "$keystore" \
@@ -328,7 +328,7 @@ jobs:
           done
 
           {
-            echo "MeshCoreOTA test build"
+            echo "MeshCoreRepeaterManager test build"
             echo ""
             echo "ref=$BUILD_REF"
             echo "commit=$BUILD_COMMIT"
@@ -339,7 +339,7 @@ jobs:
           } > dist-test/final/build-metadata.txt
 
           {
-            echo "MeshCoreOTA test build"
+            echo "MeshCoreRepeaterManager test build"
             echo ""
             echo "Ref: $BUILD_REF"
             echo "Commit: $BUILD_COMMIT"
@@ -362,7 +362,7 @@ jobs:
           ls -l dist-test/final
 
           {
-            echo "## MeshCoreOTA test build"
+            echo "## MeshCoreRepeaterManager test build"
             echo ""
             echo "- Ref: $BUILD_REF"
             echo "- Commit: $BUILD_COMMIT"
@@ -380,7 +380,7 @@ jobs:
       - name: Upload signed test APKs
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: MeshCoreOTA-test-${{ needs.build.outputs.version_name }}-${{ needs.build.outputs.build_number }}-${{ needs.build.outputs.short_commit }}
+          name: MeshCoreRepeaterManager-test-${{ needs.build.outputs.version_name }}-${{ needs.build.outputs.build_number }}-${{ needs.build.outputs.short_commit }}
           path: dist-test/final
           if-no-files-found: error
           retention-days: 14
@@ -434,7 +434,7 @@ jobs:
         run: |
           set -euo pipefail
           export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
-          export MESHCOREOTA_GIT_DIRTY=0
+          export MESHCORE_REPEATER_MANAGER_GIT_DIRTY=0
           ./scripts/build.sh ${{ matrix.target }} --release
 
       - name: Package Linux
@@ -445,7 +445,7 @@ jobs:
         run: |
           set -euo pipefail
           cd app/build/linux/x64/release/bundle
-          tar -czf "$GITHUB_WORKSPACE/MeshCoreOTA-$VERSION-linux-x64.tar.gz" .
+          tar -czf "$GITHUB_WORKSPACE/MeshCoreRepeaterManager-$VERSION-linux-x64.tar.gz" .
 
       - name: Package Windows
         if: runner.os == 'Windows'
@@ -454,7 +454,7 @@ jobs:
           VERSION: ${{ needs.build.outputs.version_name }}
         run: |
           Compress-Archive -Path "app/build/windows/x64/runner/Release/*" `
-            -DestinationPath "MeshCoreOTA-$env:VERSION-windows-x64.zip" -Force
+            -DestinationPath "MeshCoreRepeaterManager-$env:VERSION-windows-x64.zip" -Force
 
       - name: Package macOS
         if: runner.os == 'macOS'
@@ -464,13 +464,13 @@ jobs:
         run: |
           set -euo pipefail
           ditto -c -k --sequesterRsrc --keepParent \
-            app/build/macos/Build/Products/Release/meshcore_ota.app \
-            "MeshCoreOTA-$VERSION-macos.zip"
+            app/build/macos/Build/Products/Release/meshcore_repeater_manager.app \
+            "MeshCoreRepeaterManager-$VERSION-macos.zip"
 
       - name: Upload desktop test bundle
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: MeshCoreOTA-test-${{ needs.build.outputs.version_name }}-${{ needs.build.outputs.build_number }}-${{ needs.build.outputs.short_commit }}-${{ matrix.target }}
-          path: MeshCoreOTA-${{ needs.build.outputs.version_name }}-${{ matrix.asset }}
+          name: MeshCoreRepeaterManager-test-${{ needs.build.outputs.version_name }}-${{ needs.build.outputs.build_number }}-${{ needs.build.outputs.short_commit }}-${{ matrix.target }}
+          path: MeshCoreRepeaterManager-${{ needs.build.outputs.version_name }}-${{ matrix.asset }}
           if-no-files-found: error
           retention-days: 14

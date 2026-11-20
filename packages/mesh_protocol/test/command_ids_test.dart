@@ -146,7 +146,7 @@ void main() {
 
   test('every pinned R1 command has an explicit server command-table entry',
       () {
-    // MeshCoreOTA does not ship the MeshChameleon companion server. When the
+    // MeshCoreRepeaterManager does not ship the MeshChameleon companion server. When the
     // sibling package is absent there is nothing to pin the dispatch table
     // against; skip instead of failing.
     final sibling = File('../companion_server/lib/src/command_dispatcher.dart');

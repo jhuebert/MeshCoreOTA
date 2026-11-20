@@ -73,7 +73,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
       if (!mounted) return;
       setState(() {
         _scanError =
-            'Could not start scanning — is Bluetooth on and are MeshCoreOTA’s '
+            'Could not start scanning — is Bluetooth on and are MeshCoreRepeaterManager’s '
             'Bluetooth permissions granted? ($e)';
       });
     } finally {
@@ -103,7 +103,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
     final connected = app.connectionPhase == ConnectionPhase.connected;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('MeshCoreOTA')),
+      appBar: AppBar(title: const Text('MeshCoreRepeaterManager')),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [

@@ -3,9 +3,9 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:meshcore_ota/app_state.dart';
-import 'package:meshcore_ota/screens/radio_settings_screen.dart';
-import 'package:meshcore_ota/services/radio_plan.dart';
+import 'package:meshcore_repeater_manager/app_state.dart';
+import 'package:meshcore_repeater_manager/screens/radio_settings_screen.dart';
+import 'package:meshcore_repeater_manager/services/radio_plan.dart';
 
 import 'support.dart';
 

@@ -1,4 +1,4 @@
-/// LoRa OTA domain logic for MeshCoreOTA. Frozen against the fork firmware's
+/// LoRa OTA domain logic for MeshCoreRepeaterManager. Frozen against the fork firmware's
 /// `OtaUpdate.h` (the OTA wire contract): any change here is a protocol change.
 library;
 

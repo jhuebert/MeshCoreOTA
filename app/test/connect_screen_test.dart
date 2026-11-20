@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mesh_protocol/mesh_protocol.dart';
 
-import 'package:meshcore_ota/app_state.dart';
-import 'package:meshcore_ota/screens/connect_screen.dart';
+import 'package:meshcore_repeater_manager/app_state.dart';
+import 'package:meshcore_repeater_manager/screens/connect_screen.dart';
 
 import 'support.dart';
 

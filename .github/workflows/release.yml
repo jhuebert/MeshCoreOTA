@@ -177,7 +177,7 @@ jobs:
           set -euo pipefail
           SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           export SOURCE_DATE_EPOCH
-          export MESHCOREOTA_GIT_DIRTY=0
+          export MESHCORE_REPEATER_MANAGER_GIT_DIRTY=0
           ./scripts/build.sh apk --release --build-number "$BUILD_NUMBER"
           ./scripts/build.sh apk --release --build-number "$BUILD_NUMBER" --split-per-abi
 
@@ -276,13 +276,13 @@ jobs:
           out=app/build/app/outputs
           mkdir -p dist
           cp "$out/flutter-apk/app-release.apk" \
-            "dist/MeshCoreOTA-$VERSION-universal.apk"
+            "dist/MeshCoreRepeaterManager-$VERSION-universal.apk"
           cp "$out/flutter-apk/app-arm64-v8a-release.apk" \
-            "dist/MeshCoreOTA-$VERSION-arm64-v8a.apk"
+            "dist/MeshCoreRepeaterManager-$VERSION-arm64-v8a.apk"
           cp "$out/flutter-apk/app-armeabi-v7a-release.apk" \
-            "dist/MeshCoreOTA-$VERSION-armeabi-v7a.apk"
+            "dist/MeshCoreRepeaterManager-$VERSION-armeabi-v7a.apk"
           cp "$out/flutter-apk/app-x86_64-release.apk" \
-            "dist/MeshCoreOTA-$VERSION-x86_64.apk"
+            "dist/MeshCoreRepeaterManager-$VERSION-x86_64.apk"
           cp "$RUNNER_TEMP/release-notes.md" dist/release-notes.md
           keystore_sha() {
             keytool -list -v -keystore "$1" -alias "$2" -storepass:env "$3" \
@@ -301,7 +301,7 @@ jobs:
           EOF
           (
             cd dist
-            sha256sum MeshCoreOTA-*.apk > SHA256SUMS.txt
+            sha256sum MeshCoreRepeaterManager-*.apk > SHA256SUMS.txt
           )
 
       - name: Upload dry-run artifacts
@@ -343,7 +343,7 @@ jobs:
           export GIT_ASKPASS="$askpass"
           export GIT_TERMINAL_PROMPT=0
           git push origin HEAD:main
-          git tag -a "v$VERSION" -m "MeshCoreOTA $VERSION"
+          git tag -a "v$VERSION" -m "MeshCoreRepeaterManager $VERSION"
           git push origin "v$VERSION"
 
       - name: Create GitHub Release
@@ -354,15 +354,15 @@ jobs:
           PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -euo pipefail
-          args=(--title "MeshCoreOTA $VERSION" --notes-file dist/release-notes.md)
+          args=(--title "MeshCoreRepeaterManager $VERSION" --notes-file dist/release-notes.md)
           if [[ "$PRERELEASE" == "true" ]]; then
             args+=(--prerelease)
           fi
           gh release create "v$VERSION" "${args[@]}" \
-            "dist/MeshCoreOTA-$VERSION-universal.apk" \
-            "dist/MeshCoreOTA-$VERSION-arm64-v8a.apk" \
-            "dist/MeshCoreOTA-$VERSION-armeabi-v7a.apk" \
-            "dist/MeshCoreOTA-$VERSION-x86_64.apk" \
+            "dist/MeshCoreRepeaterManager-$VERSION-universal.apk" \
+            "dist/MeshCoreRepeaterManager-$VERSION-arm64-v8a.apk" \
+            "dist/MeshCoreRepeaterManager-$VERSION-armeabi-v7a.apk" \
+            "dist/MeshCoreRepeaterManager-$VERSION-x86_64.apk" \
             dist/SHA256SUMS.txt \
             dist/build-metadata.txt \
             dist/release-notes.md
@@ -426,7 +426,7 @@ jobs:
         run: |
           set -euo pipefail
           cd app/build/linux/x64/release/bundle
-          tar -czf "$GITHUB_WORKSPACE/MeshCoreOTA-$VERSION-linux-x64.tar.gz" .
+          tar -czf "$GITHUB_WORKSPACE/MeshCoreRepeaterManager-$VERSION-linux-x64.tar.gz" .
 
       - name: Package Windows
         if: runner.os == 'Windows'
@@ -435,7 +435,7 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           Compress-Archive -Path "app/build/windows/x64/runner/Release/*" `
-            -DestinationPath "MeshCoreOTA-$env:VERSION-windows-x64.zip" -Force
+            -DestinationPath "MeshCoreRepeaterManager-$env:VERSION-windows-x64.zip" -Force
 
       - name: Package macOS
         if: runner.os == 'macOS'
@@ -445,15 +445,15 @@ jobs:
         run: |
           set -euo pipefail
           ditto -c -k --sequesterRsrc --keepParent \
-            app/build/macos/Build/Products/Release/meshcore_ota.app \
-            "MeshCoreOTA-$VERSION-macos.zip"
+            app/build/macos/Build/Products/Release/meshcore_repeater_manager.app \
+            "MeshCoreRepeaterManager-$VERSION-macos.zip"
 
       - name: Upload dry-run bundle
         if: ${{ inputs.dry_run }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-${{ matrix.target }}
-          path: MeshCoreOTA-${{ inputs.version }}-${{ matrix.asset }}
+          path: MeshCoreRepeaterManager-${{ inputs.version }}-${{ matrix.asset }}
           if-no-files-found: error
           retention-days: 14
 
@@ -466,4 +466,4 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "v$VERSION" \
-            "MeshCoreOTA-$VERSION-${{ matrix.asset }}" --clobber
+            "MeshCoreRepeaterManager-$VERSION-${{ matrix.asset }}" --clobber

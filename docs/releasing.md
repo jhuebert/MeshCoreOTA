@@ -1,4 +1,4 @@
-# Releasing MeshCoreOTA
+# Releasing MeshCoreRepeaterManager
 
 The release pipeline mirrors MeshChameleon's: manual dispatch, build number
 reserved from a repository variable, everything else reproducible. Installs
@@ -15,7 +15,7 @@ are sideloaded APKs from GitHub Releases — there is no Play track yet.
 
    ```sh
    keytool -genkeypair -v \
-     -keystore meshcoreota-app-signing.p12 -storetype PKCS12 \
+     -keystore meshcorepeatermanager-app-signing.p12 -storetype PKCS12 \
      -keyalg RSA -keysize 4096 -validity 10000 \
      -alias app-signing -storepass 'STORE_PASSWORD'
    ```
@@ -23,7 +23,7 @@ are sideloaded APKs from GitHub Releases — there is no Play track yet.
    Record the certificate fingerprint:
 
    ```sh
-   keytool -list -v -keystore meshcoreota-app-signing.p12 -alias app-signing \
+   keytool -list -v -keystore meshcorepeatermanager-app-signing.p12 -alias app-signing \
      | awk -F': ' '/SHA256:/ { print tolower($2); exit }'
    ```
 
@@ -37,7 +37,7 @@ are sideloaded APKs from GitHub Releases — there is no Play track yet.
 
    | Secret | Notes |
    |---|---|
-   | `APP_SIGNING_KEYSTORE_BASE64` | `base64 -w0 meshcoreota-app-signing.p12` |
+   | `APP_SIGNING_KEYSTORE_BASE64` | `base64 -w0 meshcorepeatermanager-app-signing.p12` |
    | `APP_SIGNING_KEYSTORE_PASSWORD` | store password |
    | `APP_SIGNING_KEY_ALIAS` | e.g. `app-signing` |
    | `APP_SIGNING_KEY_PASSWORD` | key password |
@@ -98,7 +98,7 @@ days.
 
 Builds a universal APK signed with the app signing key so it can replace an
 installed GitHub release build, or installs it onto one attached device.
-Set `MESHCOREOTA_APP_SIGNING_SHA256` to verify the fingerprint.
+Set `MESHCORE_REPEATER_MANAGER_APP_SIGNING_SHA256` to verify the fingerprint.
 
 ## CI
 

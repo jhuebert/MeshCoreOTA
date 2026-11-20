@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ota_core/ota_core.dart';
 
-import 'package:meshcore_ota/services/literal_compression.dart';
+import 'package:meshcore_repeater_manager/services/literal_compression.dart';
 
 void main() {
   test('a compressible literal run becomes one compressed op', () {

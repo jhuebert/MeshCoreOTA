@@ -2,7 +2,7 @@
 
 ## Threat model
 
-MeshCoreOTA moves firmware images over LoRa to a repeater, from a phone that
+MeshCoreRepeaterManager moves firmware images over LoRa to a repeater, from a phone that
 already has a trusted relationship with the companion it is connected to.
 The design goal: **an attacker who can transmit on the same radio can never
 make the node boot a different image**, and **a broken image can never stay
@@ -97,7 +97,7 @@ code with no new guarantee at the arm/SHA/apply gates.
 
 This is a personal project for a self-hosted mesh fork. Report issues by
 opening a private security advisory on
-[jhuebert/MeshCoreOTA](https://github.com/jhuebert/MeshCoreOTA/security/advisories/new)
+[jhuebert/MeshCoreRepeaterManager](https://github.com/jhuebert/MeshCoreRepeaterManager/security/advisories/new)
 (or on the fork, for firmware-side issues:
 [jhuebert/MeshCore](https://github.com/jhuebert/MeshCore/security/advisories/new)).
 Administration session hygiene is your responsibility: change the repeater

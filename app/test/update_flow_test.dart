@@ -7,10 +7,10 @@ import 'package:crypto/crypto.dart';
 import 'package:device_link/device_link.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mesh_protocol/mesh_protocol.dart';
-import 'package:meshcore_ota/app_state.dart';
-import 'package:meshcore_ota/services/radio_plan.dart';
-import 'package:meshcore_ota/services/resume_store.dart';
-import 'package:meshcore_ota/services/update_flow.dart';
+import 'package:meshcore_repeater_manager/app_state.dart';
+import 'package:meshcore_repeater_manager/services/radio_plan.dart';
+import 'package:meshcore_repeater_manager/services/resume_store.dart';
+import 'package:meshcore_repeater_manager/services/update_flow.dart';
 import 'package:ota_core/ota_core.dart';
 
 import 'support.dart';

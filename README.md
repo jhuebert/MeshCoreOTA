@@ -1,16 +1,16 @@
-# MeshCoreOTA
+# MeshCoreRepeaterManager
 
 <p align="center">
-  <img src="app/assets/icon/icon.png" alt="MeshCoreOTA" width="132" height="132">
+  <img src="app/assets/icon/icon.png" alt="MeshCoreRepeaterManager" width="132" height="132">
 </p>
 
-**MeshCoreOTA updates MeshCore repeater firmware over the air, from your phone
+**MeshCoreRepeaterManager updates MeshCore repeater firmware over the air, from your phone
 or laptop — no tower visit, no laptop at the site, and no extra traffic across
 your mesh.**
 
 A repeater on a hill, a roof or a water tower is hard to reach and easy to
 put off updating. Plugging in a USB cable means a climb, a ladder or a drive.
-MeshCoreOTA lets an authorised operator send a release to that repeater
+MeshCoreRepeaterManager lets an authorised operator send a release to that repeater
 through a MeshCore companion that is already on the mesh. The repeater
 verifies the image, stores it in its spare firmware slot, and only boots it
 when you say so. If the new firmware cannot start its radio, the repeater
@@ -23,14 +23,14 @@ The companion device stays on its stock firmware.
 ## Download
 
 Releases are on the
-**[MeshCoreOTA releases page](https://github.com/jhuebert/MeshCoreOTA/releases)**:
+**[MeshCoreRepeaterManager releases page](https://github.com/jhuebert/MeshCoreRepeaterManager/releases)**:
 
 | Platform | What to download | Notes |
 |---|---|---|
-| Android | `MeshCoreOTA-<version>-universal.apk` | Sideload it; play services are not needed. |
-| Linux | `MeshCoreOTA-<version>-linux-x64.tar.gz` | Unpack and run `meshcoreota`. |
-| Windows | `MeshCoreOTA-<version>-windows-x64.zip` | Unpack and run `meshcore_ota.exe`. |
-| macOS | `MeshCoreOTA-<version>-macos.zip` | Unpack and open `meshcore_ota.app`. |
+| Android | `MeshCoreRepeaterManager-<version>-universal.apk` | Sideload it; play services are not needed. |
+| Linux | `MeshCoreRepeaterManager-<version>-linux-x64.tar.gz` | Unpack and run `meshcorepeatermanager`. |
+| Windows | `MeshCoreRepeaterManager-<version>-windows-x64.zip` | Unpack and run `meshcore_repeater_manager.exe`. |
+| macOS | `MeshCoreRepeaterManager-<version>-macos.zip` | Unpack and open `meshcore_repeater_manager.app`. |
 
 The desktop builds are unsigned: Windows SmartScreen and macOS Gatekeeper
 will ask you to confirm the first launch. Android installs are signed with

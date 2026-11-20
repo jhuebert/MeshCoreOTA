@@ -20,15 +20,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:ota_core/ota_core.dart';
 
-import 'package:meshcore_ota/app_state.dart';
-import 'package:meshcore_ota/screens/connect_screen.dart';
-import 'package:meshcore_ota/screens/firmware_screen.dart';
-import 'package:meshcore_ota/screens/login_screen.dart';
-import 'package:meshcore_ota/screens/radio_settings_screen.dart';
-import 'package:meshcore_ota/screens/review_screen.dart';
-import 'package:meshcore_ota/screens/target_screen.dart';
-import 'package:meshcore_ota/services/github_source.dart';
-import 'package:meshcore_ota/services/radio_plan.dart';
+import 'package:meshcore_repeater_manager/app_state.dart';
+import 'package:meshcore_repeater_manager/screens/connect_screen.dart';
+import 'package:meshcore_repeater_manager/screens/firmware_screen.dart';
+import 'package:meshcore_repeater_manager/screens/login_screen.dart';
+import 'package:meshcore_repeater_manager/screens/radio_settings_screen.dart';
+import 'package:meshcore_repeater_manager/screens/review_screen.dart';
+import 'package:meshcore_repeater_manager/screens/target_screen.dart';
+import 'package:meshcore_repeater_manager/services/github_source.dart';
+import 'package:meshcore_repeater_manager/services/radio_plan.dart';
 
 import '../test/support.dart' as fix;
 

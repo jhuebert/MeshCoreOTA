@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "org.huebert" "\0"
-            VALUE "FileDescription", "meshcore_ota" "\0"
+            VALUE "FileDescription", "meshcore_repeater_manager" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "meshcore_ota" "\0"
+            VALUE "InternalName", "meshcore_repeater_manager" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 org.huebert. All rights reserved." "\0"
-            VALUE "OriginalFilename", "meshcore_ota.exe" "\0"
-            VALUE "ProductName", "meshcore_ota" "\0"
+            VALUE "OriginalFilename", "meshcore_repeater_manager.exe" "\0"
+            VALUE "ProductName", "meshcore_repeater_manager" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

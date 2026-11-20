@@ -1,4 +1,4 @@
-package org.huebert.meshcoreota
+package org.huebert.meshcorepeatermanager
 
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
@@ -10,7 +10,7 @@ class MainActivity : FlutterActivity() {
     super.configureFlutterEngine(flutterEngine)
     MethodChannel(
       flutterEngine.dartExecutor.binaryMessenger,
-      "org.huebert.meshcoreota/screen"
+      "org.huebert.meshcorepeatermanager/screen"
     ).setMethodCallHandler { call, result ->
       if (call.method == "setScreenOn") {
         val enabled = call.argument<Boolean>("enabled") == true

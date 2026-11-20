@@ -3,8 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meshcore_ota/services/radio_plan.dart';
-import 'package:meshcore_ota/services/resume_store.dart';
+import 'package:meshcore_repeater_manager/services/radio_plan.dart';
+import 'package:meshcore_repeater_manager/services/resume_store.dart';
 
 ResumePlan _plan({
   List<Uint8List>? frames,

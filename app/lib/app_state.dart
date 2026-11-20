@@ -301,7 +301,7 @@ class AppState extends ChangeNotifier {
     _source = GitHubSource(
       fetchJson: httpFetchJson,
       fetchBytes: httpFetchBytes,
-      cacheFile: File('${dir.path}/meshcore_ota_catalog.json'),
+      cacheFile: File('${dir.path}/meshcore_repeater_manager_catalog.json'),
     );
     return _source!;
   }

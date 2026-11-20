@@ -5,11 +5,11 @@ import 'package:flutter_foreground_task/flutter_foreground_task_platform_interfa
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ota_core/ota_core.dart';
 
-import 'package:meshcore_ota/app_state.dart';
-import 'package:meshcore_ota/screens/resume_screen.dart';
-import 'package:meshcore_ota/screens/transfer_screen.dart';
-import 'package:meshcore_ota/services/foreground.dart';
-import 'package:meshcore_ota/widgets/common.dart';
+import 'package:meshcore_repeater_manager/app_state.dart';
+import 'package:meshcore_repeater_manager/screens/resume_screen.dart';
+import 'package:meshcore_repeater_manager/screens/transfer_screen.dart';
+import 'package:meshcore_repeater_manager/services/foreground.dart';
+import 'package:meshcore_repeater_manager/widgets/common.dart';
 
 import 'support.dart';
 
@@ -228,14 +228,15 @@ void main() {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-            const MethodChannel('org.huebert.meshcoreota/screen'),
+            const MethodChannel('org.huebert.meshcorepeatermanager/screen'),
             (call) async => null);
     addTearDown(() {
       TransferForegroundService.isSupported = () => false;
       debugDefaultTargetPlatformOverride = null;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-              const MethodChannel('org.huebert.meshcoreota/screen'), null);
+              const MethodChannel('org.huebert.meshcorepeatermanager/screen'),
+              null);
       FlutterForegroundTask.resetStatic();
     });
 

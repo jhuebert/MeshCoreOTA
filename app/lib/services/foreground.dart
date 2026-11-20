@@ -11,7 +11,8 @@ import '../main.dart' show transferServiceEntry;
 /// Android/iOS only — desktop runs the transfer in-process (keep the window
 /// open).
 class TransferForegroundService {
-  static const _screenChannel = MethodChannel('org.huebert.meshcoreota/screen');
+  static const _screenChannel =
+      MethodChannel('org.huebert.meshcorepeatermanager/screen');
 
   /// Host-platform check, overridable in tests. Widget tests run on a Linux
   /// host where `defaultTargetPlatform` is Android by default; using the real
@@ -36,7 +37,7 @@ class TransferForegroundService {
       // Match the manifest's declared type on Android 14+.
       serviceTypes:
           _isAndroid ? [ForegroundServiceTypes.connectedDevice] : null,
-      notificationTitle: 'MeshCoreOTA — firmware update',
+      notificationTitle: 'MeshCoreRepeaterManager — firmware update',
       notificationText: notificationText,
       callback: transferServiceEntry,
     );

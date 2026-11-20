@@ -3,10 +3,10 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-expected='--dart-define=MESHCOREOTA_BUILD_TIME=1970-01-01T00:00:00Z'
+expected='--dart-define=MESHCORE_REPEATER_MANAGER_BUILD_TIME=1970-01-01T00:00:00Z'
 
 read_meta() {
-  MESHCOREOTA_GIT_COMMIT=test MESHCOREOTA_GIT_DIRTY=0 \
+  MESHCORE_REPEATER_MANAGER_GIT_COMMIT=test MESHCORE_REPEATER_MANAGER_GIT_DIRTY=0 \
     SOURCE_DATE_EPOCH=0 \
     bash -c 'source "$1/scripts/build_metadata.sh" >/dev/null 2>&1; printf "%s\n" "${metadata_args[@]}"' \
     _ "$root"

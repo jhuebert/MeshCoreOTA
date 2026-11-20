@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:meshcore_ota/services/radio_plan.dart';
+import 'package:meshcore_repeater_manager/services/radio_plan.dart';
 
 const _mesh = LoRaPreset(
   frequencyHz: 910525000,
