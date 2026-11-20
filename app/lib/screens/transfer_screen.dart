@@ -508,13 +508,16 @@ class _TransferScreenState extends State<TransferScreen> {
 
   /// One short suffix on the same line as the sent and re-send counts.
   static String _etaSuffix(TransferProgress progress) {
-    final applied = progress.opsApplied;
+    // On a resume the node's watermark includes work done before this run,
+    // while elapsed starts at zero. Only ops applied since the resume may be
+    // used to measure the rate, or the ETA assumes that prefix was instant.
+    final applied = progress.opsThisRun ?? progress.opsApplied;
     if (applied == null || applied < 4 || progress.elapsed.inSeconds < 5) {
       return ' · Measuring time left…';
     }
     final rate = applied / progress.elapsed.inSeconds;
-    final remainingOps =
-        (progress.opsTotal - applied).clamp(0, progress.opsTotal);
+    final remainingOps = (progress.opsTotal - (progress.opsApplied ?? applied))
+        .clamp(0, progress.opsTotal);
     final remaining = Duration(seconds: (remainingOps / rate).ceil());
     return ' · ${_etaText(remaining)} left';
   }

@@ -20,6 +20,7 @@ class TransferProgress {
     required this.literalBytesSent,
     required this.retries,
     required this.elapsed,
+    this.opsThisRun,
   });
 
   final TransferPhase phase;
@@ -36,6 +37,11 @@ class TransferProgress {
 
   final int retries;
   final Duration elapsed;
+
+  /// Ops applied since this run started. On a resume this excludes the prefix
+  /// the node already held, and pairs with [elapsed] for a truthful rate.
+  /// Null for progress built without a resume (tests, other callers).
+  final int? opsThisRun;
 
   double? get fraction {
     final applied = opsApplied;
@@ -346,6 +352,7 @@ class OtaTransfer {
     this.companionFrameLimit = otaStockCompanionFrameLimit,
     this.shouldCancel,
   })  : assert(windowSize >= 1),
+        opsAtResume = resumeFrom > 1 ? resumeFrom - 1 : 0,
         wireOps = prebuiltOps ??
             wireOpsFor(ops,
                 literalChunk: otaLiteralChunkForBinaryReq(
@@ -436,6 +443,11 @@ class OtaTransfer {
   int packetsSent = 0;
   int literalBytesSent = 0;
   int retries = 0;
+
+  /// Ops the node had already applied when this run started. The stopwatch
+  /// starts fresh on resume, so only ops beyond this mark may be used to
+  /// measure the current rate.
+  late final int opsAtResume;
 
   /// Op frames re-broadcast beyond their first transmission.
   int _duplicateOps = 0;
@@ -675,6 +687,9 @@ class OtaTransfer {
       literalBytesSent: literalBytes,
       retries: retries,
       elapsed: _sw.elapsed,
+      opsThisRun: opsApplied == null
+          ? null
+          : (opsApplied - opsAtResume).clamp(0, total),
     ));
   }
 }

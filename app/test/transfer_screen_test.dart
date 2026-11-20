@@ -133,6 +133,29 @@ void main() {
         find.textContaining('re-sends · Measuring time left…'), findsOneWidget);
   });
 
+  testWidgets('the ETA ignores ops applied before a resume', (tester) async {
+    _bigView(tester);
+    final app = _app();
+    app.updatePhase = UpdatePhase.transferring;
+    app.progress = const TransferProgress(
+      phase: TransferPhase.sending,
+      opsApplied: 400,
+      opsThisRun: 10,
+      opsTotal: 1000,
+      packetsSent: 400,
+      literalBytesSent: 400 * 173,
+      retries: 0,
+      elapsed: Duration(seconds: 10),
+    );
+
+    await tester.pumpWidget(wrap(app, const TransferScreen()));
+    await tester.pump();
+
+    // 10 ops in 10 s means 600 remaining ops at 1 op/s, not 15 s at 40 ops/s.
+    expect(find.textContaining('10 min left'), findsOneWidget);
+    expect(find.textContaining('ops/s'), findsNothing);
+  });
+
   testWidgets('the transfer screen shows comparison progress and a stop',
       (tester) async {
     _bigView(tester);

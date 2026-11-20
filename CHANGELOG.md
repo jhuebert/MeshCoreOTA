@@ -168,6 +168,10 @@ All notable changes to MeshCoreRepeaterManager are documented here. The format f
   its own row. Deleting one no longer deletes the other.
 - **Bluetooth and connection failures are no longer raw technical errors** on
   the Connect screen.
+- **The time left after a resume is no longer wildly optimistic.** The rate
+  previously divided all ops the node reported, including the prefix uploaded
+  before the pause, by the current run's elapsed time. It now measures only
+  ops sent since the resume.
 
 ## [1.0.0] - 2026-11-17
 

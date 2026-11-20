@@ -781,10 +781,15 @@ void main() {
       opSpacing: Duration.zero,
       askSettle: Duration.zero,
     );
-    final result = await transfer.run();
+    final progress = <TransferProgress>[];
+    final result = await transfer.run(onProgress: progress.add);
     expect(harness.node.state, FakeNodeState.ready);
     expect(harness.node.stagedImage, target);
     expect(result.uniqueOps, frames.length);
+    // Rate calculations must use only the ops sent in this run: the node's
+    // watermark already includes the five ops from the interrupted session.
+    final measured = progress.firstWhere((p) => p.opsApplied != null);
+    expect(measured.opsThisRun, measured.opsApplied! - resumeAt + 1);
     expect(result.retries, 0);
     expect(result.duplicateOps, 0);
   });
