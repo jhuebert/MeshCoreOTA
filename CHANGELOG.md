@@ -109,12 +109,11 @@ All notable changes to MeshCoreRepeaterManager are documented here. The format f
   action. No board is guessed from a file name or a hash — the repeater's own
   reported target id is the only authority.
 - **The Android app no longer dies immediately on launch.** The manifest
-  resolved the launcher activity as `org.huebert.meshcoreota.MainActivity`,
-  but the Kotlin class was declared in
-  `com.github.jhuebert.meshcore_ota`. The APK built and installed cleanly,
-  then crashed with `ClassNotFoundException` before Flutter started. The
-  activity now lives in the namespace the manifest resolves against, and a
-  test keeps the two in sync.
+  resolved the launcher activity against the app's applicationId, but the
+  Kotlin class was declared in a different Gradle namespace. The APK built
+  and installed cleanly, then crashed with `ClassNotFoundException` before
+  Flutter started. The activity now lives in the namespace the manifest
+  resolves against, and a test keeps the two in sync.
 
 
 - **A version can now be selected when the repeater does not answer its
@@ -140,7 +139,7 @@ All notable changes to MeshCoreRepeaterManager are documented here. The format f
 
 ## [1.0.0] - 2026-11-17
 
-MeshCoreOTA 1.0.0 — first signed release.
+1.0.0 — first signed release.
 
 Installs are sideloaded from this release (no app store). Android APKs are signed with the project's app key so later releases install in place; desktop bundles are unsigned.
 
