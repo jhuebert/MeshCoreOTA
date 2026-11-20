@@ -58,6 +58,43 @@ class OtaStatus {
   }
 }
 
+/// What happened to an `ota apply` attempt.
+///
+/// A successful apply is proved only by the node reporting the sent image's
+/// hash as its running image. A still-`ready` staged slot means the apply
+/// command did not commit — which is recoverable without re-uploading.
+enum ApplyOutcome {
+  verified,
+  stagedNotApplied,
+  rolledBack,
+  failed,
+  unknown,
+}
+
+/// Classify an `ota status` reply taken after an apply attempt.
+///
+/// [expectedShaPrefix] is the first 8 bytes of the sent image, as 16 hex
+/// chars; [expectedSize] is its length. `unknown` means the node has not
+/// answered usefully yet and polling should continue.
+ApplyOutcome classifyApplyOutcome(
+  OtaStatus? status, {
+  required String expectedShaPrefix,
+  required int expectedSize,
+}) {
+  if (status == null) return ApplyOutcome.unknown;
+  if (expectedShaPrefix.isNotEmpty &&
+      status.shaPrefix.toLowerCase() == expectedShaPrefix.toLowerCase()) {
+    return ApplyOutcome.verified;
+  }
+  if (status.ok &&
+      status.state == OtaPhase.ready &&
+      status.size == expectedSize) {
+    return ApplyOutcome.stagedNotApplied;
+  }
+  if (!status.ok || status.state == OtaPhase.error) return ApplyOutcome.failed;
+  return ApplyOutcome.rolledBack;
+}
+
 /// Error codes reported as `err=` in `ota status` (0 = OK).
 const otaErrNone = 0;
 const otaErrTarget = 1;

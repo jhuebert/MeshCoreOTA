@@ -49,6 +49,46 @@ void main() {
     });
   });
 
+  group('classifyApplyOutcome', () {
+    OtaStatus status({
+      String sha = '1111111111111111',
+      String state = 'idle',
+      int size = 100,
+      int err = 0,
+    }) =>
+        OtaStatus.parse(
+            'running=v sha=$sha state=$state size=$size off=$size err=$err')!;
+
+    ApplyOutcome classify(OtaStatus? s) => classifyApplyOutcome(
+          s,
+          expectedShaPrefix: 'aaaaaaaaaaaaaaaa',
+          expectedSize: 100,
+        );
+
+    test('a running-image hash match is the only verified outcome', () {
+      expect(classify(status(sha: 'AAAAAAAAAAAAAAAA')), ApplyOutcome.verified);
+      expect(classify(status(sha: '1111111111111111', state: 'ready')),
+          isNot(ApplyOutcome.verified));
+    });
+
+    test('a verified staged slot means the apply did not commit', () {
+      expect(classify(status(state: 'ready')), ApplyOutcome.stagedNotApplied);
+      // A different size is not our staged image.
+      expect(classify(status(state: 'ready', size: 99)),
+          isNot(ApplyOutcome.stagedNotApplied));
+    });
+
+    test('an old running image or an error is a definite non-success', () {
+      expect(classify(status()), ApplyOutcome.rolledBack);
+      expect(classify(status(err: 4)), ApplyOutcome.failed);
+      expect(classify(status(state: 'error')), ApplyOutcome.failed);
+    });
+
+    test('no answer yet means keep polling', () {
+      expect(classify(null), ApplyOutcome.unknown);
+    });
+  });
+
   group('error labels', () {
     test('labels the frozen codes', () {
       expect(otaErrLabel(0), 'OK');

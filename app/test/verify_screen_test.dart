@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ota_core/ota_core.dart' show ApplyOutcome;
 import 'package:meshcore_ota/app_state.dart';
 import 'package:meshcore_ota/screens/verify_screen.dart';
 
@@ -40,6 +41,20 @@ void main() {
     expect(find.text('Update verified'), findsNothing);
     expect(find.textContaining('image matches the one that was sent'),
         findsNothing);
+  });
+
+  testWidgets('a staged but uncommitted update offers an apply retry',
+      (tester) async {
+    final app = AppState()
+      ..updatePhase = UpdatePhase.failed
+      ..verifyMatched = false
+      ..applyOutcome = ApplyOutcome.stagedNotApplied;
+    await pumpVerify(tester, app);
+
+    expect(find.text('Update not committed'), findsOneWidget);
+    expect(find.text('Try applying again'), findsOneWidget);
+    expect(find.textContaining('still holding the verified image'),
+        findsOneWidget);
   });
 
   testWidgets('rollback is unavailable while the reboot is still deciding',

@@ -38,6 +38,12 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Changed
 
+- **A lost `ota apply` is no longer reported as a bad image.** The app reads
+  `ota status` after an unacknowledged apply: a still-verified staged slot
+  means the command did not get through, so it retries the apply (up to three
+  attempts) without transferring anything again. The saved update is kept
+  until verification actually succeeds, and the verify screen offers **Try
+  applying again** instead of claiming the new firmware is broken.
 - **Resuming is now verified against the repeater, not just its status line.**
   Firmware with the new capability API reports a per-session id and a
   structured upload position, so the app can tell a phone restart from a

@@ -33,6 +33,26 @@ class _RebootReplyLostClient extends CompanionClient {
   }
 }
 
+/// Drops the first `ota apply` request entirely (no reply, no apply), then
+/// behaves normally — models a lost command on a busy mesh.
+class _LostFirstApplyClient extends CompanionClient {
+  _LostFirstApplyClient(super.link);
+
+  int applyCalls = 0;
+
+  @override
+  Future<String> remoteCli(Contact target, String command,
+      {Duration timeout = const Duration(seconds: 45)}) async {
+    if (command == 'ota apply') {
+      applyCalls++;
+      if (applyCalls == 1) {
+        throw CompanionTimeoutException('apply request was lost');
+      }
+    }
+    return super.remoteCli(target, command, timeout: timeout);
+  }
+}
+
 class _FakeCompanion {
   _FakeCompanion() {
     _running = _pattern(0x11, 8192);
@@ -569,6 +589,49 @@ void main() {
     await expectLater(rebootFlow.rollback(fake.target), completes);
   });
 
+  test('apply reports whether the node acknowledged it', () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    final lost = _RebootReplyLostClient(fake.link);
+    final lostFlow = UpdateFlow(client: lost, link: fake.link);
+    expect(await lostFlow.apply(fake.target), isFalse);
+
+    final image = _FakeCompanion._pattern(0x77, 120);
+    final stage = await flow.stage(fake.target, image, version: 'v1.18.0-r4');
+    await flow.transfer(
+      target: fake.target,
+      contract: OtaStartContract(
+        imageSize: image.length,
+        imageSha256: Uint8List.fromList(sha256.convert(image).bytes),
+        targetId: targetIdForEnvironment(env),
+        token: stage.token,
+      ),
+      ops: computeDelta(Uint8List(0), image).ops,
+      route: OtaRoute.zeroHop(),
+      windowSize: 4,
+      opSpacing: Duration.zero,
+    );
+    expect(await flow.apply(fake.target), isTrue);
+  });
+
+  test('awaitApplyOutcome reads the staged slot and the running hash',
+      () async {
+    const size = 100;
+    final image = _FakeCompanion._pattern(0x88, size);
+    final expected = Uint8List.fromList(sha256.convert(image).bytes);
+    fake.setRunningForTest(Uint8List.fromList(List<int>.filled(size, 7)));
+    fake.forceReady();
+    expect(
+        await flow.awaitApplyOutcome(fake.target, 'password', 'v',
+            expectedImageSha256: expected, expectedSize: size),
+        ApplyOutcome.stagedNotApplied);
+
+    fake.setRunningForTest(image);
+    expect(
+        await flow.awaitApplyOutcome(fake.target, 'password', 'v',
+            expectedImageSha256: expected, expectedSize: size),
+        ApplyOutcome.verified);
+  });
+
   test('probe logs in and parses ota status', () async {
     final status = await flow.probe(fake.target, 'hunter2');
     expect(status, isNotNull);
@@ -1026,6 +1089,46 @@ void main() {
     await app.applyAndVerify(expectedVersion: 'a-stamp-that-matches-nothing');
     expect(app.updatePhase, UpdatePhase.done);
     expect(app.verifyMatched, isTrue);
+  });
+
+  test('a lost apply is retried while the verified staging is still ready',
+      () async {
+    const env = 'Xiao_S3_WIO_repeater';
+    final image =
+        Uint8List.fromList(List<int>.generate(400, (i) => (i * 7 + 3) & 0xFF));
+    final stage = await flow.stage(fake.target, image, version: 'v1.18.0-r4');
+    await flow.transfer(
+      target: fake.target,
+      contract: OtaStartContract(
+        imageSize: image.length,
+        imageSha256: Uint8List.fromList(sha256.convert(image).bytes),
+        targetId: targetIdForEnvironment(env),
+        token: stage.token,
+      ),
+      ops: computeDelta(Uint8List(0), image).ops,
+      route: OtaRoute.zeroHop(),
+      windowSize: 4,
+      opSpacing: Duration.zero,
+    );
+
+    late _LostFirstApplyClient flaky;
+    final app = AppState();
+    final lib = FakeLibrary();
+    app.library = lib;
+    app.tcpLinkFactory = (_, __) => fake.link;
+    app.clientFactory = (link) => flaky = _LostFirstApplyClient(link);
+    await app.connectTcp(host: 'unused', port: 0);
+    app.target = fake.target;
+    final entry = lib.addImage(image, env: env, version: 'v1.1.0');
+    await app.selectLibraryEntryForUpdate(entry);
+
+    await app.applyAndVerify(expectedVersion: 'a-stamp-that-matches-nothing');
+
+    expect(flaky.applyCalls, 2);
+    expect(app.updatePhase, UpdatePhase.done);
+    expect(app.verifyMatched, isTrue);
+    expect(app.applyOutcome, ApplyOutcome.verified);
+    expect(app.log.any((l) => l.contains('retrying apply')), isTrue);
   });
 
   test('probe reads the node facts and the capability handshake', () async {

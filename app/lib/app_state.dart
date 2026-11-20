@@ -83,6 +83,9 @@ class AppState extends ChangeNotifier {
   /// built.
   RadioLink Function(String host, int port)? tcpLinkFactory;
 
+  /// Test seam for the companion client; production builds a real one.
+  CompanionClient Function(RadioLink link)? clientFactory;
+
   /// Test seam for the recovery probe; production builds a real controller.
   ResumeController Function(ResumePlan plan)? resumeControllerFactory;
 
@@ -236,6 +239,10 @@ class AppState extends ChangeNotifier {
   /// proof an update worked — see AGENTS.md).
   bool verifyMatched = false;
 
+  /// Why the last apply attempt ended, so the verify screen can offer a retry
+  /// when the node is still holding a verified staged image.
+  ApplyOutcome? applyOutcome;
+
   /// Whether the last completed action was a rollback. The verify screen must
   /// never present a rollback as a verified update.
   bool rolledBack = false;
@@ -357,9 +364,12 @@ class AppState extends ChangeNotifier {
 
   Future<void> _adoptLink(RadioLink link) async {
     _link = link;
-    _client = CompanionClient(link, onUnexpectedMessage: (m) {
-      log_('unrelated msg from ${bytesToHex(m.senderPrefix)}: ${m.text}');
-    });
+    final factory = clientFactory;
+    _client = factory != null
+        ? factory(link)
+        : CompanionClient(link, onUnexpectedMessage: (m) {
+            log_('unrelated msg from ${bytesToHex(m.senderPrefix)}: ${m.text}');
+          });
     _flow = UpdateFlow(client: _client!, link: link, onLog: log_);
     try {
       final info = await link.selfInfo();
@@ -1758,28 +1768,70 @@ class AppState extends ChangeNotifier {
     final t = target;
     final flow = _flow;
     if (t == null || flow == null) throw StateError('no target');
-    updatePhase = UpdatePhase.applying;
-    notifyListeners();
-    try {
-      await flow.apply(t);
-    } catch (e) {
-      updatePhase = UpdatePhase.failed;
-      notifyListeners();
-      rethrow;
-    }
-    log_('applied — node is rebooting');
-    updatePhase = UpdatePhase.verifying;
+    final image = selectedImage;
+    final expectedSha = image == null ? null : sha256List(image);
+    final expectedSize = image?.length ?? 0;
     verifyMatched = false;
     rolledBack = false;
+    applyOutcome = null;
+    updatePhase = UpdatePhase.applying;
     notifyListeners();
-    final ok = await flow.awaitVersion(t, adminPassword, expectedVersion,
-        expectedImageSha256:
-            selectedImage == null ? null : sha256List(selectedImage!));
-    // The node has committed the outcome; a saved op stream is no longer
-    // resumable either way.
-    await _discardResumeRecord();
-    verifyMatched = ok;
-    updatePhase = ok ? UpdatePhase.done : UpdatePhase.failed;
+
+    // The apply reply can be lost when the node reboots before sending it.
+    // Only retry when it was NOT acknowledged AND the node still reports the
+    // verified staged image: re-applying a node that already flipped the
+    // partition would flip it back to the old image.
+    const maxAttempts = 3;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      late bool acknowledged;
+      try {
+        acknowledged = await flow.apply(t);
+      } catch (e) {
+        updatePhase = UpdatePhase.failed;
+        notifyListeners();
+        rethrow;
+      }
+      log_(acknowledged
+          ? 'applied — node is rebooting'
+          : 'apply not acknowledged (attempt $attempt/$maxAttempts)');
+      updatePhase = UpdatePhase.verifying;
+      notifyListeners();
+
+      // `ota apply` leaves the state Ready in RAM until the reboot. Give an
+      // unacknowledged node time to come back before believing its status.
+      if (!acknowledged) {
+        await Future<void>.delayed(const Duration(seconds: 8));
+      }
+      final outcome = await flow.awaitApplyOutcome(
+        t,
+        adminPassword,
+        expectedVersion,
+        expectedImageSha256: expectedSha,
+        expectedSize: expectedSize,
+        timeout: acknowledged
+            ? const Duration(seconds: 120)
+            : const Duration(seconds: 25),
+      );
+      applyOutcome = outcome;
+      if (outcome == ApplyOutcome.verified) {
+        verifyMatched = true;
+        updatePhase = UpdatePhase.done;
+        await _discardResumeRecord();
+        notifyListeners();
+        return;
+      }
+      if (outcome == ApplyOutcome.stagedNotApplied && attempt < maxAttempts) {
+        log_('staged image still ready — retrying apply '
+            '(${attempt + 1}/$maxAttempts)');
+        await Future<void>.delayed(const Duration(seconds: 3));
+        continue;
+      }
+      break;
+    }
+    verifyMatched = false;
+    updatePhase = UpdatePhase.failed;
+    // Keep the resume record: for `stagedNotApplied` the recovery screen can
+    // still commit this verified image without uploading it again.
     notifyListeners();
   }
 

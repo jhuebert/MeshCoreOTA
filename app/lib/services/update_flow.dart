@@ -316,22 +316,22 @@ class UpdateFlow {
 
   /// `ota apply` — boot the verified image. The node reboots; the app link
   /// to the companion is unaffected.
-  Future<void> apply(Contact target) async {
+  ///
+  /// Returns true only for an explicit acknowledgement. A timed-out reply is
+  /// reported as false (not thrown) so the caller can consult `ota status`:
+  /// the node may have applied and rebooted, or the request may never have
+  /// arrived. A textual Err reply is a definite refusal and throws.
+  Future<bool> apply(Contact target) async {
     String reply;
     try {
       reply = await _cli(target, 'ota apply');
     } catch (_) {
-      // A successful apply reboots the repeater immediately. On a busy mesh,
-      // the reboot can race the encrypted CLI reply: hardware testing observed
-      // the node running the new image even though this reply timed out. Treat
-      // transport loss as an unknown outcome; applyAndVerify() decides by
-      // re-logging in and checking the version. A textual Err reply remains a
-      // definite refusal.
-      return;
+      return false;
     }
     if (!isApplyReply(reply)) {
       throw UpdateFlowException('apply refused', deviceReply: reply);
     }
+    return true;
   }
 
   /// Cancel a staged update and scrape the staging slot.
@@ -405,6 +405,50 @@ class UpdateFlow {
       await Future<void>.delayed(interval);
     }
     return false;
+  }
+
+  /// Poll after an apply attempt until the node gives a definitive answer.
+  ///
+  /// Unlike [awaitVersion], this distinguishes "still holding the verified
+  /// staging" from "back on the old image", so an unacknowledged apply can be
+  /// retried without uploading the image again. A hash match is still the
+  /// only result that counts as verified.
+  Future<ApplyOutcome> awaitApplyOutcome(
+    Contact target,
+    String password,
+    String expectedVersion, {
+    Uint8List? expectedImageSha256,
+    required int expectedSize,
+    Duration timeout = const Duration(seconds: 30),
+    Duration interval = const Duration(seconds: 3),
+    void Function()? onTick,
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    final expectedPrefix = expectedImageSha256 == null
+        ? ''
+        : bytesToHex(expectedImageSha256.sublist(0, 8));
+    while (DateTime.now().isBefore(deadline)) {
+      onTick?.call();
+      try {
+        final login = await client.login(target, password);
+        if (login.ok) {
+          final verdict = classifyApplyOutcome(
+            await status(target),
+            expectedShaPrefix: expectedPrefix,
+            expectedSize: expectedSize,
+          );
+          if (verdict != ApplyOutcome.unknown) return verdict;
+          // Old firmware may not parse `ota status`; a version match is a
+          // weaker but still explicit answer.
+          final v = (await client.remoteCli(target, 'version')).trim();
+          if (v.contains(expectedVersion)) return ApplyOutcome.verified;
+        }
+      } catch (_) {
+        // Still booting — keep polling.
+      }
+      await Future<void>.delayed(interval);
+    }
+    return ApplyOutcome.unknown;
   }
 
   Future<String> _cli(Contact target, String command) =>

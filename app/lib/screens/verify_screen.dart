@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:ota_core/ota_core.dart' show ApplyOutcome;
 import 'package:provider/provider.dart';
 
 import '../app_state.dart';
@@ -26,6 +27,17 @@ class _VerifyScreenState extends State<VerifyScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _apply());
+  }
+
+  /// A staged-but-uncommitted update is still verified on the node: retrying
+  /// the apply needs no transfer and no new wizard run.
+  Future<void> _retryApply() async {
+    if (!mounted) return;
+    setState(() {
+      _started = false;
+      _error = null;
+    });
+    await _apply();
   }
 
   Future<void> _apply() async {
@@ -56,6 +68,8 @@ class _VerifyScreenState extends State<VerifyScreen> {
     final app = context.watch<AppState>();
     final phase = app.updatePhase;
     final matched = app.verifyMatched;
+    final stagedNotApplied =
+        app.applyOutcome == ApplyOutcome.stagedNotApplied && !matched;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Verify')),
@@ -105,7 +119,9 @@ class _VerifyScreenState extends State<VerifyScreen> {
                     ? 'Rolled back to the previous firmware'
                     : matched
                         ? 'Update verified'
-                        : 'New firmware did not come up',
+                        : stagedNotApplied
+                            ? 'Update not committed'
+                            : 'New firmware did not come up',
                 style:
                     const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
               ),
@@ -122,14 +138,29 @@ class _VerifyScreenState extends State<VerifyScreen> {
                           ? 'The repeater came back on the new firmware — its '
                               'image matches the one that was sent. The update is '
                               'complete.'
-                          : 'The node is not running the expected image. Either it '
-                              'switched itself back to the previous firmware (the '
-                              'safe outcome), or the new image is broken. Check the '
-                              'node — you can roll back below.',
+                          : stagedNotApplied
+                              ? 'The repeater is still holding the verified image '
+                                  'in its spare slot. The apply command did not get '
+                                  'through — nothing needs to be sent again.'
+                              : 'The node is not running the expected image. Either it '
+                                  'switched itself back to the previous firmware (the '
+                                  'safe outcome), or the new image is broken. Check the '
+                                  'node — you can roll back below.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       color: OtaTheme.textMuted, fontSize: 12.5, height: 1.5),
                 ),
+              ),
+            ),
+          ],
+          if (stagedNotApplied && phase == UpdatePhase.failed) ...[
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: FilledButton.icon(
+                onPressed: _retryApply,
+                icon: const Icon(Icons.replay),
+                label: const Text('Try applying again'),
               ),
             ),
           ],
