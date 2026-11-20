@@ -38,6 +38,10 @@ All notable changes to MeshCoreRepeaterManager are documented here. The format f
 
 ### Changed
 
+- **The app icon now shows a settings gear at the centre of the mesh.**
+  The down arrow read as "OTA update only"; the gear reflects that the app
+  manages repeaters. Every platform icon and the guide screenshots were
+  regenerated from the new SVG source.
 - **A consistent, plain-language interface across every screen.** Primary
   buttons are now short names with one monochrome action icon (arrow for next,
   play to start or resume, pause, stop, back), themed to match the app and
