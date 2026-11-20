@@ -189,11 +189,11 @@ class _TransferScreenState extends State<TransferScreen> {
                           ? 'Getting ready…'
                           : '${formatBytes(progress.literalBytesSent)} / '
                               '${formatBytes(totalBytes < progress.literalBytesSent ? progress.literalBytesSent : totalBytes)} sent · '
-                              '${progress.retries} re-sends',
+                              '${progress.retries} re-sends'
+                              '${_etaSuffix(progress)}',
                   style:
                       const TextStyle(color: OtaTheme.textMuted, fontSize: 12),
                 ),
-                if (progress != null && !terminal) _EtaLine(progress: progress),
               ],
             ),
           ),
@@ -250,14 +250,14 @@ class _TransferScreenState extends State<TransferScreen> {
                 : phase == UpdatePhase.transferring
                     ? _StepState.active
                     : _StepState.pending,
+            // A pie-style ring tracks the real op progress while transferring.
+            value: phase == UpdatePhase.transferring ? fraction : null,
           ),
           _stepRow(
             label: 'Verify the image',
             state: _stepDone(UpdatePhase.readyToApply, phase)
                 ? _StepState.ok
-                : phase == UpdatePhase.transferring
-                    ? _StepState.active
-                    : _StepState.pending,
+                : _StepState.pending,
           ),
           _stepRow(
             label: 'Commit update',
@@ -352,7 +352,7 @@ class _TransferScreenState extends State<TransferScreen> {
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
               child: OutlinedButton.icon(
                 onPressed: () => Navigator.of(context).pop(),
-                icon: const Text(backEmoji),
+                icon: const Icon(backIcon),
                 label: const Text('Back'),
               ),
             ),
@@ -402,14 +402,14 @@ class _TransferScreenState extends State<TransferScreen> {
           MaterialPageRoute(builder: (_) => const ResumeScreen()),
           (route) => route.isFirst,
         ),
-        icon: const Text(playEmoji),
+        icon: const Icon(playIcon),
         label: const Text('Continue update'),
       );
     }
     if (_stopped || app.compareError != null) {
       return FilledButton.icon(
         onPressed: _retry,
-        icon: const Text(playEmoji),
+        icon: const Icon(playIcon),
         label: const Text('Compare again'),
       );
     }
@@ -417,13 +417,13 @@ class _TransferScreenState extends State<TransferScreen> {
       case UpdatePhase.comparing:
         return OutlinedButton.icon(
           onPressed: app.stopComparison,
-          icon: const Text(stopEmoji),
+          icon: const Icon(stopIcon),
           label: const Text('Stop'),
         );
       case UpdatePhase.upToDate:
         return FilledButton.icon(
           onPressed: () => Navigator.of(context).pop(),
-          icon: const Text(backEmoji),
+          icon: const Icon(backIcon),
           label: const Text('Back'),
         );
       case UpdatePhase.transferring:
@@ -431,7 +431,7 @@ class _TransferScreenState extends State<TransferScreen> {
       case UpdatePhase.probing:
         return OutlinedButton.icon(
           onPressed: () => context.read<AppState>().requestCancel(),
-          icon: const Text(pauseEmoji),
+          icon: const Icon(pauseIcon),
           label: const Text('Pause'),
         );
       case UpdatePhase.readyToApply:
@@ -439,7 +439,7 @@ class _TransferScreenState extends State<TransferScreen> {
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const VerifyScreen()),
           ),
-          icon: const Text(playEmoji),
+          icon: const Icon(playIcon),
           label: const Text('Commit update'),
         );
       case UpdatePhase.done:
@@ -448,7 +448,7 @@ class _TransferScreenState extends State<TransferScreen> {
             MaterialPageRoute(builder: (_) => const VerifyScreen()),
             (route) => route.isFirst,
           ),
-          icon: const Text(nextEmoji),
+          icon: const Icon(nextIcon),
           label: const Text('See verification'),
         );
       default:
@@ -456,7 +456,11 @@ class _TransferScreenState extends State<TransferScreen> {
     }
   }
 
-  Widget _stepRow({required String label, required _StepState state}) {
+  Widget _stepRow({
+    required String label,
+    required _StepState state,
+    double? value,
+  }) {
     final color = switch (state) {
       _StepState.pending => OtaTheme.textMuted,
       _StepState.active => OtaTheme.accent,
@@ -464,10 +468,15 @@ class _TransferScreenState extends State<TransferScreen> {
     };
     final indicator = switch (state) {
       _StepState.pending => const Icon(Icons.radio_button_unchecked, size: 18),
-      _StepState.active => const SizedBox(
+      _StepState.active => SizedBox(
           width: 18,
           height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: CircularProgressIndicator(
+            value: value,
+            strokeWidth: 2.5,
+            color: OtaTheme.accent,
+            backgroundColor: OtaTheme.surfaceHigh,
+          ),
         ),
       _StepState.ok => const Icon(Icons.check_circle, size: 18),
     };
@@ -496,38 +505,18 @@ class _TransferScreenState extends State<TransferScreen> {
   static String _fmtBytes(int value) => value >= 1024 * 1024
       ? '${(value / (1024 * 1024)).toStringAsFixed(2)} MB'
       : '${(value / 1024).toStringAsFixed(0)} KB';
-}
 
-enum _StepState { pending, active, ok }
-
-/// Time left at the rate the transfer is actually running at. No ops/s or
-/// "at the current rate" explanation: one short line is enough.
-class _EtaLine extends StatelessWidget {
-  const _EtaLine({required this.progress});
-
-  final TransferProgress progress;
-
-  @override
-  Widget build(BuildContext context) {
+  /// One short suffix on the same line as the sent and re-send counts.
+  static String _etaSuffix(TransferProgress progress) {
     final applied = progress.opsApplied;
     if (applied == null || applied < 4 || progress.elapsed.inSeconds < 5) {
-      return const Padding(
-        padding: EdgeInsets.only(top: 4),
-        child: Text('Measuring time left…',
-            style: TextStyle(color: OtaTheme.textMuted, fontSize: 11)),
-      );
+      return ' · Measuring time left…';
     }
-    final rate = applied / progress.elapsed.inSeconds; // ops per second
+    final rate = applied / progress.elapsed.inSeconds;
     final remainingOps =
         (progress.opsTotal - applied).clamp(0, progress.opsTotal);
     final remaining = Duration(seconds: (remainingOps / rate).ceil());
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Text(
-        '${_etaText(remaining)} left',
-        style: const TextStyle(color: OtaTheme.textMuted, fontSize: 11),
-      ),
-    );
+    return ' · ${_etaText(remaining)} left';
   }
 
   static String _etaText(Duration d) {
@@ -536,3 +525,5 @@ class _EtaLine extends StatelessWidget {
     return '${d.inHours}h ${d.inMinutes.remainder(60)}m';
   }
 }
+
+enum _StepState { pending, active, ok }

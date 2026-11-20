@@ -4,13 +4,14 @@ import '../theme.dart';
 
 /// Small shared building blocks so every screen reads the same.
 
-/// The same glyph always means the same action, on every screen. Use them as
-/// the `icon` of a `.icon` button so the label stays a short, plain string.
-const String nextEmoji = '➡️';
-const String playEmoji = '▶️';
-const String pauseEmoji = '⏸️';
-const String stopEmoji = '⏹️';
-const String backEmoji = '⬅️';
+/// The same monochrome icon always means the same action, on every screen.
+/// Buttons tint them with their own foreground color, so they follow the
+/// theme instead of rendering as colored emoji.
+const IconData nextIcon = Icons.arrow_forward;
+const IconData playIcon = Icons.play_arrow;
+const IconData pauseIcon = Icons.pause;
+const IconData stopIcon = Icons.stop;
+const IconData backIcon = Icons.arrow_back;
 
 /// One size format everywhere in the app.
 String formatBytes(int bytes) => bytes >= 1024 * 1024

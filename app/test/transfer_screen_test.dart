@@ -102,6 +102,11 @@ void main() {
     expect(find.textContaining('at the current rate'), findsNothing);
     expect(find.text('Measuring time left…'), findsNothing);
     expect(find.textContaining('packets'), findsNothing);
+    // The active Transfer step shows a determinate in-progress ring.
+    expect(
+        find.byWidgetPredicate(
+            (w) => w is CircularProgressIndicator && w.value != null),
+        findsOneWidget);
   });
 
   testWidgets('the ETA waits for a cold rate before reporting', (tester) async {
@@ -121,8 +126,11 @@ void main() {
     await tester.pumpWidget(wrap(app, const TransferScreen()));
     await tester.pump();
 
-    expect(find.text('Measuring time left…'), findsOneWidget);
+    expect(find.textContaining('Measuring time left…'), findsOneWidget);
     expect(find.textContaining(' min left'), findsNothing);
+    // Sent, re-sends and the time estimate share one scannable line.
+    expect(
+        find.textContaining('re-sends · Measuring time left…'), findsOneWidget);
   });
 
   testWidgets('the transfer screen shows comparison progress and a stop',

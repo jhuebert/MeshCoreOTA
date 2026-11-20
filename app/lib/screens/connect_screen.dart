@@ -357,7 +357,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
                             color: Color(0xFF1A1203),
                           ),
                         )
-                      : const Text(playEmoji),
+                      : const Icon(playIcon),
                   label: Text(app.connectionPhase == ConnectionPhase.connecting
                       ? 'Connecting…'
                       : 'Connect'),
@@ -413,7 +413,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const TargetScreen()),
                   ),
-                  icon: const Text(nextEmoji),
+                  icon: const Icon(nextIcon),
                   label: const Text('Continue'),
                 ),
               ],

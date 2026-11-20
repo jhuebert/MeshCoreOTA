@@ -159,7 +159,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: FilledButton.icon(
                 onPressed: _retryApply,
-                icon: const Text(playEmoji),
+                icon: const Icon(playIcon),
                 label: const Text('Try again'),
               ),
             ),
@@ -174,7 +174,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
                       phase == UpdatePhase.verifying
                   ? null
                   : () => _rollback(app),
-              icon: const Text(backEmoji),
+              icon: const Icon(backIcon),
               label: const Text('Roll back'),
             ),
           ),
@@ -184,7 +184,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
             child: FilledButton.icon(
               onPressed: () =>
                   Navigator.of(context).popUntil((route) => route.isFirst),
-              icon: const Text(nextEmoji),
+              icon: const Icon(nextIcon),
               label: const Text('Done'),
             ),
           ),

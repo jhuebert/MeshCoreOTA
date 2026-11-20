@@ -97,29 +97,29 @@ class _ResumeScreenState extends State<ResumeScreen> {
         check == ResumeCheck.idle || check == ResumeCheck.needsLogin;
 
     String label;
-    String emoji;
+    IconData icon;
     VoidCallback? action;
     switch (check) {
       case ResumeCheck.ready:
         label = 'Resume upload';
-        emoji = playEmoji;
+        icon = playIcon;
         action = () => Navigator.of(context).push(
               MaterialPageRoute(
                   builder: (_) => const TransferScreen(resuming: true)),
             );
       case ResumeCheck.readyToApply:
         label = 'Apply update';
-        emoji = playEmoji;
+        icon = playIcon;
         action = () => _continue(app);
       case ResumeCheck.unavailable:
         // A temporary failure must not be a dead end: recheck the repeater
         // before offering to throw the saved upload away.
         label = 'Check again';
-        emoji = nextEmoji;
+        icon = nextIcon;
         action = () => _check(app);
       default:
         label = 'Check update';
-        emoji = nextEmoji;
+        icon = nextIcon;
         action = () => _check(app);
     }
 
@@ -127,7 +127,7 @@ class _ResumeScreenState extends State<ResumeScreen> {
       appBar: AppBar(title: const Text('Continue update')),
       bottomNavigationBar: WizardFooter(
         label: label,
-        emoji: emoji,
+        icon: icon,
         onPressed: busy ? null : action,
         busy: busy,
       ),
@@ -219,7 +219,7 @@ class _ResumeScreenState extends State<ResumeScreen> {
               padding: const EdgeInsets.fromLTRB(12, 16, 12, 0),
               child: OutlinedButton.icon(
                 onPressed: busy ? null : () => _differentFirmware(app),
-                icon: const Text(backEmoji),
+                icon: const Icon(backIcon),
                 label: const Text('Start a different update'),
               ),
             ),

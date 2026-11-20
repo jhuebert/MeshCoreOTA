@@ -909,7 +909,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                         color: Color(0xFF1A1203),
                       ),
                     )
-                  : const Text(nextEmoji),
+                  : const Icon(nextIcon),
               label: Text(app.imageLoading ? 'Downloading…' : 'Radio settings'),
             ),
           ],

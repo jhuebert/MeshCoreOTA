@@ -94,7 +94,7 @@ class ReviewScreen extends StatelessWidget {
       ),
       bottomNavigationBar: WizardFooter(
         label: 'Start update',
-        emoji: playEmoji,
+        icon: playIcon,
         onPressed: planProblem != null
             ? null
             : () => Navigator.of(context).push(

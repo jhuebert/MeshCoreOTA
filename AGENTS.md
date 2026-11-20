@@ -169,8 +169,10 @@ Follow familiar platform conventions, favor ease of use, easy visual scanning
 and visual appeal over cleverness, and keep the text plain and user-centric.
 **Do not use em dashes in any UI text or user-facing string.** Use a short
 sentence, a colon or a comma instead. Primary action buttons are short names
-with a single action emoji in front (`➡️`, `▶️`, `⏸️`, `⏹️`, `⬅️`), never a
-long label with an explanation appended.
+with a single monochrome Material icon in front (next, play, pause, stop,
+back), never a long label with an explanation appended. Shared `IconData`
+constants live in `app/lib/widgets/common.dart`; do not use colored emoji as
+button icons.
 
 The app is an eight-step wizard: Connect → Repeater → Sign in → Firmware →
 Radio → Review → Transfer → Verify. Every screen carries `WizardBar`
