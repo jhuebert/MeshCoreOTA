@@ -136,7 +136,8 @@ void main() {
     expect(app.radioPlan.mode, RadioMode.liveMesh);
   });
 
-  testWidgets('each radio shows its own transfer estimate', (tester) async {
+  testWidgets('no transfer time is guessed before the comparison',
+      (tester) async {
     _bigView(tester);
     final app = _app();
     final lib = FakeLibrary();
@@ -149,8 +150,7 @@ void main() {
     await tester.pumpWidget(wrap(app, const RadioSettingsScreen()));
     await tester.pump();
 
-    // Three mode tiles plus the duration card.
-    expect(find.textContaining('Estimated transfer:'), findsNWidgets(4));
+    expect(find.textContaining('Estimated transfer:'), findsNothing);
     expect(find.textContaining('\u00d7 the airtime'), findsOneWidget);
   });
 

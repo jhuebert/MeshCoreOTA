@@ -38,6 +38,10 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Changed
 
+- **No transfer time is guessed before the comparison.** The radio and review
+  screens no longer show inflated worst-case estimates, and the compare phase
+  on Transfer uses only exchange counters — the main progress bar and the
+  rate-based ETA cover the rest of the run.
 - **The firmware comparison now runs on the channel you chose.** It is no
   longer a standalone step before Radio: after **Start update**, the Transfer
   screen arms the selected radio plan first and then compares the repeater's

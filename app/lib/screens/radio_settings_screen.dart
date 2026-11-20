@@ -9,12 +9,13 @@ import '../widgets/common.dart';
 import '../widgets/wizard.dart';
 import 'review_screen.dart';
 
-/// Step 6: where the transfer runs.
+/// Step 5: where the transfer runs.
 ///
 /// The live mesh stays untouched in a temporary-preset or radio2 transfer;
 /// both are zero-hop because nothing else is tuned there. The screen suggests
-/// a preset and a duration from the node's own radio settings and the
-/// transfer estimate, and explains what will be changed and restored.
+/// a preset from the node's own radio settings and explains what will be
+/// changed and restored. Transfer time is deliberately not guessed here — the
+/// comparison that determines how much to send happens after Start.
 /// In live-mesh mode it also carries the optional direct path override.
 class RadioSettingsScreen extends StatefulWidget {
   const RadioSettingsScreen({super.key});
@@ -74,17 +75,6 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
     final problem = plan.error(primary: live);
     final routeInvalid =
         _mode == RadioMode.liveMesh && app.manualRouteError != null;
-    final fieldPreset = _presetFromFields(app);
-    final liveEta = live == null ? null : app.estimateSecondsForPreset(live);
-    final tempEta = app.estimateSecondsForPreset(fieldPreset);
-    final radio2Eta = app.estimateSecondsForPreset(fieldPreset,
-        factor: RadioPlan.radio2DutyFactor);
-    int? etaFor(RadioMode mode) => switch (mode) {
-          RadioMode.liveMesh => liveEta,
-          RadioMode.tempRadio => tempEta,
-          RadioMode.radio2 => radio2Eta,
-        };
-    final selectedEta = etaFor(_mode);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Radio settings')),
@@ -104,7 +94,6 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
                   live == null
                       ? 'Use the normal mesh channel and the route the companion has.'
                       : 'Normal mesh channel (${live.label}) and the saved DIRECT route.',
-                  liveEta,
                 ),
                 _modeTile(
                   RadioMode.tempRadio,
@@ -112,7 +101,6 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
                   'Move the repeater and the companion to a private preset for the '
                       'transfer, then put both back. The channel renews itself '
                       'during the update. Zero-hop: no relay is there.',
-                  tempEta,
                 ),
                 _modeTile(
                   RadioMode.radio2,
@@ -121,7 +109,6 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
                       'repeater\'s radio2 preset. Zero-hop on the secondary. '
                       'About ${RadioPlan.radio2DutyFactor.toStringAsFixed(0)}× the airtime: '
                       'the repeater shares the radio with the live mesh.',
-                  radio2Eta,
                 ),
               ],
             ),
@@ -276,15 +263,9 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        selectedEta == null
-                            ? 'The repeater keeps the private channel on for '
-                                '${RadioPlan.tempRadioChunkMinutes}-minute chunks and '
-                                'renews it automatically while the update runs.'
-                            : 'Estimated transfer: ${RadioPlan.describeSeconds(selectedEta)} '
-                                'for the selected radio. The repeater keeps the '
-                                'private channel on for ${RadioPlan.tempRadioChunkMinutes}-minute '
-                                'chunks and renews it automatically while the '
-                                'update runs.',
+                        'The repeater keeps the private channel on for '
+                        '${RadioPlan.tempRadioChunkMinutes}-minute chunks and '
+                        'renews it automatically while the update runs.',
                         style: const TextStyle(
                             color: OtaTheme.textMuted,
                             fontSize: 11,
@@ -340,7 +321,6 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
     RadioMode mode,
     String title,
     String subtitle,
-    int? etaSeconds,
   ) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
@@ -355,17 +335,6 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
               Text(subtitle,
                   style: const TextStyle(
                       color: OtaTheme.textMuted, fontSize: 11, height: 1.35)),
-              const SizedBox(height: 3),
-              Text(
-                etaSeconds == null
-                    ? 'Estimated transfer: choose an image to see'
-                    : 'Estimated transfer: ${RadioPlan.describeSeconds(etaSeconds)}',
-                style: TextStyle(
-                  color: _mode == mode ? OtaTheme.accent : OtaTheme.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
             ],
           ),
         ),

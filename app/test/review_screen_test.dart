@@ -45,9 +45,8 @@ final _preset = LoRaPreset(
   codingRate: 5,
 );
 
-/// A connected session over TCP, needed because the review screen's ETA row
-/// only appears when the app has a link. The connect runs in real async time
-/// (widget tests are fake-async otherwise).
+/// A connected session over TCP, so the review has the real node facts.
+/// The connect runs in real async time (widget tests are fake-async otherwise).
 Future<AppState> _connectedApp(WidgetTester tester,
     {RadioMode mode = RadioMode.tempRadio}) async {
   final app = AppState();
@@ -212,8 +211,7 @@ void reviewSummaryTests() {
     expect(start.onPressed, isNotNull);
   });
 
-  testWidgets(
-      'image sizes in MB and second-level ETAs are shown for small jobs',
+  testWidgets('image sizes are shown without guessing a transfer time',
       (tester) async {
     _bigView(tester);
     final app = await _connectedApp(tester);
@@ -231,29 +229,10 @@ void reviewSummaryTests() {
     await tester.pumpAndSettle();
 
     expect(find.text('5 KB'), findsOneWidget);
-    expect(find.text('~81s'), findsOneWidget);
+    expect(find.text('Estimated time'), findsNothing);
   });
 
-  testWidgets('minute-level ETAs are shown for typical images', (tester) async {
-    _bigView(tester);
-    final app = await _connectedApp(tester);
-    final lib = FakeLibrary();
-    app.library = lib;
-    final entry = lib.addImage(
-      Uint8List.fromList(List.filled(120000, 6)),
-      env: _board,
-      version: 'v1.1.0-rc5',
-    );
-    app.libraryEntries = await lib.list();
-    await app.selectLibraryEntryForUpdate(entry);
-
-    await tester.pumpWidget(wrap(app, const ReviewScreen()));
-    await tester.pumpAndSettle();
-
-    expect(find.text('~24 min'), findsOneWidget);
-  });
-
-  testWidgets('hour-level ETAs are shown for large images', (tester) async {
+  testWidgets('large image sizes use MB', (tester) async {
     _bigView(tester);
     final app = await _connectedApp(tester);
     final lib = FakeLibrary();
@@ -270,7 +249,6 @@ void reviewSummaryTests() {
     await tester.pumpAndSettle();
 
     expect(find.text('1.14 MB'), findsOneWidget);
-    expect(find.text('~3.8 h'), findsOneWidget);
   });
 
   testWidgets('Start update opens the transfer step', (tester) async {

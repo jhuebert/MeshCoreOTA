@@ -187,8 +187,6 @@ class _TransferScreenState extends State<TransferScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const LinearProgressIndicator(minHeight: 3),
-                      const SizedBox(height: 10),
                       Text(
                         app.compareProgress == null
                             ? 'Asking the repeater about its running image on '

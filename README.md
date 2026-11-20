@@ -147,8 +147,8 @@ the Home screen.
 
 The review screen shows everything you picked before anything goes on air:
 the companion and how it is connected, the repeater and its board, the
-firmware it runs now, the firmware you are installing, the file size, a time
-estimate, and the channel choice. **Start update** begins the transfer — the
+firmware it runs now, the firmware you are installing, the file size, and the
+channel choice. **Start update** begins the transfer — the
 new firmware does not start until you confirm at the end.
 
 The exact comparison has not run yet: it starts on the Transfer screen, on the

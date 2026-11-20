@@ -23,13 +23,6 @@ class ReviewScreen extends StatelessWidget {
     return '${(bytes / 1024).toStringAsFixed(0)} KB';
   }
 
-  String _fmtEta(int seconds) {
-    if (seconds < 120) return '~${seconds}s';
-    final minutes = (seconds / 60).ceil();
-    if (minutes < 90) return '~$minutes min';
-    return '~${(minutes / 60).toStringAsFixed(1)} h';
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -82,16 +75,6 @@ class ReviewScreen extends StatelessWidget {
               label: 'Transfer',
               value: _transferLabel(app, imageBytes),
               mono: false),
-          FutureBuilder<int?>(
-            future: app.estimateTransferSeconds(),
-            builder: (context, snapshot) {
-              if (snapshot.data == null) return const SizedBox.shrink();
-              return InfoRow(
-                  label: 'Estimated time',
-                  value: _fmtEta(snapshot.data!),
-                  mono: false);
-            },
-          ),
           InfoRow(label: 'Radio', value: _radioLabel(app), mono: false),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 6, 16, 0),

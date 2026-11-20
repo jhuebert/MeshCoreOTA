@@ -208,8 +208,9 @@ accounted for (e.g. `radio2`, `tempradio` on the node CLI itself).
   Tempradio warns that an enabled radio2 is paused for the transfer.
 - **Review**: a summary of everything selected before the update — companion
   and how it is connected, repeater name and board, current firmware, the
-  firmware to install, image size, an estimated time, and the radio choice.
-  The exact comparison has not run yet; it starts on Transfer after Start.
+  firmware to install, image size, and the radio choice. No transfer time is
+  guessed before the comparison; the exact comparison starts on Transfer after
+  Start, and the live rate-based ETA appears there once ops land.
   Show the plan's validation before Start, and never start with an invalid one.
 - **Transfer/Verify**: the first phase on Transfer is the comparison: it is
   armed **after** the chosen radio plan, so its many REQ/RESPONSE queries never
