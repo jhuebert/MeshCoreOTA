@@ -38,6 +38,21 @@ All notable changes to MeshCoreRepeaterManager are documented here. The format f
 
 ### Changed
 
+- **A consistent, plain-language interface across every screen.** Primary
+  buttons are now short names with one action emoji (➡️ for next, ▶️ to start
+  or resume, ⏸️ to pause, ⏹️ to stop, ⬅️ to go back), with no descriptions
+  appended. The Connect screen is titled "Repeater Manager", connection and
+  Bluetooth failures are short and actionable, and the Connect button shows a
+  spinner and "Connecting…" while it works. Radio settings no longer has a
+  region-specific "Suggest settings" button: the private preset is filled in
+  from the repeater's own settings and stays editable. Review shows only the
+  facts known before Start. Transfer shows a determinate bar with the percent
+  on the right, "X / total sent" with re-sends, and a short "X min left" with
+  no ops/s or packet count. An up-to-date result is a terminal 100% state, and
+  an in-progress step uses a spinner. The Imported tab shows the selected
+  image's size, not a guessed "full" or "remote diff" label. Dialog "Keep",
+  "Cancel" and "Close" actions are proper outlined buttons. No UI text uses
+  em dashes.
 - **No transfer time is guessed before the comparison.** The radio and review
   screens no longer show inflated worst-case estimates, and the compare phase
   on Transfer uses only exchange counters — the main progress bar and the
@@ -136,6 +151,20 @@ All notable changes to MeshCoreRepeaterManager are documented here. The format f
   centre node**, replacing the repeater-mast-and-loop mark. Every platform
   target (Android launcher and adaptive icons, the macOS app icon and the
   Windows `.ico`) is regenerated from the new SVG source.
+
+### Fixed
+
+- **Resuming an update no longer fails with a staged-bytes error.** The staged
+  prefix check asked the repeater to hash the whole upload in one range, but
+  the firmware caps a hash range at 32 KB, so every real resume was refused.
+  It now hashes in 32 KB chunks, four ranges per exchange. An unavailable
+  resume also offers a real "Check again" instead of only discarding the
+  upload.
+- **Importing a second `.bin` no longer replaces one with identical bytes.**
+  Imports are identified by file name and content, so each imported file keeps
+  its own row. Deleting one no longer deletes the other.
+- **Bluetooth and connection failures are no longer raw technical errors** on
+  the Connect screen.
 
 ## [1.0.0] - 2026-11-17
 

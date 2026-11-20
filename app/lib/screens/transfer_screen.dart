@@ -120,6 +120,12 @@ class _TransferScreenState extends State<TransferScreen> {
     final progress = app.progress;
     final phase = app.updatePhase;
     final target = app.target;
+    final terminal = phase == UpdatePhase.upToDate;
+    final fraction = terminal ? 1.0 : (progress?.fraction ?? 0.0);
+    final totalBytes = app.remoteDiff?.literalBytes ??
+        app.selectedImage?.length ??
+        progress?.literalBytesSent ??
+        0;
 
     // Auto-scroll the log.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -148,31 +154,46 @@ class _TransferScreenState extends State<TransferScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: LinearProgressIndicator(
-                    value: progress?.fraction,
-                    minHeight: 10,
-                    backgroundColor: OtaTheme.surfaceHigh,
-                    valueColor:
-                        const AlwaysStoppedAnimation<Color>(OtaTheme.accent),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: LinearProgressIndicator(
+                          value: fraction,
+                          minHeight: 10,
+                          backgroundColor: OtaTheme.surfaceHigh,
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                              OtaTheme.accent),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      width: 42,
+                      child: Text(
+                        '${(fraction * 100).round()}%',
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  progress == null
-                      ? 'Preparing…'
-                      : '${((progress.fraction ?? 0) * 100).toStringAsFixed(1)}%  ·  '
-                          '${progress.packetsSent} packets · '
-                          '${progress.retries} re-sends · '
-                          '${(progress.literalBytesSent / 1024).toStringAsFixed(0)} KB sent · '
-                          '${progress.elapsed.inSeconds}s',
+                  terminal
+                      ? 'Already up to date. Nothing was staged.'
+                      : progress == null
+                          ? 'Getting ready…'
+                          : '${formatBytes(progress.literalBytesSent)} / '
+                              '${formatBytes(totalBytes < progress.literalBytesSent ? progress.literalBytesSent : totalBytes)} sent · '
+                              '${progress.retries} re-sends',
                   style:
                       const TextStyle(color: OtaTheme.textMuted, fontSize: 12),
                 ),
-                if (progress != null) _EtaLine(progress: progress),
+                if (progress != null && !terminal) _EtaLine(progress: progress),
               ],
             ),
           ),
@@ -315,8 +336,8 @@ class _TransferScreenState extends State<TransferScreen> {
                     const Text(
                       'The repeater kept the part it already received, and '
                       'the firmware is still on this device. Nothing was '
-                      'applied. Continue any time from the Connect screen — '
-                      'only the missing part will be sent.',
+                      'applied. Continue any time from the Connect screen. '
+                      'Only the missing part will be sent.',
                       style: TextStyle(
                           color: OtaTheme.textMuted, fontSize: 12, height: 1.5),
                     ),
@@ -329,9 +350,10 @@ class _TransferScreenState extends State<TransferScreen> {
           if (phase == UpdatePhase.failed)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-              child: OutlinedButton(
+              child: OutlinedButton.icon(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Back — nothing was applied'),
+                icon: const Text(backEmoji),
+                label: const Text('Back'),
               ),
             ),
           const SectionHeader('Log'),
@@ -380,14 +402,14 @@ class _TransferScreenState extends State<TransferScreen> {
           MaterialPageRoute(builder: (_) => const ResumeScreen()),
           (route) => route.isFirst,
         ),
-        icon: const Icon(Icons.play_arrow),
-        label: const Text('Continue this update'),
+        icon: const Text(playEmoji),
+        label: const Text('Continue update'),
       );
     }
     if (_stopped || app.compareError != null) {
       return FilledButton.icon(
         onPressed: _retry,
-        icon: const Icon(Icons.replay),
+        icon: const Text(playEmoji),
         label: const Text('Compare again'),
       );
     }
@@ -395,30 +417,30 @@ class _TransferScreenState extends State<TransferScreen> {
       case UpdatePhase.comparing:
         return OutlinedButton.icon(
           onPressed: app.stopComparison,
-          icon: const Icon(Icons.close),
-          label: const Text('Stop — nothing has been staged'),
+          icon: const Text(stopEmoji),
+          label: const Text('Stop'),
         );
       case UpdatePhase.upToDate:
         return FilledButton.icon(
           onPressed: () => Navigator.of(context).pop(),
-          icon: const Icon(Icons.arrow_back),
-          label: const Text('Back — choose another image'),
+          icon: const Text(backEmoji),
+          label: const Text('Back'),
         );
       case UpdatePhase.transferring:
       case UpdatePhase.staging:
       case UpdatePhase.probing:
         return OutlinedButton.icon(
           onPressed: () => context.read<AppState>().requestCancel(),
-          icon: const Icon(Icons.close),
-          label: const Text('Pause — keep what was already uploaded'),
+          icon: const Text(pauseEmoji),
+          label: const Text('Pause'),
         );
       case UpdatePhase.readyToApply:
         return FilledButton.icon(
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const VerifyScreen()),
           ),
-          icon: const Icon(Icons.check_circle_outline),
-          label: const Text('Commit update — reboot into new firmware'),
+          icon: const Text(playEmoji),
+          label: const Text('Commit update'),
         );
       case UpdatePhase.done:
         return FilledButton.icon(
@@ -426,7 +448,7 @@ class _TransferScreenState extends State<TransferScreen> {
             MaterialPageRoute(builder: (_) => const VerifyScreen()),
             (route) => route.isFirst,
           ),
-          icon: const Icon(Icons.verified),
+          icon: const Text(nextEmoji),
           label: const Text('See verification'),
         );
       default:
@@ -435,22 +457,28 @@ class _TransferScreenState extends State<TransferScreen> {
   }
 
   Widget _stepRow({required String label, required _StepState state}) {
-    final (icon, color) = switch (state) {
-      _StepState.pending => (Icons.radio_button_unchecked, OtaTheme.textMuted),
-      _StepState.active => (Icons.timelapse, OtaTheme.accent),
-      _StepState.ok => (Icons.check_circle, OtaTheme.ok),
+    final color = switch (state) {
+      _StepState.pending => OtaTheme.textMuted,
+      _StepState.active => OtaTheme.accent,
+      _StepState.ok => OtaTheme.ok,
+    };
+    final indicator = switch (state) {
+      _StepState.pending => const Icon(Icons.radio_button_unchecked, size: 18),
+      _StepState.active => const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      _StepState.ok => const Icon(Icons.check_circle, size: 18),
     };
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: color),
+          SizedBox(width: 18, height: 18, child: indicator),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              label,
-              style: TextStyle(color: color, fontSize: 12.5),
-            ),
+            child: Text(label, style: TextStyle(color: color, fontSize: 12.5)),
           ),
         ],
       ),
@@ -472,8 +500,8 @@ class _TransferScreenState extends State<TransferScreen> {
 
 enum _StepState { pending, active, ok }
 
-/// Time left at the measured rate of the current transfer, so the operator
-/// can plan around a real number instead of the airtime-only pre-estimate.
+/// Time left at the rate the transfer is actually running at. No ops/s or
+/// "at the current rate" explanation: one short line is enough.
 class _EtaLine extends StatelessWidget {
   const _EtaLine({required this.progress});
 
@@ -485,7 +513,7 @@ class _EtaLine extends StatelessWidget {
     if (applied == null || applied < 4 || progress.elapsed.inSeconds < 5) {
       return const Padding(
         padding: EdgeInsets.only(top: 4),
-        child: Text('Measuring the transfer rate…',
+        child: Text('Measuring time left…',
             style: TextStyle(color: OtaTheme.textMuted, fontSize: 11)),
       );
     }
@@ -493,13 +521,10 @@ class _EtaLine extends StatelessWidget {
     final remainingOps =
         (progress.opsTotal - applied).clamp(0, progress.opsTotal);
     final remaining = Duration(seconds: (remainingOps / rate).ceil());
-    final rateText =
-        rate >= 10 ? rate.toStringAsFixed(0) : rate.toStringAsFixed(1);
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Text(
-        '≈ ${_etaText(remaining)} left at the current rate · '
-        '$rateText ops/s',
+        '${_etaText(remaining)} left',
         style: const TextStyle(color: OtaTheme.textMuted, fontSize: 11),
       ),
     );

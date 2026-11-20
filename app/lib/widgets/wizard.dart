@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import 'common.dart' show nextEmoji;
 
 /// The update is one path from a connected companion to verified firmware.
 /// Every screen carries the same progress line so the operator always knows
@@ -120,14 +121,14 @@ class WizardFooter extends StatelessWidget {
     super.key,
     required this.label,
     required this.onPressed,
-    this.icon = Icons.arrow_forward,
+    this.emoji = nextEmoji,
     this.busy = false,
     this.hint,
   });
 
   final String label;
   final VoidCallback? onPressed;
-  final IconData icon;
+  final String emoji;
   final bool busy;
   final String? hint;
 
@@ -161,7 +162,7 @@ class WizardFooter extends StatelessWidget {
                         color: Color(0xFF1A1203),
                       ),
                     )
-                  : Icon(icon),
+                  : Text(emoji),
               label: Text(label),
             ),
           ],

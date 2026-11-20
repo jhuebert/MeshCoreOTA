@@ -68,7 +68,7 @@ void main() {
     expect(find.text('RAK_4631_repeater'), findsNothing); // no device rows
     expect(find.textContaining('Versions are treated as a unit'), findsNothing);
     // The offline switch is still there — managing is the point here.
-    expect(find.byTooltip('Go offline — never contact GitHub'), findsOneWidget);
+    expect(find.byTooltip('Go offline'), findsOneWidget);
   });
 
   testWidgets('the manager lists every release, not just one board\'s',
@@ -126,7 +126,7 @@ void main() {
     await tester.pumpWidget(wrap(app, const FirmwareScreen(updateMode: false)));
     await tester.pump();
 
-    await tester.tap(find.byTooltip('Go offline — never contact GitHub'));
+    await tester.tap(find.byTooltip('Go offline'));
     await tester.pumpAndSettle();
 
     // Offline GitHub view: only the saved version.
@@ -213,13 +213,13 @@ void _managerModeTests() {
     final app = await _app();
     await tester.pumpWidget(wrap(app, const FirmwareScreen(updateMode: false)));
     await tester.pump();
-    await tester.tap(find.byTooltip('Go offline — never contact GitHub'));
+    await tester.tap(find.byTooltip('Go offline'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('filter-v1.1.0-rc5'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 120));
-    expect(find.textContaining('nothing new to download'), findsOneWidget);
+    expect(find.textContaining('Nothing new to download'), findsOneWidget);
     await tester.pumpAndSettle();
   });
 
@@ -249,7 +249,7 @@ void _managerModeTests() {
 
     await tester.pumpWidget(wrap(app, const FirmwareScreen()));
     await tester.pump();
-    await tester.tap(find.byTooltip('Go offline — never contact GitHub'));
+    await tester.tap(find.byTooltip('Go offline'));
     await tester.pumpAndSettle();
 
     expect(find.text('Nothing saved for your board'), findsOneWidget);
@@ -272,7 +272,7 @@ void _managerModeTests() {
     await tester.tap(find.text('Details'));
     await tester.pumpAndSettle();
     expect(find.text('SHA-256'), findsOneWidget);
-    await tester.tap(find.widgetWithText(TextButton, 'Close'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Close'));
     await tester.pumpAndSettle();
 
     // There is no local delta-base picker any more: the node supplies the

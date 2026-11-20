@@ -47,8 +47,7 @@ class UpdateFlow {
       throw UpdateFlowException('login rejected');
     }
     if (!login.isAdmin) {
-      throw UpdateFlowException(
-          'logged in, but not as admin — OTA needs admin');
+      throw UpdateFlowException('logged in, but not as admin: OTA needs admin');
     }
     final reply = await _cli(target, 'ota status');
     return OtaStatus.parse(reply);
@@ -192,7 +191,7 @@ class UpdateFlow {
   /// companion encrypts them as ordinary REQ datagrams and routes them to
   /// [target] using its stored contact record. A hand-built [route] (the
   /// review screen's path override) has no per-packet field to ride, so it is
-  /// pushed into the companion as the contact's path first — like `change_path`
+  /// pushed into the companion as the contact's path first: like `change_path`
   /// in meshcli — and takes effect for this and later sessions until the
   /// companion's record is changed again.
   Future<TransferResult> transfer({

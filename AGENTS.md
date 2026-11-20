@@ -160,6 +160,18 @@ spec.
 
 ## App UX contract
 
+The UI/UX must be **maximally consistent across the whole app**. Use the same
+glyphs, button labels, phrasing, spacing and formatting for the same idea on
+every screen; shared building blocks live in `app/lib/widgets/common.dart`.
+Design for the principle of least surprise: an operator who has never read the
+docs should be able to predict what each control does and what happens next.
+Follow familiar platform conventions, favor ease of use, easy visual scanning
+and visual appeal over cleverness, and keep the text plain and user-centric.
+**Do not use em dashes in any UI text or user-facing string.** Use a short
+sentence, a colon or a comma instead. Primary action buttons are short names
+with a single action emoji in front (`➡️`, `▶️`, `⏸️`, `⏹️`, `⬅️`), never a
+long label with an explanation appended.
+
 The app is an eight-step wizard: Connect → Repeater → Sign in → Firmware →
 Radio → Review → Transfer → Verify. Every screen carries `WizardBar`
 (step + label); the next action lives in a `WizardFooter` or an equivalent

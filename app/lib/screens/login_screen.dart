@@ -123,7 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         value: board ??
                             (app.nodeInfo == null
                                 ? 'unknown'
-                                : 'custom build — import the image on the '
+                                : 'custom build. Import the image on the '
                                     'next step'),
                         mono: board != null),
                     if (radio2 != null)
@@ -155,8 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ],
       ),
       bottomNavigationBar: WizardFooter(
-        label: status == null ? 'Sign in' : 'Next: choose firmware',
-        icon: status == null ? Icons.verified_user_outlined : Icons.memory,
+        label: status == null ? 'Sign in' : 'Choose firmware',
         busy: app.probing,
         onPressed: status == null
             ? (app.probing || target == null ? null : () => _check(app))

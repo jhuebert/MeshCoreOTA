@@ -83,7 +83,7 @@ void main() {
     expect(find.text('Admin password (optional)'), findsNothing);
 
     final next = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: choose firmware'),
+      find.widgetWithText(FilledButton, 'Choose firmware'),
     );
     expect(next.onPressed, isNotNull);
   });
@@ -97,7 +97,7 @@ void main() {
 
     expect(app.adminPassword, '');
     final next = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: choose firmware'),
+      find.widgetWithText(FilledButton, 'Choose firmware'),
     );
     expect(next.onPressed, isNotNull);
   });

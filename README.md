@@ -5,7 +5,7 @@
 </p>
 
 **MeshCoreRepeaterManager updates MeshCore repeater firmware over the air, from your phone
-or laptop — no tower visit, no laptop at the site, and no extra traffic across
+or laptop: no tower visit, no laptop at the site, and no extra traffic across
 your mesh.**
 
 A repeater on a hill, a roof or a water tower is hard to reach and easy to
@@ -38,7 +38,7 @@ the project's app key, so upgrading an existing install keeps your data.
 
 ## What you need
 
-- A repeater running the **update-enabled MeshCore fork** — see
+- A repeater running the **update-enabled MeshCore fork**: see
   [jhuebert/MeshCore](https://github.com/jhuebert/MeshCore). A stock repeater
   replies "this firmware does not speak the ota CLI" when you check it.
 - A **MeshCore companion** the app can reach: by Bluetooth on Android, macOS
@@ -48,7 +48,7 @@ the project's app key, so upgrading an existing install keeps your data.
   approved as an administrator on the repeater (no password needed), or you
   know its admin password.
 - The firmware file you want to install. The app can download the fork's
-  releases for you, or you can pick a `.bin` file — including your own build.
+  releases for you, or you can pick a `.bin` file: including your own build.
 
 ## Getting started
 
@@ -56,7 +56,7 @@ The app walks you through eight steps. You can go back at any point; nothing
 is changed on the repeater until you press **Start update**, and nothing boots
 until you confirm at the end. The exact comparison with the repeater's running
 image happens on the Transfer screen, after you start, on the channel you chose
-there — so its traffic never uses the live mesh when you picked a private one.
+there: so its traffic never uses the live mesh when you picked a private one.
 
 ### 1. Connect the companion
 
@@ -65,7 +65,7 @@ there — so its traffic never uses the live mesh when you picked a private one.
 Pick **Bluetooth** on Android, macOS or Linux, or **TCP / Wi-Fi** anywhere
 (desktop opens on TCP; Windows has no Bluetooth). A phone can also reach a
 companion over Wi-Fi. Tap a companion you find, or enter its `host:port`.
-When the connection succeeds the app moves straight to repeater selection —
+When the connection succeeds the app moves straight to repeater selection:
 there is nothing else to press.
 
 The **Firmware library** is available here before you connect. It is the
@@ -94,10 +94,10 @@ firmware step.
 
 ![Choose firmware](docs/images/04-firmware.png)
 
-The **GitHub** tab lists the fork's releases as **versions** — one row per
+The **GitHub** tab lists the fork's releases as **versions**: one row per
 version, newest first. **Stable** and **Dev** are separate tabs. Only versions
 with a file for the repeater's board are shown, and the app picks that file
-for you — there is no board picker and no per-device list to manage.
+for you: there is no board picker and no per-device list to manage.
 
 - Tapping a version downloads **its file for your board** (if it is not
   already on the device) and selects it for this update.
@@ -111,7 +111,7 @@ for you — there is no board picker and no per-device list to manage.
   with a check = saved.
 - A saved version shows the done cloud icon on its row, and a trash icon
   deletes the version and all of its files.
-- **Imported** shows your `.bin` files — one row per file — and is where you
+- **Imported** shows your `.bin` files: one row per file: and is where you
   add your own build.
 
 ### 5. Radio settings
@@ -120,16 +120,16 @@ for you — there is no board picker and no per-device list to manage.
 
 A firmware transfer uses a lot of airtime, so choose where it runs:
 
-- **Live mesh** — use your normal channel and the saved path to the repeater.
+- **Live mesh**: use your normal channel and the saved path to the repeater.
   You can enter a different path.
-- **Temporary private channel** — the repeater switches to a private channel
+- **Temporary private channel**: the repeater switches to a private channel
   for the transfer and the companion is tuned to it directly; both go back
   afterwards. The update goes straight between them, so no other node hears
   it. The repeater keeps the channel on in 15-minute chunks and renews it
-  automatically while the transfer runs — there is no time limit to set. If
+  automatically while the transfer runs: there is no time limit to set. If
   radio2 is enabled, it is paused for the duration of the private channel and
   restored afterwards.
-- **The repeater's second channel (radio2)** — the repeater keeps serving the
+- **The repeater's second channel (radio2)**: the repeater keeps serving the
   mesh on its normal channel and carries the update on its second channel.
   The companion is tuned to it for the transfer. If radio2 was already
   enabled, the app uses the preset the repeater reports and leaves its
@@ -148,7 +148,7 @@ the Home screen.
 The review screen shows everything you picked before anything goes on air:
 the companion and how it is connected, the repeater and its board, the
 firmware it runs now, the firmware you are installing, the file size, and the
-channel choice. **Start update** begins the transfer — the
+channel choice. **Start update** begins the transfer: the
 new firmware does not start until you confirm at the end.
 
 The exact comparison has not run yet: it starts on the Transfer screen, on the
@@ -159,7 +159,7 @@ channel chosen above. The repeater supplies the bytes it already has.
 After you press Start, the repeater first compares its **own running firmware**
 with the image you picked. It reports its image size, segment table and
 whole-image hash; the app then sends short fingerprints of blocks of the new
-image — up to twelve per exchange — and the repeater replies with the offsets
+image: up to twelve per exchange: and the repeater replies with the offsets
 where each block already exists. Because matches are found by content, a code
 change that shifts every later byte does not force a full upload, and you do
 **not** need the old firmware on this device. New bytes are compressed before
@@ -185,7 +185,7 @@ The app signs back in and confirms it came back on the new version.
 
 If the new firmware cannot start its radio, the repeater switches back to the
 old version by itself. Once the result is clear you can also switch back
-manually with **Roll back to previous firmware** — the app reports that as a
+manually with **Roll back**: the app reports that as a
 rollback, never as a successful update. Until the reboot is settled the app
 waits instead of guessing, so the rollback button stays unavailable.
 
@@ -199,26 +199,26 @@ the repeater got. On firmware with the capability API it also compares a
 per-session id to prove the repeater did not restart, and reads back the bytes
 already staged to confirm they match the saved image before sending more:
 
-- **Resume upload** — only the missing part is sent. The firmware image and
+- **Resume upload**: only the missing part is sent. The firmware image and
   the exact op stream were saved on the phone, so there is no re-download and
   no re-comparison.
-- **Apply the finished update** — if the upload and the repeater's own check
+- **Apply update**: if the upload and the repeater's own check
   had completed before the app died, you can go straight to the commit step.
-- **Start a different update** — cancels the resume, discards the repeater's
+- **Start a different update**: cancels the resume, discards the repeater's
   staged image, and opens the firmware picker. Use this if you changed your
   mind about which version to install.
-- **Cancel resume** on the recovery screen does the same thing. Pausing from
+- **Start a different update** on the recovery screen does the same thing. Pausing from
   the transfer screen instead keeps what has already been uploaded.
 
 This works while the **repeater** stays powered. If the repeater itself
-reboots, its staged image is lost and the upload has to start over — but the
+reboots, its staged image is lost and the upload has to start over: but the
 firmware is still on the phone, so you do not have to download it again. The
 saved update is cleared once the new firmware is verified, or when you cancel.
 
 ## Going offline
 
 The **cloud** button on the firmware screen switches the app offline. In
-offline mode it never contacts GitHub — not for the release list, not for a
+offline mode it never contacts GitHub: not for the release list, not for a
 firmware file. The **GitHub** tab then shows only the versions saved on this
 device, like a music app's downloaded list. **Imported** is available in both
 modes.
@@ -228,7 +228,7 @@ across restarts. Switch it back on when you have a connection.
 
 To prepare: while on Wi-Fi, open **Choose firmware → GitHub** and tap the
 cloud button on the version you want. Its file for every board is saved. You no longer need to save the version
-the repeater currently runs — it hashes its own firmware for the comparison. The **Firmware library** on the main
+the repeater currently runs: it hashes its own firmware for the comparison. The **Firmware library** on the main
 screen manages what is stored: download versions, delete ones you no longer
 need, and see downloaded versions (one row per version) and imported `.bin`
 files (one row per file) separately.
@@ -274,7 +274,7 @@ a wrong file cannot be installed by mistake.
 ## Safety and limits
 
 - **Nothing starts until you confirm.** The transfer only writes to the spare
-  slot — the firmware you are running is untouched.
+  slot: the firmware you are running is untouched.
 - **The repeater checks the file itself**, not just the app. A mismatch throws
   away the transfer.
 - **Only an administrator can start**, using the same sign-in as other
@@ -318,7 +318,7 @@ a wrong file cannot be installed by mistake.
 ## How it works (short version)
 
 The app sends each step to your companion, which forwards it to the repeater
-as a normal encrypted request — the same kind used to check the repeater's
+as a normal encrypted request: the same kind used to check the repeater's
 status. The request follows the path you chose, or goes straight to the
 repeater when it is in range, so any relays on the way need no special
 firmware. The repeater collects the update in its spare slot, checks the

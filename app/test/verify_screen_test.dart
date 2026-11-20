@@ -52,7 +52,7 @@ void main() {
     await pumpVerify(tester, app);
 
     expect(find.text('Update not committed'), findsOneWidget);
-    expect(find.text('Try applying again'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
     expect(find.textContaining('still holding the verified image'),
         findsOneWidget);
   });
@@ -63,7 +63,7 @@ void main() {
     await pumpVerify(tester, app);
 
     final button = tester.widget<OutlinedButton>(
-      find.widgetWithText(OutlinedButton, 'Roll back to previous firmware'),
+      find.widgetWithText(OutlinedButton, 'Roll back'),
     );
     expect(button.onPressed, isNull);
   });

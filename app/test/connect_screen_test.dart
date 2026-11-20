@@ -67,6 +67,38 @@ void main() {
     expect(find.text('Connect'), findsOneWidget);
   });
 
+  testWidgets('a failed connect explains it in plain language', (tester) async {
+    _bigView(tester);
+    final app = AppState();
+    app.tcpLinkFactory = (_, __) => FakeDeviceLink(connectFailures: 1);
+
+    await tester.pumpWidget(wrap(app, const ConnectScreen()));
+    await tester.pump();
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.text('No companion found there. Check the host and port, then '
+            'try again.'),
+        findsOneWidget);
+    expect(find.textContaining('SocketException'), findsNothing);
+  });
+
+  testWidgets('the Connect button shows progress while connecting',
+      (tester) async {
+    _bigView(tester);
+    final app = AppState()..connectionPhase = ConnectionPhase.connecting;
+
+    await tester.pumpWidget(wrap(app, const ConnectScreen()));
+    await tester.pump();
+
+    expect(find.text('Connecting…'), findsOneWidget);
+    final button = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Connecting…'),
+    );
+    expect(button.onPressed, isNull);
+  });
+
   testWidgets('desktop can switch from the TCP default to Bluetooth',
       (tester) async {
     _bigView(tester);
@@ -95,11 +127,11 @@ void main() {
     await tester.pumpWidget(wrap(app, const ConnectScreen()));
     await tester.pump();
 
-    expect(find.textContaining('Continue — pick a repeater'), findsOneWidget);
+    expect(find.textContaining('Continue'), findsOneWidget);
     expect(find.text('Connect'), findsNothing); // form hidden when connected
     expect(find.widgetWithText(TextButton, 'Disconnect'), findsOneWidget);
 
-    await tester.tap(find.textContaining('Continue — pick a repeater'));
+    await tester.tap(find.textContaining('Continue'));
     await tester.pumpAndSettle();
     expect(find.text('Pick a repeater'), findsOneWidget);
   });

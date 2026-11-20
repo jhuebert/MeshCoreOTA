@@ -15,7 +15,7 @@ void main() {
         child: const MeshCoreRepeaterManagerApp(),
       ),
     );
-    expect(find.text('MeshCoreRepeaterManager'), findsWidgets);
+    expect(find.text('Repeater Manager'), findsWidgets);
     // TCP transport is offered everywhere; Bluetooth is Android/iOS only.
     if (Platform.isAndroid || Platform.isIOS) {
       expect(find.text('Bluetooth'), findsOneWidget);

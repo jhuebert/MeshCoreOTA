@@ -37,7 +37,7 @@ class TransferForegroundService {
       // Match the manifest's declared type on Android 14+.
       serviceTypes:
           _isAndroid ? [ForegroundServiceTypes.connectedDevice] : null,
-      notificationTitle: 'MeshCoreRepeaterManager — firmware update',
+      notificationTitle: 'MeshCoreRepeaterManager: firmware update',
       notificationText: notificationText,
       callback: transferServiceEntry,
     );

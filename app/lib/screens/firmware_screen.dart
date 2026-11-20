@@ -76,9 +76,8 @@ class _FirmwareScreenState extends State<FirmwareScreen>
         title: Text(update ? 'Choose firmware' : 'Firmware library'),
         actions: [
           IconButton(
-            tooltip: app.offlineMode
-                ? 'Offline — showing downloaded versions only. Tap to go online.'
-                : 'Go offline — never contact GitHub',
+            tooltip:
+                app.offlineMode ? 'Offline. Tap to go online.' : 'Go offline',
             onPressed: () => app.setOfflineMode(!app.offlineMode),
             icon: Icon(
               app.offlineMode ? Icons.cloud_off : Icons.cloud_queue,
@@ -135,7 +134,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Offline — no GitHub requests. This tab shows only '
+                      'Offline. No GitHub requests. This tab shows only '
                       'the versions saved on this device.',
                       style: TextStyle(
                           color: OtaTheme.warn, fontSize: 12, height: 1.35),
@@ -296,7 +295,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
           child: Text(
             '${shown.length} version(s) on this device · '
-            '${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB · offline',
+            '${formatBytes(totalBytes)} · offline',
             style: const TextStyle(color: OtaTheme.textMuted, fontSize: 12),
           ),
         ),
@@ -323,8 +322,8 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                 child: Text(
                   entries.isEmpty
                       ? 'No imported .bin files yet'
-                      : '${entries.length} file(s) · '
-                          '${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB',
+                      : '${entries.length} files · '
+                          '${formatBytes(totalBytes)}',
                   style:
                       const TextStyle(color: OtaTheme.textMuted, fontSize: 12),
                 ),
@@ -371,7 +370,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                                   fontFamily: 'monospace', fontSize: 12)),
                           subtitle: Text(
                             '${entry.env} · ${entry.version} · '
-                            '${(entry.size / (1024 * 1024)).toStringAsFixed(2)} MB',
+                            '${formatBytes(entry.size)}',
                             style: const TextStyle(
                                 color: OtaTheme.textMuted, fontSize: 11),
                           ),
@@ -479,7 +478,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
           ),
         ),
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Cancel'),
           ),
@@ -495,7 +494,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
   Future<void> _pickBoardForImage(AppState app) async {
     final envs = app.knownEnvironments.toList()..sort();
     if (envs.isEmpty) {
-      _showSnack('No known boards — refresh the release list first');
+      _showSnack('No known boards. Refresh the release list first');
       return;
     }
     final picked = await showDialog<String>(
@@ -527,7 +526,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
           ),
         ),
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Cancel'),
           ),
@@ -617,7 +616,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                         ],
                       )
                   : null)
-          : () => _showSnack('Offline — nothing new to download for this '
+          : () => _showSnack('Offline. Nothing new to download for this '
               'version'),
       onSave: null,
       onDelete: () => _deleteEntries(
@@ -641,7 +640,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
       SnackBar(
         content: Text(saved == 0
             ? '${release.tag} is already saved'
-            : 'Saved ${release.tag} — $saved image(s) for offline use'),
+            : 'Saved ${release.tag}. $saved images ready offline'),
       ),
     );
   }
@@ -705,7 +704,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
         title: Text(title),
         content: Text(body),
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Keep'),
           ),
@@ -720,7 +719,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
     await app.deleteLibraryEntries(list);
     _showSnack(list.length == 1
         ? 'Deleted ${list.single.fileName}'
-        : 'Deleted ${list.length} image(s)');
+        : 'Deleted ${list.length} images');
   }
 
   void _inspectEntry(LibraryEntry entry) {
@@ -737,8 +736,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
             _inspectRow('Board', entry.env),
             _inspectRow('Version', entry.version),
             _inspectRow('Origin', entry.origin),
-            _inspectRow('Size',
-                '${(entry.size / (1024 * 1024)).toStringAsFixed(2)} MB'),
+            _inspectRow('Size', formatBytes(entry.size)),
             _inspectRow('Added', _shortDate(entry.added)),
             const SizedBox(height: 8),
             const Text('SHA-256',
@@ -750,7 +748,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
           ],
         ),
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Close'),
           ),
@@ -853,7 +851,8 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                 padding: const EdgeInsets.only(bottom: 6),
                 child: Text(
                   'Selected: ${env ?? '?'} · '
-                  '${app.selectedDisplayVersion ?? '?'} · ${app.estimateLabel()}',
+                  '${app.selectedDisplayVersion ?? '?'} · '
+                  '${formatBytes(app.selectedImage!.length)}',
                   style:
                       const TextStyle(color: OtaTheme.textMuted, fontSize: 12),
                 ),
@@ -910,9 +909,8 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                         color: Color(0xFF1A1203),
                       ),
                     )
-                  : const Icon(Icons.arrow_forward),
-              label: Text(
-                  app.imageLoading ? 'Downloading…' : 'Next: radio settings'),
+                  : const Text(nextEmoji),
+              label: Text(app.imageLoading ? 'Downloading…' : 'Radio settings'),
             ),
           ],
         ),

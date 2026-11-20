@@ -102,14 +102,14 @@ void reviewSummaryTests() {
     await tester.pump();
 
     expect(find.text('test companion'), findsOneWidget);
-    expect(find.text('TCP — 10.0.0.8:5000'), findsOneWidget);
+    expect(find.text('TCP: 10.0.0.8:5000'), findsOneWidget);
     expect(find.text('target repeater'), findsOneWidget);
     expect(find.text(_board), findsOneWidget); // the node's board
     expect(find.text('v1.1.0-r3'), findsOneWidget); // current firmware
     expect(find.text('v1.1.0-rc5-cd72e1a2'), findsOneWidget); // update to
     expect(find.text('Step 6 of 8'), findsOneWidget);
-    expect(find.textContaining('After Start the repeater compares'),
-        findsOneWidget);
+    expect(
+        find.textContaining('After Start the repeater compares'), findsNothing);
     // No navigation buttons and no base picker on this screen.
     expect(find.text('Choose base'), findsNothing);
     expect(find.text('Change image'), findsNothing);
@@ -117,7 +117,7 @@ void reviewSummaryTests() {
     expect(find.text('SHA-256'), findsNothing);
   });
 
-  testWidgets('the comparison is described as a post-Start step',
+  testWidgets('no comparison guess is shown before the transfer',
       (tester) async {
     _bigView(tester);
     final app = _app();
@@ -126,9 +126,10 @@ void reviewSummaryTests() {
     await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
 
-    expect(find.textContaining('After Start the repeater compares'),
-        findsOneWidget);
-    expect(find.textContaining('on the channel chosen above'), findsOneWidget);
+    expect(
+        find.textContaining('After Start the repeater compares'), findsNothing);
+    expect(
+        find.textContaining('Compared on the selected channel'), findsNothing);
     expect(find.text('Step 6 of 8'), findsOneWidget);
   });
 

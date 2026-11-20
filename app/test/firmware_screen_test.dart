@@ -95,7 +95,7 @@ void main() {
 
     expect(app.selectedAsset?.env, _board);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: radio settings'),
+      find.widgetWithText(FilledButton, 'Radio settings'),
     );
     expect(review.onPressed, isNotNull);
   });
@@ -131,7 +131,7 @@ void main() {
 
     expect(app.selectedAsset?.env, 'RAK_4631_repeater');
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: radio settings'),
+      find.widgetWithText(FilledButton, 'Radio settings'),
     );
     expect(review.onPressed, isNotNull);
   });
@@ -154,7 +154,7 @@ void main() {
 
     await tester.pumpWidget(wrap(app, const FirmwareScreen()));
     await tester.pump();
-    await tester.tap(find.byTooltip('Go offline — never contact GitHub'));
+    await tester.tap(find.byTooltip('Go offline'));
     await tester.pumpAndSettle();
 
     // Both boards are saved under the same version; it is still listed.
@@ -168,7 +168,7 @@ void main() {
 
     expect(app.selectedLibraryEntry?.env, _board);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: radio settings'),
+      find.widgetWithText(FilledButton, 'Radio settings'),
     );
     expect(review.onPressed, isNotNull);
   });
@@ -203,7 +203,7 @@ void main() {
     expect(app.needsBoardForImage, isTrue);
     expect(find.text('Choose board'), findsOneWidget);
     var next = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: radio settings'),
+      find.widgetWithText(FilledButton, 'Radio settings'),
     );
     expect(next.onPressed, isNull);
 
@@ -212,7 +212,7 @@ void main() {
     await tester.tap(find.text(_board));
     await tester.pumpAndSettle();
     next = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: radio settings'),
+      find.widgetWithText(FilledButton, 'Radio settings'),
     );
     expect(next.onPressed, isNotNull);
   });
@@ -270,7 +270,7 @@ void main() {
     expect(app.needsBoardForImage, isTrue);
     expect(find.textContaining('Choose the board this image'), findsOneWidget);
     final blocked = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: radio settings'),
+      find.widgetWithText(FilledButton, 'Radio settings'),
     );
     expect(blocked.onPressed, isNull);
 
@@ -283,7 +283,7 @@ void main() {
     expect(app.selectedEnvironment, _board);
     expect(app.needsBoardForImage, isFalse);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: radio settings'),
+      find.widgetWithText(FilledButton, 'Radio settings'),
     );
     expect(review.onPressed, isNotNull);
   });
@@ -304,7 +304,7 @@ void main() {
 
     await tester.pumpWidget(wrap(app, const FirmwareScreen()));
     await tester.pump();
-    await tester.tap(find.byTooltip('Go offline — never contact GitHub'));
+    await tester.tap(find.byTooltip('Go offline'));
     await tester.pumpAndSettle();
 
     expect(find.text("This node's board is not recognized"), findsOneWidget);
@@ -327,7 +327,7 @@ void main() {
     await tester.tap(find.text('filter-v1.1.0-rc5'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Next: radio settings'));
+    await tester.tap(find.text('Radio settings'));
     await tester.pumpAndSettle();
 
     expect(find.byType(RadioSettingsScreen), findsOneWidget);
@@ -363,7 +363,7 @@ void main() {
     await tester.pumpWidget(wrap(app, const FirmwareScreen()));
     await tester.pump();
 
-    await tester.tap(find.byTooltip('Go offline — never contact GitHub'));
+    await tester.tap(find.byTooltip('Go offline'));
     await tester.pumpAndSettle();
 
     expect(app.offlineMode, isTrue);
@@ -373,8 +373,7 @@ void main() {
     expect(find.textContaining('saved for offline use'), findsNothing);
 
     // Toggle back online from the same button.
-    await tester.tap(find.byTooltip('Offline — showing downloaded versions '
-        'only. Tap to go online.'));
+    await tester.tap(find.byTooltip('Offline. Tap to go online.'));
     await tester.pumpAndSettle();
     expect(app.offlineMode, isFalse);
   });
@@ -386,7 +385,7 @@ void main() {
     await tester.pumpWidget(wrap(app, const FirmwareScreen()));
     await tester.pump();
 
-    await tester.tap(find.byTooltip('Go offline — never contact GitHub'));
+    await tester.tap(find.byTooltip('Go offline'));
     await tester.pumpAndSettle();
 
     expect(find.text('No versions saved for offline use yet'), findsOneWidget);
@@ -413,7 +412,7 @@ void main() {
 
     await tester.pumpWidget(wrap(app, const FirmwareScreen()));
     await tester.pump();
-    await tester.tap(find.byTooltip('Go offline — never contact GitHub'));
+    await tester.tap(find.byTooltip('Go offline'));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('1 version(s) on this device'), findsOneWidget);
@@ -426,7 +425,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(app.selectedLibraryEntry?.env, _board);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: radio settings'),
+      find.widgetWithText(FilledButton, 'Radio settings'),
     );
     expect(review.onPressed, isNotNull);
   });
@@ -442,14 +441,14 @@ void main() {
 
     await tester.pumpWidget(wrap(app, const FirmwareScreen()));
     await tester.pump();
-    await tester.tap(find.byTooltip('Go offline — never contact GitHub'));
+    await tester.tap(find.byTooltip('Go offline'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('filter-v1.1.0-rc5'));
     await tester.pumpAndSettle();
 
     expect(app.selectedImage, isNotNull);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: radio settings'),
+      find.widgetWithText(FilledButton, 'Radio settings'),
     );
     expect(review.onPressed, isNotNull);
   });

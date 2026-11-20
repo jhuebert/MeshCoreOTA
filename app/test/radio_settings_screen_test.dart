@@ -75,28 +75,31 @@ void main() {
         find.widgetWithText(TextField, 'Frequency (MHz)'), '100');
     await tester.pump();
 
-    expect(find.textContaining('frequency must be 150–2500'), findsOneWidget);
+    expect(
+        find.textContaining('frequency must be 150 to 2500'), findsOneWidget);
     final save = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: review'),
+      find.widgetWithText(FilledButton, 'Review'),
     );
     expect(save.onPressed, isNull);
   });
 
-  testWidgets('suggest settings restores a valid preset', (tester) async {
+  testWidgets('the private preset starts from the repeater settings',
+      (tester) async {
     _bigView(tester);
     final app = _app();
     await tester.pumpWidget(wrap(app, const RadioSettingsScreen()));
     await tester.pump();
 
-    await tester.enterText(
-        find.widgetWithText(TextField, 'Frequency (MHz)'), '100');
-    await tester.pump();
-    await tester.tap(find.text('Suggest settings'));
-    await tester.pump();
-
-    expect(find.textContaining('frequency must be 150–2500'), findsNothing);
+    // No region-specific "suggest" button: the fields are prefilled from the
+    // node's own preset and stay editable for other regions.
+    expect(find.text('Suggest settings'), findsNothing);
+    expect(find.textContaining('Started from the repeater'), findsOneWidget);
+    final field = tester.widget<TextField>(
+      find.widgetWithText(TextField, 'Frequency (MHz)'),
+    );
+    expect(field.controller!.text, isNotEmpty);
     final save = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: review'),
+      find.widgetWithText(FilledButton, 'Review'),
     );
     expect(save.onPressed, isNotNull);
   });
@@ -110,7 +113,7 @@ void main() {
     await tester.enterText(
         find.widgetWithText(TextField, 'Frequency (MHz)'), '914');
     await tester.pump();
-    await tester.tap(find.text('Next: review'));
+    await tester.tap(find.text('Review'));
     await tester.pumpAndSettle();
 
     expect(app.radioPlan.mode, RadioMode.tempRadio);
@@ -131,7 +134,7 @@ void main() {
 
     expect(find.text('PRIVATE PRESET'), findsNothing);
     expect(find.text('Direct path override (optional)'), findsOneWidget);
-    await tester.tap(find.text('Next: review'));
+    await tester.tap(find.text('Review'));
     await tester.pumpAndSettle();
     expect(app.radioPlan.mode, RadioMode.liveMesh);
   });
@@ -151,7 +154,7 @@ void main() {
     await tester.pump();
 
     expect(find.textContaining('Estimated transfer:'), findsNothing);
-    expect(find.textContaining('\u00d7 the airtime'), findsOneWidget);
+    expect(find.textContaining('airtime'), findsNothing);
   });
 
   testWidgets('the direct path override accepts and rejects paths',
@@ -175,7 +178,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(app.manualRouteError, isNotNull);
     final save = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: review'),
+      find.widgetWithText(FilledButton, 'Review'),
     );
     expect(save.onPressed, isNull);
     expect(find.text('Fix the direct path override above.'), findsOneWidget);
@@ -204,7 +207,7 @@ void main() {
 
     expect(find.textContaining('must not overlap'), findsOneWidget);
     final save = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: review'),
+      find.widgetWithText(FilledButton, 'Review'),
     );
     expect(save.onPressed, isNull);
   });
@@ -220,7 +223,7 @@ void main() {
     expect(find.textContaining('Using the repeater\'s current radio2 preset'),
         findsOneWidget);
     expect(find.widgetWithText(TextField, 'Frequency (MHz)'), findsNothing);
-    await tester.tap(find.text('Next: review'));
+    await tester.tap(find.text('Review'));
     await tester.pumpAndSettle();
     expect(app.radioPlan.preset!.frequencyMhz, 914);
   });

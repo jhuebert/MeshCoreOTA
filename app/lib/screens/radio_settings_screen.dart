@@ -12,10 +12,10 @@ import 'review_screen.dart';
 /// Step 5: where the transfer runs.
 ///
 /// The live mesh stays untouched in a temporary-preset or radio2 transfer;
-/// both are zero-hop because nothing else is tuned there. The screen suggests
-/// a preset from the node's own radio settings and explains what will be
-/// changed and restored. Transfer time is deliberately not guessed here — the
-/// comparison that determines how much to send happens after Start.
+/// both are zero-hop because nothing else is tuned there. The private preset
+/// starts from the repeater's own radio settings, which work in every region,
+/// and the screen explains what will be changed and restored. Transfer time
+/// is deliberately not guessed here: comparison starts after Start.
 /// In live-mesh mode it also carries the optional direct path override.
 class RadioSettingsScreen extends StatefulWidget {
   const RadioSettingsScreen({super.key});
@@ -107,8 +107,7 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
                   'The repeater\'s second preset',
                   'Keep the live mesh on its channel and send the transfer on the '
                       'repeater\'s radio2 preset. Zero-hop on the secondary. '
-                      'About ${RadioPlan.radio2DutyFactor.toStringAsFixed(0)}× the airtime: '
-                      'the repeater shares the radio with the live mesh.',
+                      'The repeater shares the radio with the live mesh.',
                 ),
               ],
             ),
@@ -235,17 +234,16 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
-                            onPressed: () => _suggest(app),
-                            icon: const Icon(Icons.auto_fix_high, size: 18),
-                            label: const Text('Suggest settings'),
-                          ),
-                        ),
                         Text(
                           'Preset: ${_presetFromFields(app).label}',
                           style: const TextStyle(
+                              color: OtaTheme.textMuted, fontSize: 11),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Started from the repeater’s own settings. Change '
+                          'them here if you need to.',
+                          style: TextStyle(
                               color: OtaTheme.textMuted, fontSize: 11),
                         ),
                       ],
@@ -308,7 +306,7 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
         ],
       ),
       bottomNavigationBar: WizardFooter(
-        label: 'Next: review',
+        label: 'Review',
         onPressed: problem != null || routeInvalid
             ? null
             : () => _saveAndContinue(app, plan),
@@ -363,7 +361,7 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
                     ? 'radio2 is off. The app enables it for the update with these '
                         'settings and turns it off again afterwards.'
                     : 'The node did not report a radio2 state. If radio2 is already '
-                        'enabled, enter its existing secondary preset — the app will '
+                        'enabled, enter its existing secondary preset. The app will '
                         'not change it either way.',
         style: TextStyle(
           color: enabled == true ? OtaTheme.warn : OtaTheme.textMuted,
@@ -396,17 +394,6 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
         mode: _mode,
         preset: _mode == RadioMode.liveMesh ? null : _presetFromFields(app),
       );
-
-  void _suggest(AppState app) {
-    final suggested = app.suggestedRadioPreset() ?? app.livePreset;
-    if (suggested == null) return;
-    setState(() {
-      _frequency.text = _fmt(suggested.frequencyMhz);
-      _bandwidthHz = suggested.bandwidthHz;
-      _spreadingFactor = suggested.spreadingFactor;
-      _codingRate = suggested.codingRate;
-    });
-  }
 
   void _saveAndContinue(AppState app, RadioPlan plan) {
     app.setRadioMode(_mode);

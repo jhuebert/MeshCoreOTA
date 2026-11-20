@@ -327,7 +327,7 @@ void main() {
     expect(await app.downloadAssetToLibrary(target), 0);
   });
 
-  test('estimate label distinguishes full and delta', () {
+  test('estimate label reports only the image size', () {
     final app = AppState();
     expect(app.estimateLabel(), 'size unknown');
   });

@@ -82,19 +82,19 @@ class LoRaPreset {
   }
 
   /// A human-readable range problem, or null when the preset is syntactically
-  /// usable by the firmware (150–2500 MHz, 7–500 kHz, SF5–12, CR5–8).
+  /// usable by the firmware.
   String? get rangeError {
     if (frequencyMhz < 150 || frequencyMhz > 2500) {
-      return 'frequency must be 150–2500 MHz';
+      return 'frequency must be 150 to 2500 MHz';
     }
     if (bandwidthKhz < 7 || bandwidthKhz > 500) {
-      return 'bandwidth must be 7–500 kHz';
+      return 'bandwidth must be 7 to 500 kHz';
     }
     if (spreadingFactor < 5 || spreadingFactor > 12) {
-      return 'spreading factor must be 5–12';
+      return 'spreading factor must be 5 to 12';
     }
     if (codingRate < 5 || codingRate > 8) {
-      return 'coding rate must be 4/5–4/8 (5–8)';
+      return 'coding rate must be 4/5 to 4/8';
     }
     return null;
   }
@@ -179,7 +179,7 @@ class RadioPlan {
   String get radio2Command => 'radio2 ${preset!.cli}';
 
   /// Why the plan cannot run, or null when it is usable. [primary] is the
-  /// node's current preset — needed for radio2's no-overlap rule.
+  /// node's current preset: needed for radio2's no-overlap rule.
   String? error({LoRaPreset? primary}) {
     if (mode == RadioMode.liveMesh) return null;
     final p = preset;
@@ -188,7 +188,7 @@ class RadioPlan {
     if (range != null) return range;
     if (mode == RadioMode.radio2 && primary != null && p.overlaps(primary)) {
       return 'radio2 must not overlap the live preset '
-          '(${primary.label}) — use a different frequency';
+          '(${primary.label}): use a different frequency';
     }
     return null;
   }

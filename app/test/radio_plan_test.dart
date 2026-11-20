@@ -60,12 +60,14 @@ void main() {
     test('range validation matches the firmware limits', () {
       expect(_mesh.rangeError, isNull);
       expect(_mesh.copyWith(frequencyHz: 100000000).rangeError,
-          contains('150–2500'));
+          contains('150 to 2500'));
       expect(_mesh.copyWith(frequencyHz: 2600000000).rangeError,
-          contains('150–2500'));
-      expect(_mesh.copyWith(bandwidthHz: 1000).rangeError, contains('7–500'));
-      expect(_mesh.copyWith(spreadingFactor: 4).rangeError, contains('5–12'));
-      expect(_mesh.copyWith(codingRate: 9).rangeError, contains('5–8'));
+          contains('150 to 2500'));
+      expect(
+          _mesh.copyWith(bandwidthHz: 1000).rangeError, contains('7 to 500'));
+      expect(
+          _mesh.copyWith(spreadingFactor: 4).rangeError, contains('5 to 12'));
+      expect(_mesh.copyWith(codingRate: 9).rangeError, contains('4/5 to 4/8'));
     });
   });
 

@@ -73,12 +73,24 @@ class _ConnectScreenState extends State<ConnectScreen> {
       if (!mounted) return;
       setState(() {
         _scanError =
-            'Could not start scanning — is Bluetooth on and are MeshCoreRepeaterManager’s '
-            'Bluetooth permissions granted? ($e)';
+            'Bluetooth is not available here. Use TCP / Wi-Fi instead.';
       });
     } finally {
       if (mounted) setState(() => _scanning = false);
     }
+  }
+
+  /// A short, plain-language version of the transport's error. The raw
+  /// socket/BLE message is useful in a log, not on this screen.
+  String _friendlyConnectError(AppState app) {
+    final raw = app.connectError ?? '';
+    if (raw.startsWith('TCP')) {
+      return 'No companion found there. Check the host and port, then try again.';
+    }
+    if (raw.startsWith('BLE')) {
+      return 'Could not reach the companion by Bluetooth. Try again or use TCP.';
+    }
+    return raw;
   }
 
   /// Connect, then land the user on repeater selection without a second
@@ -103,7 +115,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
     final connected = app.connectionPhase == ConnectionPhase.connected;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('MeshCoreRepeaterManager')),
+      appBar: AppBar(title: const Text('Repeater Manager')),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
@@ -133,7 +145,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
                 : _buildBleCard(context, app))
           else
             ..._buildConnectedCard(context, app),
-          if (app.connectError != null) ErrorBanner(app.connectError!),
+          if (app.connectError != null) ErrorBanner(_friendlyConnectError(app)),
           if (app.resumePlan != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
@@ -228,7 +240,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 4),
                     child: Text(
-                      'Nothing found yet — tap Scan. The companion must be '
+                      'Nothing found yet. Tap Scan. The companion must be '
                       'powered and nearby.',
                       style: TextStyle(
                           color: OtaTheme.textMuted, fontSize: 12, height: 1.4),
@@ -336,8 +348,19 @@ class _ConnectScreenState extends State<ConnectScreen> {
                             () => app.connectTcp(host: host, port: port),
                           );
                         },
-                  icon: const Icon(Icons.link),
-                  label: const Text('Connect'),
+                  icon: app.connectionPhase == ConnectionPhase.connecting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFF1A1203),
+                          ),
+                        )
+                      : const Text(playEmoji),
+                  label: Text(app.connectionPhase == ConnectionPhase.connecting
+                      ? 'Connecting…'
+                      : 'Connect'),
                 ),
               ],
             ),
@@ -390,8 +413,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const TargetScreen()),
                   ),
-                  icon: const Icon(Icons.cell_tower),
-                  label: const Text('Continue — pick a repeater'),
+                  icon: const Text(nextEmoji),
+                  label: const Text('Continue'),
                 ),
               ],
             ),

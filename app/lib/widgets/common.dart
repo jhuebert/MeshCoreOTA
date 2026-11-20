@@ -4,6 +4,19 @@ import '../theme.dart';
 
 /// Small shared building blocks so every screen reads the same.
 
+/// The same glyph always means the same action, on every screen. Use them as
+/// the `icon` of a `.icon` button so the label stays a short, plain string.
+const String nextEmoji = '➡️';
+const String playEmoji = '▶️';
+const String pauseEmoji = '⏸️';
+const String stopEmoji = '⏹️';
+const String backEmoji = '⬅️';
+
+/// One size format everywhere in the app.
+String formatBytes(int bytes) => bytes >= 1024 * 1024
+    ? '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB'
+    : '${(bytes / 1024).toStringAsFixed(0)} KB';
+
 class SectionHeader extends StatelessWidget {
   const SectionHeader(this.title, {super.key});
 

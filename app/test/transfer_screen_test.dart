@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task_platform_interface.dart';
@@ -96,9 +97,11 @@ void main() {
     app.notifyListeners();
     await tester.pump();
 
-    expect(find.textContaining('left at the current rate'), findsOneWidget);
-    expect(find.textContaining('ops/s'), findsOneWidget);
-    expect(find.text('Measuring the transfer rate…'), findsNothing);
+    expect(find.textContaining('left'), findsOneWidget);
+    expect(find.textContaining('ops/s'), findsNothing);
+    expect(find.textContaining('at the current rate'), findsNothing);
+    expect(find.text('Measuring time left…'), findsNothing);
+    expect(find.textContaining('packets'), findsNothing);
   });
 
   testWidgets('the ETA waits for a cold rate before reporting', (tester) async {
@@ -118,8 +121,8 @@ void main() {
     await tester.pumpWidget(wrap(app, const TransferScreen()));
     await tester.pump();
 
-    expect(find.text('Measuring the transfer rate…'), findsOneWidget);
-    expect(find.textContaining('left at the current rate'), findsNothing);
+    expect(find.text('Measuring time left…'), findsOneWidget);
+    expect(find.textContaining(' min left'), findsNothing);
   });
 
   testWidgets('the transfer screen shows comparison progress and a stop',
@@ -142,7 +145,7 @@ void main() {
 
     expect(find.text('COMPARING'), findsOneWidget);
     expect(find.textContaining('12 exchanges'), findsOneWidget);
-    expect(find.text('Stop — nothing has been staged'), findsOneWidget);
+    expect(find.text('Stop'), findsOneWidget);
   });
 
   testWidgets('an identical image stops before staging', (tester) async {
@@ -154,8 +157,12 @@ void main() {
     await tester.pump();
 
     expect(find.text('Already up to date'), findsOneWidget);
-    expect(find.text('Back — choose another image'), findsOneWidget);
-    await tester.tap(find.text('Back — choose another image'));
+    // A terminal state shows a full bar, not a flashing indeterminate one.
+    expect(find.text('100%'), findsOneWidget);
+    expect(
+        find.text('Already up to date. Nothing was staged.'), findsOneWidget);
+    expect(find.text('Back'), findsOneWidget);
+    await tester.tap(find.text('Back'));
     await tester.pump();
   });
 
@@ -182,7 +189,7 @@ void main() {
     await tester.pumpWidget(wrap(app, const TransferScreen(resuming: true)));
     await tester.pump();
 
-    expect(find.text('Pause — keep what was already uploaded'), findsOneWidget);
+    expect(find.text('Pause'), findsOneWidget);
     expect(find.textContaining('staged image is discarded'), findsNothing);
   });
 
@@ -196,10 +203,10 @@ void main() {
     await tester.pump();
 
     expect(find.text('Update paused'), findsOneWidget);
-    expect(find.text('Continue this update'), findsOneWidget);
+    expect(find.text('Continue update'), findsOneWidget);
     expect(find.byType(ErrorBanner), findsNothing);
 
-    await tester.tap(find.text('Continue this update'));
+    await tester.tap(find.text('Continue update'));
     await tester.pump();
     await tester.pump();
     expect(find.byType(ResumeScreen), findsOneWidget);
@@ -261,9 +268,9 @@ void main() {
     await tester.pumpWidget(wrap(app, const TransferScreen()));
     await tester.pump();
 
-    expect(find.text('Back — nothing was applied'), findsOneWidget);
+    expect(find.text('Back'), findsOneWidget);
     expect(find.textContaining('Cancel'), findsNothing);
-    await tester.tap(find.text('Back — nothing was applied'));
+    await tester.tap(find.text('Back'));
     await tester.pump();
   });
 
@@ -286,8 +293,8 @@ void main() {
     await tester.pumpWidget(wrap(app, const TransferScreen()));
     await tester.pump();
 
-    expect(find.textContaining('left at the current rate'), findsOneWidget);
-    await tester.tap(find.text('Pause — keep what was already uploaded'));
+    expect(find.textContaining('left'), findsOneWidget);
+    await tester.tap(find.text('Pause'));
     await tester.pump();
     expect(app.cancelRequested, isTrue);
   });
@@ -301,7 +308,7 @@ void main() {
     app.updatePhase = UpdatePhase.readyToApply;
     await tester.pumpWidget(wrap(app, const TransferScreen()));
     await tester.pump();
-    await tester.tap(find.text('Commit update — reboot into new firmware'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Commit update'));
     await tester.pump();
   });
 

@@ -34,6 +34,16 @@ ResumePlan _plan() => ResumePlan(
       bleDeviceId: null,
     );
 
+class _RecheckApp extends AppState {
+  int checks = 0;
+
+  @override
+  Future<void> prepareResume({required String password}) async {
+    checks++;
+    resumeCheck = ResumeCheck.ready;
+  }
+}
+
 void main() {
   testWidgets('Connect shows an unfinished-update row and opens recovery',
       (tester) async {
@@ -59,6 +69,24 @@ void main() {
     expect(find.text('Unfinished update'), findsNothing);
   });
 
+  testWidgets('an unavailable resume offers a real recheck', (tester) async {
+    final app = _RecheckApp()
+      ..resumePlan = _plan()
+      ..resumeCheck = ResumeCheck.unavailable
+      ..resumeProblem = 'The repeater could not be reached.';
+    await tester.pumpWidget(wrap(app, const ResumeScreen()));
+    await tester.pump();
+
+    expect(find.text('Check again'), findsOneWidget);
+    expect(find.text('Start a different update'), findsOneWidget);
+    expect(find.text('Resume upload'), findsNothing);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Check again'));
+    await tester.pump();
+    expect(app.checks, 1);
+    expect(find.text('Resume upload'), findsOneWidget);
+  });
+
   testWidgets('a resumable update offers Resume and shows real progress',
       (tester) async {
     final app = AppState()
@@ -78,8 +106,7 @@ void main() {
     expect(find.text('XiaoS3 Repeater'), findsOneWidget);
     expect(find.textContaining('60% of'), findsOneWidget);
     expect(find.text('Resume upload'), findsOneWidget);
-    expect(find.text('Cancel resume — pick a different firmware instead'),
-        findsOneWidget);
+    expect(find.text('Start a different update'), findsOneWidget);
   });
 
   testWidgets('a finished upload offers Apply instead of Resume',
@@ -97,8 +124,8 @@ void main() {
       );
     await tester.pumpWidget(wrap(app, const ResumeScreen()));
 
-    expect(find.text('Apply the finished update'), findsOneWidget);
-    expect(find.text('Fully uploaded and checked — not applied yet'),
+    expect(find.text('Apply update'), findsOneWidget);
+    expect(find.text('Fully uploaded and checked. Not applied yet.'),
         findsOneWidget);
   });
 
@@ -119,7 +146,7 @@ void main() {
     final app = AppState()..resumePlan = _plan();
     await tester.pumpWidget(wrap(app, const ResumeScreen()));
 
-    expect(find.text('Check the saved update'), findsOneWidget);
+    expect(find.text('Check update'), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
     expect(find.textContaining('never saved'), findsOneWidget);
   });
@@ -151,7 +178,7 @@ void main() {
       ..resumeCheck = ResumeCheck.readyToApply;
     await tester.pumpWidget(wrap(app, const ResumeScreen()));
 
-    await tester.tap(find.text('Apply the finished update'));
+    await tester.tap(find.text('Apply update'));
     await tester.pump();
     await tester.pump();
 
@@ -167,8 +194,7 @@ void main() {
       ..offlineMode = true;
     await tester.pumpWidget(wrap(app, const ResumeScreen()));
 
-    await tester
-        .tap(find.text('Cancel resume — pick a different firmware instead'));
+    await tester.tap(find.text('Start a different update'));
     await tester.pump();
     await tester.pump();
 

@@ -55,8 +55,7 @@ class _TargetScreenState extends State<TargetScreen> {
           ],
         ),
         bottomNavigationBar: WizardFooter(
-          label: 'Next: sign in',
-          icon: Icons.login,
+          label: 'Sign in',
           onPressed: selected == null
               ? null
               : () => Navigator.of(context).push(

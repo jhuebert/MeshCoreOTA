@@ -86,34 +86,40 @@ class _ResumeScreenState extends State<ResumeScreen> {
     final check = app.resumeCheck;
     final busy = app.resumeBusy;
     final status = app.resumeStatus;
-    final fraction = status != null && status.size > 0
-        ? (status.offset / status.size).clamp(0.0, 1.0)
-        : 0.0;
+    final saved = plan.frames.isEmpty
+        ? 0.0
+        : ((plan.nextExpected - 1) / plan.frames.length).clamp(0.0, 1.0);
+    final fraction =
+        check == ResumeCheck.ready && status != null && status.size > 0
+            ? (status.offset / status.size).clamp(0.0, 1.0)
+            : saved;
     final needsPassword =
         check == ResumeCheck.idle || check == ResumeCheck.needsLogin;
 
     String label;
-    IconData icon;
+    String emoji;
     VoidCallback? action;
     switch (check) {
       case ResumeCheck.ready:
         label = 'Resume upload';
-        icon = Icons.play_arrow;
+        emoji = playEmoji;
         action = () => Navigator.of(context).push(
               MaterialPageRoute(
                   builder: (_) => const TransferScreen(resuming: true)),
             );
       case ResumeCheck.readyToApply:
-        label = 'Apply the finished update';
-        icon = Icons.check_circle_outline;
+        label = 'Apply update';
+        emoji = playEmoji;
         action = () => _continue(app);
       case ResumeCheck.unavailable:
-        label = 'Start a different update';
-        icon = Icons.swap_vert;
-        action = () => _differentFirmware(app);
+        // A temporary failure must not be a dead end: recheck the repeater
+        // before offering to throw the saved upload away.
+        label = 'Check again';
+        emoji = nextEmoji;
+        action = () => _check(app);
       default:
-        label = 'Check the saved update';
-        icon = Icons.search;
+        label = 'Check update';
+        emoji = nextEmoji;
         action = () => _check(app);
     }
 
@@ -121,7 +127,7 @@ class _ResumeScreenState extends State<ResumeScreen> {
       appBar: AppBar(title: const Text('Continue update')),
       bottomNavigationBar: WizardFooter(
         label: label,
-        icon: icon,
+        emoji: emoji,
         onPressed: busy ? null : action,
         busy: busy,
       ),
@@ -132,7 +138,7 @@ class _ResumeScreenState extends State<ResumeScreen> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Text(
               'An update was interrupted. If the repeater still has the part '
-              'that was already sent, only the rest is uploaded — you do not '
+              'that was already sent, only the rest is uploaded. You do not '
               'have to start over.',
               style: const TextStyle(
                   color: OtaTheme.textMuted, fontSize: 13, height: 1.5),
@@ -155,20 +161,15 @@ class _ResumeScreenState extends State<ResumeScreen> {
                           color: OtaTheme.textMuted, fontSize: 12)),
                   const SizedBox(height: 12),
                   LinearProgressIndicator(
-                    value: check == ResumeCheck.ready ||
-                            check == ResumeCheck.readyToApply
-                        ? fraction
-                        : null,
+                    value: fraction,
                     color: OtaTheme.accent,
                     backgroundColor: OtaTheme.surfaceHigh,
                   ),
                   const SizedBox(height: 6),
                   Text(
                     check == ResumeCheck.readyToApply
-                        ? 'Fully uploaded and checked — not applied yet'
-                        : check == ResumeCheck.ready && status != null
-                            ? '${(fraction * 100).round()}% of ${_mb(plan.imageSize)} uploaded'
-                            : '${_mb(plan.imageSize)} image saved on this device',
+                        ? 'Fully uploaded and checked. Not applied yet.'
+                        : '${(fraction * 100).round()}% of ${_mb(plan.imageSize)} uploaded',
                     style: const TextStyle(
                         color: OtaTheme.textMuted, fontSize: 11),
                   ),
@@ -204,31 +205,22 @@ class _ResumeScreenState extends State<ResumeScreen> {
           ],
           if (busy)
             const Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(
-                child: CircularProgressIndicator(strokeWidth: 3),
-              ),
+              padding: EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: Text('Checking the repeater…',
+                  style: TextStyle(color: OtaTheme.textMuted, fontSize: 12)),
             ),
           if (app.resumeProblem != null && !busy)
             ErrorBanner(app.resumeProblem!),
           if (_error != null) ErrorBanner(_error!),
-          if (check == ResumeCheck.ready)
+          if (check == ResumeCheck.ready ||
+              check == ResumeCheck.readyToApply ||
+              check == ResumeCheck.unavailable)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 16, 12, 0),
               child: OutlinedButton.icon(
-                onPressed: () => _differentFirmware(app),
-                icon: const Icon(Icons.cancel_outlined),
-                label: const Text(
-                    'Cancel resume — pick a different firmware instead'),
-              ),
-            ),
-          if (check == ResumeCheck.readyToApply)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 16, 12, 0),
-              child: OutlinedButton.icon(
-                onPressed: () => _differentFirmware(app),
-                icon: const Icon(Icons.cancel_outlined),
-                label: const Text('Cancel — do not apply this image'),
+                onPressed: busy ? null : () => _differentFirmware(app),
+                icon: const Text(backEmoji),
+                label: const Text('Start a different update'),
               ),
             ),
           const SizedBox(height: 14),

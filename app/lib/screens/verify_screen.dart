@@ -135,17 +135,17 @@ class _VerifyScreenState extends State<VerifyScreen> {
                       ? 'The repeater rebooted into the firmware it ran before '
                           'this update. Nothing was re-flashed.'
                       : matched
-                          ? 'The repeater came back on the new firmware — its '
+                          ? 'The repeater came back on the new firmware. Its '
                               'image matches the one that was sent. The update is '
                               'complete.'
                           : stagedNotApplied
                               ? 'The repeater is still holding the verified image '
                                   'in its spare slot. The apply command did not get '
-                                  'through — nothing needs to be sent again.'
+                                  'through. Nothing needs to be sent again.'
                               : 'The node is not running the expected image. Either it '
                                   'switched itself back to the previous firmware (the '
                                   'safe outcome), or the new image is broken. Check the '
-                                  'node — you can roll back below.',
+                                  'node. You can roll back below.',
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       color: OtaTheme.textMuted, fontSize: 12.5, height: 1.5),
@@ -159,8 +159,8 @@ class _VerifyScreenState extends State<VerifyScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: FilledButton.icon(
                 onPressed: _retryApply,
-                icon: const Icon(Icons.replay),
-                label: const Text('Try applying again'),
+                icon: const Text(playEmoji),
+                label: const Text('Try again'),
               ),
             ),
           ],
@@ -174,8 +174,8 @@ class _VerifyScreenState extends State<VerifyScreen> {
                       phase == UpdatePhase.verifying
                   ? null
                   : () => _rollback(app),
-              icon: const Icon(Icons.undo),
-              label: const Text('Roll back to previous firmware'),
+              icon: const Text(backEmoji),
+              label: const Text('Roll back'),
             ),
           ),
           const SizedBox(height: 6),
@@ -184,8 +184,8 @@ class _VerifyScreenState extends State<VerifyScreen> {
             child: FilledButton.icon(
               onPressed: () =>
                   Navigator.of(context).popUntil((route) => route.isFirst),
-              icon: const Icon(Icons.home_outlined),
-              label: const Text('Done — back to start'),
+              icon: const Text(nextEmoji),
+              label: const Text('Done'),
             ),
           ),
         ],
@@ -203,7 +203,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
           're-flashed.',
         ),
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Keep current firmware'),
           ),

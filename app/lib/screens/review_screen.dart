@@ -16,13 +16,6 @@ import 'transfer_screen.dart';
 class ReviewScreen extends StatelessWidget {
   const ReviewScreen({super.key});
 
-  String _fmtBytes(int bytes) {
-    if (bytes >= 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
-    }
-    return '${(bytes / 1024).toStringAsFixed(0)} KB';
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
@@ -70,30 +63,15 @@ class ReviewScreen extends StatelessWidget {
           const SectionHeader('This update'),
           InfoRow(label: 'Update to', value: app.selectedDisplayVersion ?? '?'),
           InfoRow(
-              label: 'Image size', value: _fmtBytes(imageBytes), mono: false),
-          InfoRow(
-              label: 'Transfer',
-              value: _transferLabel(app, imageBytes),
-              mono: false),
+              label: 'Image size', value: formatBytes(imageBytes), mono: false),
           InfoRow(label: 'Radio', value: _radioLabel(app), mono: false),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
-            child: Text(
-              'After Start the repeater compares its running image on the '
-              'channel chosen above, then only the differing bytes are sent. '
-              'If it already runs this image, the transfer stops before '
-              'staging anything.',
-              style: TextStyle(
-                  color: OtaTheme.textMuted, fontSize: 11, height: 1.4),
-            ),
-          ),
           if (plan.mode == RadioMode.liveMesh &&
               !target.hasDirectRoute &&
               app.manualRoutePath.trim().isEmpty)
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
               child: Text(
-                'No saved route to this repeater — it only hears requests by '
+                'No saved route to this repeater. It only hears requests by '
                 'flooding. Set a direct path on the radio step, or use a '
                 'private channel.',
                 style:
@@ -104,7 +82,7 @@ class ReviewScreen extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              '• The repeater pauses updates when its battery is low — charge '
+              '• The repeater pauses updates when its battery is low. Charge '
               'or power it first.\n'
               '• Keep the phone in range and the screen on for the whole '
               'transfer.',
@@ -116,7 +94,7 @@ class ReviewScreen extends StatelessWidget {
       ),
       bottomNavigationBar: WizardFooter(
         label: 'Start update',
-        icon: Icons.system_update_alt,
+        emoji: playEmoji,
         onPressed: planProblem != null
             ? null
             : () => Navigator.of(context).push(
@@ -129,16 +107,13 @@ class ReviewScreen extends StatelessWidget {
 
   String _connectionLabel(AppState app) {
     if (app.transportKind == 'tcp') {
-      return 'TCP — ${app.tcpHost}:${app.tcpPort}';
+      return 'TCP: ${app.tcpHost}:${app.tcpPort}';
     }
     if (app.transportKind == 'ble') {
       return 'Bluetooth';
     }
     return 'Companion';
   }
-
-  String _transferLabel(AppState app, int imageBytes) =>
-      'Compared on the selected channel after Start';
 
   String _radioLabel(AppState app) {
     final plan = app.radioPlan;
@@ -147,12 +122,12 @@ class ReviewScreen extends StatelessWidget {
         final live = app.livePreset;
         final base = live == null ? 'Live mesh' : 'Live mesh (${live.label})';
         final route = app.manualRoutePath.trim();
-        return route.isEmpty ? base : '$base — direct override $route';
+        return route.isEmpty ? base : '$base, direct override $route';
       case RadioMode.tempRadio:
-        return 'Temporary private channel — '
+        return 'Temporary private channel, '
             '${plan.preset?.label ?? '?'} (renews automatically)';
       case RadioMode.radio2:
-        return 'The repeater’s second preset — ${plan.preset?.label ?? '?'}';
+        return 'The repeater’s second preset, ${plan.preset?.label ?? '?'}';
     }
   }
 }

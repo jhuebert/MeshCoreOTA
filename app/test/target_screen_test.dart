@@ -27,7 +27,7 @@ void main() {
 
     // Nothing selected: the next step is locked with an explanation.
     final next = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: sign in'),
+      find.widgetWithText(FilledButton, 'Sign in'),
     );
     expect(next.onPressed, isNull);
     expect(find.textContaining('Choose a repeater'), findsOneWidget);
@@ -58,7 +58,7 @@ void main() {
 
     expect(app.target?.name, 'riley');
     final next = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: sign in'),
+      find.widgetWithText(FilledButton, 'Sign in'),
     );
     expect(next.onPressed, isNotNull);
   });
