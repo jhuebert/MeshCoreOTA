@@ -1535,15 +1535,22 @@ class AppState extends ChangeNotifier {
           link: link,
           contact: t,
           staged: true,
-          timeout: const Duration(seconds: 10));
+          // Live-mesh replies can be slow; a longer window and one extra
+          // retry avoid a false "no answer" on an otherwise good session.
+          timeout: const Duration(seconds: 15),
+          retries: 4);
       // The node caps one hash range at 32 KB and the offset/length must be
       // 4-byte aligned. A single request for a whole staged image is always
-      // rejected, so verify in chunks, up to four ranges per exchange.
+      // rejected, so verify in 32 KB chunks. Two ranges per exchange keeps the
+      // report small enough for the companion's 165-byte radio payload even
+      // when it prefixes the reply with the sender's public key; four ranges
+      // produce a report the companion cannot deliver.
+      const rangesPerQuery = 2;
       final end = (written ~/ blockHashAlign) * blockHashAlign;
       var at = 0;
       while (at < end) {
         final ranges = <BlockHashRange>[];
-        while (ranges.length < blockHashMaxRanges && at < end) {
+        while (ranges.length < rangesPerQuery && at < end) {
           final len = (end - at).clamp(0, blockHashMaxRange);
           ranges.add(BlockHashRange(at, len));
           at += len;
@@ -1566,8 +1573,11 @@ class AppState extends ChangeNotifier {
         }
       }
       return null;
-    } catch (e) {
-      return 'Could not verify the staged bytes: $e';
+    } on BlockHashException catch (_) {
+      return 'The repeater did not answer the staged-bytes check. '
+          'Tap Check again.';
+    } catch (_) {
+      return 'Could not check the staged bytes. Tap Check again.';
     }
   }
 

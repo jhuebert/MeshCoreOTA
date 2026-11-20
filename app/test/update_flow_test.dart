@@ -455,7 +455,9 @@ class _FakeCompanion {
     if (req.isEmpty || _staging == null) return null;
     stagedHashQueries++;
     final count = req[0];
-    if (count == 0 || count > 4 || req.length != 1 + 8 * count) return null;
+    // A four-range report is too large for the companion's radio payload once
+    // its tag/public-key prefix is added, so it never arrives.
+    if (count == 0 || count > 2 || req.length != 1 + 8 * count) return null;
     final out = <int>[..._le32(_written), count];
     for (var i = 0; i < count; i++) {
       final off = _le32At(req, 1 + i * 8);
