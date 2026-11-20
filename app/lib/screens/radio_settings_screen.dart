@@ -91,7 +91,7 @@ class _RadioSettingsScreenState extends State<RadioSettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const WizardBar(step: 6, label: 'Radio settings'),
+          const WizardBar(step: 5, label: 'Radio settings'),
           const SectionHeader('Where the update runs'),
           RadioGroup<RadioMode>(
             groupValue: _mode,

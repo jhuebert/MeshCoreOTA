@@ -1278,7 +1278,10 @@ void main() {
     app.selectTarget(fake.target);
     await app.probe();
     await app.selectLibraryEntryForUpdate(entry);
-    app.remoteDiff = remoteDiff(ops: computeDelta(base, image).ops);
+    // The fake node does not implement the block-hash oracle; supply the
+    // same diff the real compare would produce, computed here.
+    app.comparisonFactory =
+        (img) async => remoteDiff(ops: computeDelta(base, img).ops);
 
     await app.runUpdate(version: entry.version);
 
@@ -1312,7 +1315,10 @@ void main() {
     app.selectTarget(fake.target);
     await app.probe();
     await app.selectLibraryEntryForUpdate(entry);
-    app.remoteDiff = remoteDiff(ops: computeDelta(base, image).ops);
+    // The fake node does not implement the block-hash oracle; supply the
+    // same diff the real compare would produce, computed here.
+    app.comparisonFactory =
+        (img) async => remoteDiff(ops: computeDelta(base, img).ops);
 
     await app.runUpdate(version: entry.version);
 
@@ -1341,7 +1347,17 @@ void main() {
     app.selectTarget(fake.target);
     await app.probe();
     await app.selectLibraryEntryForUpdate(entry);
-    app.remoteDiff = remoteDiff(ops: computeDelta(base, image).ops);
+    // The fake node does not implement the block-hash oracle; supply the
+    // same diff the real compare would produce. Assert the channel was
+    // already armed when comparison starts — its queries must not use the
+    // live mesh.
+    app.comparisonFactory = (img) async {
+      expect(fake.tempradioCommands, hasLength(1));
+      expect(fake.tempradioCommands.first,
+          endsWith(',${RadioPlan.tempRadioChunkMinutes}'));
+      expect(app.updatePhase, UpdatePhase.comparing);
+      return remoteDiff(ops: computeDelta(base, img).ops);
+    };
     app.radioPlan = RadioPlan(
       mode: RadioMode.tempRadio,
       preset: RadioPlan.suggestTempRadio(app.livePreset!),

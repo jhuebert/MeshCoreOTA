@@ -21,6 +21,14 @@ class _PausedAppState extends AppState {
   }
 }
 
+class _ComparisonStoppedAppState extends AppState {
+  @override
+  Future<void> runUpdate({required String version, ResumeRun? resume}) async {
+    updatePhase = UpdatePhase.idle;
+    throw const UpdateComparisonCancelledException();
+  }
+}
+
 class _CountingAppState extends AppState {
   int runCalls = 0;
 
@@ -114,6 +122,58 @@ void main() {
     expect(find.textContaining('left at the current rate'), findsNothing);
   });
 
+  testWidgets('the transfer screen shows comparison progress and a stop',
+      (tester) async {
+    _bigView(tester);
+    final app = _CountingAppState()
+      ..updatePhase = UpdatePhase.comparing
+      ..compareProgress = const RemoteDiffProgress(
+        queries: 12,
+        rangesHashed: 12,
+        bytesReused: 2 * 1024 * 1024,
+        bytesToSend: 2048,
+        shiftProbeBatches: 0,
+      );
+    app.target = contact('riley');
+    app.log.add('[00:00:00] armed');
+
+    await tester.pumpWidget(wrap(app, const TransferScreen()));
+    await tester.pump();
+
+    expect(find.text('COMPARING'), findsOneWidget);
+    expect(find.textContaining('12 exchanges'), findsOneWidget);
+    expect(find.text('Stop — nothing has been staged'), findsOneWidget);
+  });
+
+  testWidgets('an identical image stops before staging', (tester) async {
+    _bigView(tester);
+    final app = _app();
+    app.updatePhase = UpdatePhase.upToDate;
+
+    await tester.pumpWidget(wrap(app, const TransferScreen()));
+    await tester.pump();
+
+    expect(find.text('Already up to date'), findsOneWidget);
+    expect(find.text('Back — choose another image'), findsOneWidget);
+    await tester.tap(find.text('Back — choose another image'));
+    await tester.pump();
+  });
+
+  testWidgets('a stopped comparison offers to compare again', (tester) async {
+    _bigView(tester);
+    final app = _ComparisonStoppedAppState();
+    app.target = contact('riley');
+
+    await tester.pumpWidget(wrap(app, const TransferScreen()));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Comparison stopped'), findsOneWidget);
+    expect(find.text('Compare again'), findsOneWidget);
+    await tester.tap(find.text('Compare again'));
+    await tester.pump();
+  });
+
   testWidgets('a resumed transfer offers Pause, not a discard', (tester) async {
     _bigView(tester);
     final app = _app();
@@ -202,5 +262,56 @@ void main() {
 
     expect(find.text('Back — nothing was applied'), findsOneWidget);
     expect(find.textContaining('Cancel'), findsNothing);
+    await tester.tap(find.text('Back — nothing was applied'));
+    await tester.pump();
+  });
+
+  testWidgets('a transferring update can be paused with an hour-level ETA',
+      (tester) async {
+    _bigView(tester);
+    final app = _CountingAppState()
+      ..updatePhase = UpdatePhase.transferring
+      ..progress = const TransferProgress(
+        phase: TransferPhase.sending,
+        opsApplied: 100,
+        opsTotal: 1000,
+        packetsSent: 100,
+        literalBytesSent: 100 * 173,
+        retries: 0,
+        elapsed: Duration(hours: 2),
+      );
+    app.target = contact('riley');
+
+    await tester.pumpWidget(wrap(app, const TransferScreen()));
+    await tester.pump();
+
+    expect(find.textContaining('left at the current rate'), findsOneWidget);
+    await tester.tap(find.text('Pause — keep what was already uploaded'));
+    await tester.pump();
+    expect(app.cancelRequested, isTrue);
+  });
+
+  testWidgets('commit and verification buttons navigate onward',
+      (tester) async {
+    _bigView(tester);
+    final app = _CountingAppState();
+    app.target = contact('riley');
+
+    app.updatePhase = UpdatePhase.readyToApply;
+    await tester.pumpWidget(wrap(app, const TransferScreen()));
+    await tester.pump();
+    await tester.tap(find.text('Commit update — reboot into new firmware'));
+    await tester.pump();
+  });
+
+  testWidgets('a finished transfer offers to see verification', (tester) async {
+    _bigView(tester);
+    final app = _CountingAppState()..updatePhase = UpdatePhase.done;
+    app.target = contact('riley');
+
+    await tester.pumpWidget(wrap(app, const TransferScreen()));
+    await tester.pump();
+    await tester.tap(find.text('See verification'));
+    await tester.pump();
   });
 }

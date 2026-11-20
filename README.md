@@ -52,10 +52,11 @@ the project's app key, so upgrading an existing install keeps your data.
 
 ## Getting started
 
-The app walks you through nine steps. You can go back at any point; nothing
-is changed on the repeater until the transfer starts, and nothing boots until
-you confirm. Step 5 compares the firmware with the repeater's running image —
-it only reads from the repeater, so it is another safe place to stop.
+The app walks you through eight steps. You can go back at any point; nothing
+is changed on the repeater until you press **Start update**, and nothing boots
+until you confirm at the end. The exact comparison with the repeater's running
+image happens on the Transfer screen, after you start, on the channel you chose
+there — so its traffic never uses the live mesh when you picked a private one.
 
 ### 1. Connect the companion
 
@@ -113,37 +114,7 @@ for you — there is no board picker and no per-device list to manage.
 - **Imported** shows your `.bin` files — one row per file — and is where you
   add your own build.
 
-### 5. Compare with the repeater
-
-![Compare](docs/images/05-compare.png)
-
-The repeater hashes its **own running firmware** and answers questions about
-it. First it reports its image size, segment table and whole-image hash. Then
-the app sends short fingerprints of blocks of the image you picked — up to
-twelve blocks per exchange — and the repeater replies with the offsets where
-each block occurs in its running firmware. Blocks that are already there are
-copied from those offsets; only the rest are sent. Because matches are found by
-content, a code change that shifts every later byte does not force a full
-upload. You do **not** need the old firmware on this device to get a small
-update.
-
-New bytes are compressed before they are sent, and the repeater expands them
-as they arrive — the repeater's own ROM decompressor does this, so no extra
-firmware library is needed. Only genuinely new bytes travel; unchanged bytes
-are never sent at all.
-
-The step shows how much will be reused, how much will be sent, and how many
-exchanges it took. If the repeater is already running exactly this image, the
-app says so and stops here — nothing is sent. This step is read-only: the
-repeater's firmware and radio settings are untouched until you press **Start
-update** at Review.
-
-The block size is a trade-off: smaller blocks find more reusable bytes but
-need more exchanges. The default is 1 KB, tuned to keep the number of compare
-exchanges low even on a multi-hop mesh; smaller blocks find more reusable bytes
-but need proportionally more queries.
-
-### 6. Radio settings
+### 5. Radio settings
 
 ![Radio settings](docs/images/06-radio.png)
 
@@ -170,21 +141,31 @@ second channel; you can change it. On Android the screen stays on during the
 update, and a foreground notification keeps the transfer alive if you go to
 the Home screen.
 
-### 7. Review
+### 6. Review
 
 ![Review](docs/images/07-review.png)
 
 The review screen shows everything you picked before anything goes on air:
 the companion and how it is connected, the repeater and its board, the
-firmware it runs now, the firmware you are installing, the file size, how much of it the repeater can reuse (and how much will be
-sent), a time estimate, and the channel choice. **Start update** begins the
-transfer — the new firmware does not start until you confirm at the end.
+firmware it runs now, the firmware you are installing, the file size, a time
+estimate, and the channel choice. **Start update** begins the transfer — the
+new firmware does not start until you confirm at the end.
 
-The comparison with the repeater's running firmware was done in step 5; the
-repeater itself supplies the bytes it already has. If it cannot hash its
-image, the review says the whole file will be sent.
+The exact comparison has not run yet: it starts on the Transfer screen, on the
+channel chosen above. The repeater supplies the bytes it already has.
 
-### 8. Transfer
+### 7. Transfer
+
+After you press Start, the repeater first compares its **own running firmware**
+with the image you picked. It reports its image size, segment table and
+whole-image hash; the app then sends short fingerprints of blocks of the new
+image — up to twelve per exchange — and the repeater replies with the offsets
+where each block already exists. Because matches are found by content, a code
+change that shifts every later byte does not force a full upload, and you do
+**not** need the old firmware on this device. New bytes are compressed before
+they are sent and expanded by the repeater as they arrive. If the repeater
+already runs exactly this image, the transfer stops here without staging
+anything. You can stop the comparison at any time; nothing has been sent.
 
 The app puts the new firmware into the repeater's **spare** slot, sends the
 changes as normal encrypted requests, and the repeater asks for anything it
@@ -196,7 +177,7 @@ part the repeater already received, so you can continue later from the Connect
 screen without sending it again. Nothing is applied until you explicitly
 commit.
 
-### 9. Commit and verify
+### 8. Commit and verify
 
 Once the transfer is complete, the repeater has already checked the file.
 **Commit update** switches to the new firmware and restarts the repeater.
@@ -265,8 +246,8 @@ clears that selection.
 Imported files and downloaded versions are listed separately on purpose:
 downloaded files come from releases (labelled with the board and version),
 while an imported `.bin` is just a file you supplied. Neither is used as a
-delta base: the repeater hashes its own running image in step 5, so a smaller
-update does not depend on what is stored here.
+delta base: the repeater hashes its own running image during the transfer, so
+a smaller update does not depend on what is stored here.
 
 ## Custom firmware
 
@@ -277,8 +258,8 @@ Your own builds work just like releases:
 3. Select it on the **Imported** tab (or a saved version on the **GitHub**
    tab, in either mode).
 
-The app compares the file with the repeater's running firmware in step 5 and
-sends only the parts that differ. If the repeater cannot hash its image, it
+The app compares the file with the repeater's running firmware on the transfer
+screen and sends only the parts that differ. If the repeater cannot hash its image, it
 sends the whole file.
 
 A custom file has no board name, so the app uses the board the repeater

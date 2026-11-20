@@ -21,7 +21,6 @@ import 'package:integration_test/integration_test.dart';
 import 'package:ota_core/ota_core.dart';
 
 import 'package:meshcore_ota/app_state.dart';
-import 'package:meshcore_ota/screens/compare_screen.dart';
 import 'package:meshcore_ota/screens/connect_screen.dart';
 import 'package:meshcore_ota/screens/firmware_screen.dart';
 import 'package:meshcore_ota/screens/login_screen.dart';
@@ -166,27 +165,6 @@ List<_Shot> _shots() {
       file: '04-firmware.png',
       state: _signedInApp,
       screen: (_) => const FirmwareScreen(),
-    ),
-    _Shot(
-      file: '05-compare.png',
-      state: () {
-        final app = _signedInApp();
-        app.nodeStatus = fix.nodeStatus(running: 'v1.1.0-r3');
-        return app;
-      },
-      prepare: (app) async {
-        await seedLibrary(app);
-        final entry = app.libraryEntries.firstWhere((e) => e.env == _board);
-        await app.selectLibraryEntryForUpdate(entry);
-        app.remoteDiff = fix.remoteDiff(
-          literalBytes: 59392,
-          copyBytes: 1390432,
-          queries: 37,
-          shiftProbeBatches: 2,
-          runningSize: 1449824,
-        );
-      },
-      screen: (_) => const CompareScreen(),
     ),
     _Shot(
       file: '06-radio.png',

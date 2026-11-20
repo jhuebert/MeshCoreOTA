@@ -31,6 +31,7 @@ class _TransferScreenState extends State<TransferScreen> {
   bool _started = false;
   String? _error;
   bool _paused = false;
+  bool _stopped = false;
   int? _lastNotifiedOps;
   late final AppState _app;
 
@@ -87,6 +88,8 @@ class _TransferScreenState extends State<TransferScreen> {
       } else {
         await app.runUpdate(version: app.selectedVersion ?? 'unknown');
       }
+    } on UpdateComparisonCancelledException catch (_) {
+      if (mounted) setState(() => _stopped = true);
     } on UpdatePausedException catch (_) {
       if (mounted) setState(() => _paused = true);
     } catch (e) {
@@ -97,6 +100,18 @@ class _TransferScreenState extends State<TransferScreen> {
       await TransferForegroundService.setScreenOn(false);
       await TransferForegroundService.stop();
     }
+  }
+
+  /// Re-run the whole preparation after a stopped or failed comparison.
+  /// runUpdate restored the radios on the way out, so this arms afresh.
+  Future<void> _retry() async {
+    if (!mounted) return;
+    setState(() {
+      _started = false;
+      _stopped = false;
+      _error = null;
+    });
+    await _start();
   }
 
   @override
@@ -118,7 +133,7 @@ class _TransferScreenState extends State<TransferScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const WizardBar(step: 8, label: 'Transfer'),
+          const WizardBar(step: 7, label: 'Transfer'),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Text(
@@ -161,16 +176,57 @@ class _TransferScreenState extends State<TransferScreen> {
               ],
             ),
           ),
+          if (phase == UpdatePhase.comparing ||
+              (app.compareProgress != null && app.remoteDiff == null)) ...[
+            const SectionHeader('Comparing'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const LinearProgressIndicator(minHeight: 3),
+                      const SizedBox(height: 10),
+                      Text(
+                        app.compareProgress == null
+                            ? 'Asking the repeater about its running image on '
+                                'the channel you chose…'
+                            : '${app.compareProgress!.queries} exchanges · '
+                                '${_fmtBytes(app.compareProgress!.bytesReused)} '
+                                'reused so far',
+                        style: const TextStyle(
+                            color: OtaTheme.textMuted,
+                            fontSize: 12,
+                            height: 1.4),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SectionHeader('Steps'),
           _stepRow(
-            label: 'Stage image',
-            state: phase.index >= UpdatePhase.staging.index
+            label: 'Compare with repeater',
+            state: _stepDone(UpdatePhase.comparing, phase)
                 ? _StepState.ok
-                : _StepState.pending,
+                : phase == UpdatePhase.comparing
+                    ? _StepState.active
+                    : _StepState.pending,
+          ),
+          _stepRow(
+            label: 'Stage image',
+            state: _stepDone(UpdatePhase.staging, phase)
+                ? _StepState.ok
+                : phase == UpdatePhase.staging
+                    ? _StepState.active
+                    : _StepState.pending,
           ),
           _stepRow(
             label: 'Transfer',
-            state: phase.index >= UpdatePhase.readyToApply.index
+            state: _stepDone(UpdatePhase.readyToApply, phase)
                 ? _StepState.ok
                 : phase == UpdatePhase.transferring
                     ? _StepState.active
@@ -178,7 +234,7 @@ class _TransferScreenState extends State<TransferScreen> {
           ),
           _stepRow(
             label: 'Verify the image',
-            state: phase.index >= UpdatePhase.readyToApply.index
+            state: _stepDone(UpdatePhase.readyToApply, phase)
                 ? _StepState.ok
                 : phase == UpdatePhase.transferring
                     ? _StepState.active
@@ -186,13 +242,59 @@ class _TransferScreenState extends State<TransferScreen> {
           ),
           _stepRow(
             label: 'Commit update',
-            state: phase.index >= UpdatePhase.verifying.index
+            state: _stepDone(UpdatePhase.verifying, phase)
                 ? _StepState.ok
                 : phase == UpdatePhase.applying ||
                         phase == UpdatePhase.readyToApply
                     ? _StepState.active
                     : _StepState.pending,
           ),
+          if (_stopped) ...[
+            Card(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: const [
+                    Text('Comparison stopped',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w700)),
+                    SizedBox(height: 8),
+                    Text(
+                      'Nothing was staged, and the radios were put back. '
+                      'You can compare again from here.',
+                      style: TextStyle(
+                          color: OtaTheme.textMuted, fontSize: 12, height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          if (phase == UpdatePhase.upToDate) ...[
+            Card(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: const [
+                    Text('Already up to date',
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w700)),
+                    SizedBox(height: 8),
+                    Text(
+                      'This repeater already runs exactly this image. Nothing '
+                      'was staged or changed.',
+                      style: TextStyle(
+                          color: OtaTheme.textMuted, fontSize: 12, height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           if (_paused) ...[
             Card(
               margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -284,7 +386,26 @@ class _TransferScreenState extends State<TransferScreen> {
         label: const Text('Continue this update'),
       );
     }
+    if (_stopped || app.compareError != null) {
+      return FilledButton.icon(
+        onPressed: _retry,
+        icon: const Icon(Icons.replay),
+        label: const Text('Compare again'),
+      );
+    }
     switch (phase) {
+      case UpdatePhase.comparing:
+        return OutlinedButton.icon(
+          onPressed: app.stopComparison,
+          icon: const Icon(Icons.close),
+          label: const Text('Stop — nothing has been staged'),
+        );
+      case UpdatePhase.upToDate:
+        return FilledButton.icon(
+          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.arrow_back),
+          label: const Text('Back — choose another image'),
+        );
       case UpdatePhase.transferring:
       case UpdatePhase.staging:
       case UpdatePhase.probing:
@@ -337,6 +458,18 @@ class _TransferScreenState extends State<TransferScreen> {
       ),
     );
   }
+
+  /// A step is done once the flow has moved past it. `failed` and `upToDate`
+  /// sit after the normal steps in the enum but must not mark them all done.
+  static bool _stepDone(UpdatePhase marker, UpdatePhase phase) {
+    if (phase == UpdatePhase.upToDate) return marker == UpdatePhase.comparing;
+    if (phase == UpdatePhase.failed || phase == UpdatePhase.idle) return false;
+    return phase.index >= marker.index;
+  }
+
+  static String _fmtBytes(int value) => value >= 1024 * 1024
+      ? '${(value / (1024 * 1024)).toStringAsFixed(2)} MB'
+      : '${(value / 1024).toStringAsFixed(0)} KB';
 }
 
 enum _StepState { pending, active, ok }

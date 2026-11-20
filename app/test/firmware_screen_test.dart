@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ota_core/ota_core.dart';
 
 import 'package:meshcore_ota/app_state.dart';
-import 'package:meshcore_ota/screens/compare_screen.dart';
 import 'package:meshcore_ota/screens/firmware_screen.dart';
 import 'package:meshcore_ota/screens/radio_settings_screen.dart';
 
@@ -65,7 +64,7 @@ void main() {
     await tester.pumpWidget(wrap(app, const FirmwareScreen()));
     await tester.pump();
 
-    final wizard = find.text('Step 4 of 9');
+    final wizard = find.text('Step 4 of 8');
     expect(wizard, findsOneWidget);
     expect(find.ancestor(of: wizard, matching: find.byType(AppBar)),
         findsOneWidget);
@@ -75,7 +74,7 @@ void main() {
     // The standalone library manager has no wizard chrome.
     await tester.pumpWidget(wrap(app, const FirmwareScreen(updateMode: false)));
     await tester.pump();
-    expect(find.text('Step 4 of 9'), findsNothing);
+    expect(find.text('Step 4 of 8'), findsNothing);
   });
 
   testWidgets('tapping a version selects the image for the node board',
@@ -96,7 +95,7 @@ void main() {
 
     expect(app.selectedAsset?.env, _board);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: compare'),
+      find.widgetWithText(FilledButton, 'Next: radio settings'),
     );
     expect(review.onPressed, isNotNull);
   });
@@ -132,7 +131,7 @@ void main() {
 
     expect(app.selectedAsset?.env, 'RAK_4631_repeater');
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: compare'),
+      find.widgetWithText(FilledButton, 'Next: radio settings'),
     );
     expect(review.onPressed, isNotNull);
   });
@@ -169,7 +168,7 @@ void main() {
 
     expect(app.selectedLibraryEntry?.env, _board);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: compare'),
+      find.widgetWithText(FilledButton, 'Next: radio settings'),
     );
     expect(review.onPressed, isNotNull);
   });
@@ -204,7 +203,7 @@ void main() {
     expect(app.needsBoardForImage, isTrue);
     expect(find.text('Choose board'), findsOneWidget);
     var next = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: compare'),
+      find.widgetWithText(FilledButton, 'Next: radio settings'),
     );
     expect(next.onPressed, isNull);
 
@@ -213,7 +212,7 @@ void main() {
     await tester.tap(find.text(_board));
     await tester.pumpAndSettle();
     next = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: compare'),
+      find.widgetWithText(FilledButton, 'Next: radio settings'),
     );
     expect(next.onPressed, isNotNull);
   });
@@ -271,7 +270,7 @@ void main() {
     expect(app.needsBoardForImage, isTrue);
     expect(find.textContaining('Choose the board this image'), findsOneWidget);
     final blocked = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: compare'),
+      find.widgetWithText(FilledButton, 'Next: radio settings'),
     );
     expect(blocked.onPressed, isNull);
 
@@ -284,7 +283,7 @@ void main() {
     expect(app.selectedEnvironment, _board);
     expect(app.needsBoardForImage, isFalse);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: compare'),
+      find.widgetWithText(FilledButton, 'Next: radio settings'),
     );
     expect(review.onPressed, isNotNull);
   });
@@ -328,11 +327,10 @@ void main() {
     await tester.tap(find.text('filter-v1.1.0-rc5'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Next: compare'));
+    await tester.tap(find.text('Next: radio settings'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(CompareScreen), findsOneWidget);
-    expect(find.byType(RadioSettingsScreen), findsNothing);
+    expect(find.byType(RadioSettingsScreen), findsOneWidget);
   });
 
   testWidgets('stable and dev are separate, newest-first tabs', (tester) async {
@@ -428,7 +426,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(app.selectedLibraryEntry?.env, _board);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: compare'),
+      find.widgetWithText(FilledButton, 'Next: radio settings'),
     );
     expect(review.onPressed, isNotNull);
   });
@@ -451,7 +449,7 @@ void main() {
 
     expect(app.selectedImage, isNotNull);
     final review = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Next: compare'),
+      find.widgetWithText(FilledButton, 'Next: radio settings'),
     );
     expect(review.onPressed, isNotNull);
   });

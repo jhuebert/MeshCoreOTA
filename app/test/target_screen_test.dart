@@ -39,7 +39,7 @@ void main() {
     await tester.pumpWidget(wrap(app, const TargetScreen()));
     await tester.pump();
 
-    final wizard = find.text('Step 2 of 9');
+    final wizard = find.text('Step 2 of 8');
     expect(wizard, findsOneWidget);
     expect(find.ancestor(of: wizard, matching: find.byType(AppBar)),
         findsOneWidget);

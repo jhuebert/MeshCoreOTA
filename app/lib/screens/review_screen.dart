@@ -8,11 +8,11 @@ import '../widgets/common.dart';
 import '../widgets/wizard.dart';
 import 'transfer_screen.dart';
 
-/// Step 7: a summary of everything chosen, before anything goes on air. The
-/// comparison with the node's running image and the radio plan are both done
-/// on earlier steps; this screen only confirms what will happen. Start boots
-/// nothing — the transfer screen stages into the spare slot and the node only
-/// applies anything on the final commit.
+/// Step 6: a summary of everything chosen, before anything goes on air. The
+/// radio plan is chosen on the previous step; the exact comparison runs on the
+/// transfer screen, after Start, on that same channel. Start boots nothing —
+/// the transfer screen stages into the spare slot and the node only applies
+/// anything on the final commit.
 class ReviewScreen extends StatelessWidget {
   const ReviewScreen({super.key});
 
@@ -38,14 +38,13 @@ class ReviewScreen extends StatelessWidget {
     final imageBytes = app.selectedImage?.length ?? 0;
     final plan = app.radioPlan;
     final planProblem = app.radioPlanProblem;
-    final imageIsRunning = app.selectedImageIsRunning;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Review update')),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const WizardBar(step: 7, label: 'Review'),
+          const WizardBar(step: 6, label: 'Review'),
           const SectionHeader('Companion'),
           InfoRow(
             label: 'Companion',
@@ -94,28 +93,17 @@ class ReviewScreen extends StatelessWidget {
             },
           ),
           InfoRow(label: 'Radio', value: _radioLabel(app), mono: false),
-          if (imageIsRunning)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
-              child: Text(
-                'This node is already running this image — there is nothing '
-                'to send. Go back and pick a different one.',
-                style:
-                    TextStyle(color: OtaTheme.warn, fontSize: 12, height: 1.45),
-              ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 6, 16, 0),
+            child: Text(
+              'After Start the repeater compares its running image on the '
+              'channel chosen above, then only the differing bytes are sent. '
+              'If it already runs this image, the transfer stops before '
+              'staging anything.',
+              style: TextStyle(
+                  color: OtaTheme.textMuted, fontSize: 11, height: 1.4),
             ),
-          if (app.remoteDiff != null && !imageIsRunning)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-              child: Text(
-                'Matched against the running image on the repeater: '
-                '${_fmtBytes(app.remoteDiff!.copyBytes)} reused, '
-                '${app.remoteDiff!.queries} comparisons'
-                '${app.remoteDiff!.shiftProbeBatches > 0 ? ', including shifted matches' : ''}.',
-                style: const TextStyle(
-                    color: OtaTheme.textMuted, fontSize: 11, height: 1.4),
-              ),
-            ),
+          ),
           if (plan.mode == RadioMode.liveMesh &&
               !target.hasDirectRoute &&
               app.manualRoutePath.trim().isEmpty)
@@ -144,12 +132,9 @@ class ReviewScreen extends StatelessWidget {
         ],
       ),
       bottomNavigationBar: WizardFooter(
-        label: imageIsRunning ? 'Already up to date' : 'Start update',
+        label: 'Start update',
         icon: Icons.system_update_alt,
-        onPressed: planProblem != null ||
-                imageIsRunning ||
-                app.remoteDiff == null ||
-                app.comparing
+        onPressed: planProblem != null
             ? null
             : () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const TransferScreen()),
@@ -169,15 +154,8 @@ class ReviewScreen extends StatelessWidget {
     return 'Companion';
   }
 
-  String _transferLabel(AppState app, int imageBytes) {
-    final diff = app.remoteDiff;
-    if (diff == null) return 'Comparing with the repeater…';
-    final pct = imageBytes > 0
-        ? (diff.literalBytes * 100 / imageBytes).toStringAsFixed(0)
-        : '0';
-    return '${diff.upToDate ? 'Nothing to send' : 'Changes only'} — '
-        'send ${_fmtBytes(diff.literalBytes)} ($pct% of the image)';
-  }
+  String _transferLabel(AppState app, int imageBytes) =>
+      'Compared on the selected channel after Start';
 
   String _radioLabel(AppState app) {
     final plan = app.radioPlan;

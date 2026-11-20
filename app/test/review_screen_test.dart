@@ -108,9 +108,9 @@ void reviewSummaryTests() {
     expect(find.text(_board), findsOneWidget); // the node's board
     expect(find.text('v1.1.0-r3'), findsOneWidget); // current firmware
     expect(find.text('v1.1.0-rc5-cd72e1a2'), findsOneWidget); // update to
-    expect(find.text('Step 7 of 9'), findsOneWidget);
-    // The step-5 comparison supplies the byte count shown here.
-    expect(find.textContaining('Changes only — send'), findsOneWidget);
+    expect(find.text('Step 6 of 8'), findsOneWidget);
+    expect(find.textContaining('After Start the repeater compares'),
+        findsOneWidget);
     // No navigation buttons and no base picker on this screen.
     expect(find.text('Choose base'), findsNothing);
     expect(find.text('Change image'), findsNothing);
@@ -118,20 +118,19 @@ void reviewSummaryTests() {
     expect(find.text('SHA-256'), findsNothing);
   });
 
-  testWidgets('a completed comparison lists what will be sent', (tester) async {
+  testWidgets('the comparison is described as a post-Start step',
+      (tester) async {
     _bigView(tester);
     final app = _app();
     app.nodeStatus = nodeStatus(running: 'v1.1.0-r3');
-    app.remoteDiff = remoteDiff(literalBytes: 4096, copyBytes: 8);
 
     await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
 
-    expect(find.textContaining('Changes only — send'), findsOneWidget);
-    expect(find.textContaining('of the image'), findsOneWidget);
-    expect(find.textContaining('Matched against the running image'),
+    expect(find.textContaining('After Start the repeater compares'),
         findsOneWidget);
-    expect(find.text('Step 7 of 9'), findsOneWidget);
+    expect(find.textContaining('on the channel chosen above'), findsOneWidget);
+    expect(find.text('Step 6 of 8'), findsOneWidget);
   });
 
   testWidgets('a private radio plan is summarized, path override is not',
@@ -198,59 +197,15 @@ void reviewSummaryTests() {
     expect(start.onPressed, isNull);
   });
 
-  testWidgets('a same-image selection says the node is already up to date',
-      (tester) async {
+  testWidgets('a prior comparison does not gate Start', (tester) async {
     _bigView(tester);
     final app = _app();
-    final lib = FakeLibrary();
-    app.library = lib;
-    final entry = lib.addImage(
-      Uint8List.fromList(List.filled(8, 9)),
-      env: _board,
-      version: 'v1.1.0-rc5-cd72e1a2',
-    );
-    app.libraryEntries = await lib.list();
-    // The base matched to the node's running image IS this entry — this
-    // image is what the node already runs.
-    app.selectedLibraryEntry = entry;
-    app.selectedAsset = null;
-    app.remoteDiff =
-        remoteDiff(upToDate: true, literalBytes: 0, copyBytes: 1449808);
-
-    await tester.pumpWidget(wrap(app, const ReviewScreen()));
-    await tester.pump();
-
-    expect(find.textContaining('already running this image'), findsOneWidget);
-    final start = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Already up to date'),
-    );
-    expect(start.onPressed, isNull);
-  });
-
-  testWidgets('a missing comparison keeps Start disabled', (tester) async {
-    _bigView(tester);
-    final app = _app();
+    // No comparison has run yet — that now happens on the transfer screen.
     app.remoteDiff = null;
 
     await tester.pumpWidget(wrap(app, const ReviewScreen()));
     await tester.pump();
 
-    expect(find.textContaining('Comparing with the repeater'), findsOneWidget);
-    final start = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Start update'),
-    );
-    expect(start.onPressed, isNull);
-  });
-
-  testWidgets('a nonzero delta keeps Start update enabled', (tester) async {
-    _bigView(tester);
-    final app = _app();
-    app.remoteDiff = remoteDiff(literalBytes: 8, copyBytes: 100);
-
-    await tester.pumpWidget(wrap(app, const ReviewScreen()));
-    await tester.pump();
-
-    expect(find.textContaining('already running this image'), findsNothing);
     final start = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Start update'),
     );
@@ -341,19 +296,6 @@ void reviewSummaryTests() {
     // settle with bounded pumps instead of pumpAndSettle.
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('Step 8 of 9'), findsOneWidget);
-  });
-
-  testWidgets('shifted matches are called out in the comparison summary',
-      (tester) async {
-    _bigView(tester);
-    final app = _app();
-    app.nodeStatus = nodeStatus(running: 'v1.1.0-r3');
-    app.remoteDiff = remoteDiff(shiftProbeBatches: 3);
-
-    await tester.pumpWidget(wrap(app, const ReviewScreen()));
-    await tester.pump();
-
-    expect(find.textContaining('including shifted matches'), findsOneWidget);
+    expect(find.text('Step 7 of 8'), findsOneWidget);
   });
 }

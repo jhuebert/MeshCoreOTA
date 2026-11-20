@@ -38,6 +38,14 @@ All notable changes to MeshCoreOTA are documented here. The format follows
 
 ### Changed
 
+- **The firmware comparison now runs on the channel you chose.** It is no
+  longer a standalone step before Radio: after **Start update**, the Transfer
+  screen arms the selected radio plan first and then compares the repeater's
+  running image on that channel, so its many exchanges never go over the live
+  mesh when a private channel or radio2 was chosen. The wizard is now eight
+  steps; Review shows the plan and the radio choice instead of reuse numbers
+  that do not exist yet. An identical image stops on Transfer before staging,
+  and stopping a comparison restores the radios.
 - **A lost `ota apply` is no longer reported as a bad image.** The app reads
   `ota status` after an unacknowledged apply: a still-verified staged slot
   means the command did not get through, so it retries the apply (up to three

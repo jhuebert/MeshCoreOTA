@@ -121,6 +121,11 @@ Future<RemoteDiffResult> computeRemoteDiff({
   int searchWindow = 32768,
   void Function(RemoteDiffProgress)? onProgress,
   bool Function()? shouldCancel,
+  // Awaited every [boundaryEvery] queries. Unlike onProgress, a caller can
+  // use this for ordered work such as renewing a temporary radio window
+  // while a long comparison is running.
+  Future<void> Function()? onBoundary,
+  int boundaryEvery = 20,
 }) async {
   assert(
       blockSize >= 4 && blockSize % 4 == 0 && blockSize <= blockHashMaxRange);
@@ -136,8 +141,17 @@ Future<RemoteDiffResult> computeRemoteDiff({
         shiftProbeBatches: 0,
       ));
 
+  var sinceBoundary = 0;
+  Future<void> boundary() async {
+    if (onBoundary == null) return;
+    if (++sinceBoundary < boundaryEvery) return;
+    sinceBoundary = 0;
+    await onBoundary();
+  }
+
   final node = await client.metadata();
   queries++;
+  await boundary();
   if (cancel()) throw const RemoteDiffException('cancelled');
   if (node.canHash &&
       node.size == image.length &&
@@ -218,6 +232,7 @@ Future<RemoteDiffResult> computeRemoteDiff({
           end: (end ~/ 4) * 4,
           fingerprints: [fingerprint]);
       queries++;
+      await boundary();
       emit(offset, length, hits.isEmpty ? const [] : hits.first);
       if (length < remaining) {
         ops.add(LiteralOp(
@@ -249,6 +264,7 @@ Future<RemoteDiffResult> computeRemoteDiff({
         end: (end ~/ 4) * 4,
         fingerprints: fingerprints);
     queries++;
+    await boundary();
     for (var i = 0; i < fingerprints.length; i++) {
       emit(offsets[i], blockSize, i < hitLists.length ? hitLists[i] : const []);
     }

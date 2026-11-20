@@ -160,8 +160,8 @@ spec.
 
 ## App UX contract
 
-The app is a nine-step wizard: Connect → Repeater → Sign in → Firmware →
-Compare → Radio → Review → Transfer → Verify. Every screen carries `WizardBar`
+The app is an eight-step wizard: Connect → Repeater → Sign in → Firmware →
+Radio → Review → Transfer → Verify. Every screen carries `WizardBar`
 (step + label); the next action lives in a `WizardFooter` or an equivalent
 bottom bar. Keep the flow linear — an action that belongs on the next
 screen does not belong below the fold on the current one. One screen, one
@@ -199,9 +199,6 @@ accounted for (e.g. `radio2`, `tempradio` on the node CLI itself).
   (`FirmwareScreen(updateMode: false)`): tapping a version downloads the
   whole version instead of selecting an update. The offline switch is
   persisted and must prevent every GitHub request (catalog included).
-- **Compare**: read-only step that queries the repeater's running-image
-   hashes, shows bytes reused / to send / exchanges, and offers a safe stop
-   before anything is staged. There is deliberately no base picker.
 - **Radio**: three radio plans (live mesh with the path override, a temporary
   private preset on the repeater, or the repeater's radio2). Off-mesh modes
   are implicit zero-hop. The radio screen shows both current radio settings,
@@ -211,12 +208,14 @@ accounted for (e.g. `radio2`, `tempradio` on the node CLI itself).
   Tempradio warns that an enabled radio2 is paused for the transfer.
 - **Review**: a summary of everything selected before the update — companion
   and how it is connected, repeater name and board, current firmware, the
-  firmware to install, image size, how much the repeater can reuse and how
-  much will be sent, an estimated time, and the radio choice. The comparison
-  comes from step 5; Start is disabled until it completes. An identical image
-  stops the wizard there. Show the plan's validation before Start, and never
-  start with an invalid one.
-- **Transfer/Verify**: no screen may claim success until the node answers
+  firmware to install, image size, an estimated time, and the radio choice.
+  The exact comparison has not run yet; it starts on Transfer after Start.
+  Show the plan's validation before Start, and never start with an invalid one.
+- **Transfer/Verify**: the first phase on Transfer is the comparison: it is
+  armed **after** the chosen radio plan, so its many REQ/RESPONSE queries never
+  go over the live mesh when an off-mesh channel was selected. Show progress,
+  allow a stop that restores the radios, and stop before staging on an
+  identical image. No screen may claim success until the node answers
   with the newly sent image's hash. A lost reply from `ota apply`/`rollback`
   is an unknown outcome, decided by re-login and the reported image hash.
   The transfer screen shows a rate-based

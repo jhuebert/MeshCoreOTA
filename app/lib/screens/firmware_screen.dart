@@ -11,7 +11,7 @@ import '../services/github_source.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/wizard.dart';
-import 'compare_screen.dart';
+import 'radio_settings_screen.dart';
 
 /// Step 4: pick what to install — or the standalone library manager.
 ///
@@ -898,7 +898,7 @@ class _FirmwareScreenState extends State<FirmwareScreen>
               onPressed: ready
                   ? () => Navigator.of(context).push(
                         MaterialPageRoute(
-                            builder: (_) => const CompareScreen()),
+                            builder: (_) => const RadioSettingsScreen()),
                       )
                   : null,
               icon: app.imageLoading
@@ -911,7 +911,8 @@ class _FirmwareScreenState extends State<FirmwareScreen>
                       ),
                     )
                   : const Icon(Icons.arrow_forward),
-              label: Text(app.imageLoading ? 'Downloading…' : 'Next: compare'),
+              label: Text(
+                  app.imageLoading ? 'Downloading…' : 'Next: radio settings'),
             ),
           ],
         ),

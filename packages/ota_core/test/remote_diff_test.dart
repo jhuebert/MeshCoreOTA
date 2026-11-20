@@ -116,6 +116,29 @@ class Oracle {
 }
 
 void main() {
+  test('the boundary callback is awaited between queries', () async {
+    final running = _image(8192, 1);
+    final image = Uint8List.fromList(running);
+    image[100] ^= 0xFF;
+    final oracle = Oracle(running);
+    var boundaries = 0;
+    final result = await computeRemoteDiff(
+      client: BlockHashClient(
+          link: oracle.link,
+          contact: testContact,
+          timeout: const Duration(seconds: 2)),
+      image: image,
+      blockSize: 256,
+      onBoundary: () async {
+        boundaries++;
+        await Future<void>.delayed(Duration.zero);
+      },
+      boundaryEvery: 2,
+    );
+    expect(result.queries, greaterThan(2));
+    expect(boundaries, result.queries ~/ 2);
+  });
+
   test('an identical image is detected with one query and no ops', () async {
     final image = _image(2048, 1);
     final oracle = Oracle(image);

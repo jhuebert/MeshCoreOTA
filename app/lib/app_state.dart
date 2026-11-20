@@ -40,6 +40,14 @@ class UpdatePausedException implements Exception {
   String toString() => 'Update paused';
 }
 
+/// The operator stopped the comparison before anything was staged.
+class UpdateComparisonCancelledException implements Exception {
+  const UpdateComparisonCancelledException();
+
+  @override
+  String toString() => 'Comparison stopped';
+}
+
 class ResumeRun {
   const ResumeRun(this.plan, this.nextExpected);
 
@@ -50,6 +58,8 @@ class ResumeRun {
 enum UpdatePhase {
   idle,
   probing,
+  comparing,
+  upToDate,
   staging,
   transferring,
   readyToApply,
@@ -85,6 +95,9 @@ class AppState extends ChangeNotifier {
 
   /// Test seam for the companion client; production builds a real one.
   CompanionClient Function(RadioLink link)? clientFactory;
+
+  /// Test seam for the node-side comparison; production hashes the repeater.
+  Future<RemoteDiffResult> Function(Uint8List image)? comparisonFactory;
 
   /// Test seam for the recovery probe; production builds a real controller.
   ResumeController Function(ResumePlan plan)? resumeControllerFactory;
@@ -173,12 +186,20 @@ class AppState extends ChangeNotifier {
   bool imageLoading = false;
   String? imageError;
 
-  /// The diff computed by hashing the node's running image (step 5). No local
-  /// copy of the old firmware is needed: the node is the oracle for its bytes.
+  /// The diff computed by hashing the node's running image. No local copy of
+  /// the old firmware is needed: the node is the oracle for its bytes.
   RemoteDiffResult? remoteDiff;
   RemoteDiffProgress? compareProgress;
   bool comparing = false;
   String? compareError;
+
+  /// Set by the Transfer screen's Stop button while a comparison is running.
+  /// Deliberately separate from `cancelRequested`, which belongs to the
+  /// transfer and is reset when it starts.
+  bool _compareCancelled = false;
+
+  /// Stop an in-flight comparison without staging anything.
+  void stopComparison() => _compareCancelled = true;
 
   /// The connected node must implement OP_BLOCK_HASH for a remote diff. The
   /// app does not carry a legacy local-delta path.
@@ -916,50 +937,67 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Step 5's work: ask the node to hash ranges of its running image and
-  /// derive the op stream from the answers. Read-only — nothing is staged and
-  /// the radio is untouched until the operator starts the update.
-  Future<void> planComparison() async {
-    final t = target;
+  /// Ask the node to hash ranges of its running image and derive the op
+  /// stream. Called from [runUpdate] *after* the radio plan is armed, so the
+  /// comparison's REQ/RESPONSE traffic uses the channel the operator chose.
+  /// Nothing is staged here; a stop leaves the radios to be restored by
+  /// runUpdate's finally block.
+  Future<RemoteDiffResult> _compareWhileArmed(
+      Contact t, Uint8List image) async {
     final link = _link;
-    final image = _selectedImage;
-    if (t == null || link == null || image == null) return;
-    if (!blockHashSupported) {
-      compareError = 'This repeater does not support comparing its running '
-          'image. Update its firmware over USB first.';
+    if (link == null) throw StateError('no link for the comparison');
+    final factory = comparisonFactory;
+    if (factory != null) {
+      clearComparison();
+      comparing = true;
       notifyListeners();
-      return;
+      try {
+        final result = await factory(image);
+        remoteDiff = result;
+        return result;
+      } finally {
+        comparing = false;
+        _compareCancelled = false;
+        notifyListeners();
+      }
     }
+    if (!blockHashSupported) {
+      throw UpdateFlowException(
+          'This repeater does not support comparing its running image. '
+          'Update its firmware over USB first.');
+    }
+    clearComparison();
     comparing = true;
-    compareError = null;
-    compareProgress = null;
-    remoteDiff = null;
     notifyListeners();
     final client = BlockHashClient(
         link: link, contact: t, timeout: const Duration(seconds: 10));
     try {
-      remoteDiff = await computeRemoteDiff(
+      final result = await computeRemoteDiff(
         client: client,
         image: image,
         onProgress: (p) {
           compareProgress = p;
           notifyListeners();
         },
-        shouldCancel: () => cancelRequested,
+        shouldCancel: () => _compareCancelled,
+        onBoundary: () => _renewTempRadioIfNeeded(t),
       );
+      remoteDiff = result;
+      return result;
+    } on RemoteDiffException catch (e) {
+      if (_compareCancelled) {
+        throw const UpdateComparisonCancelledException();
+      }
+      compareError = e.message;
+      throw UpdateFlowException('compare failed: ${e.message}');
     } catch (e) {
       compareError = '$e';
-      remoteDiff = null;
+      throw UpdateFlowException('compare failed: $e');
     } finally {
       comparing = false;
+      _compareCancelled = false;
       notifyListeners();
     }
-  }
-
-  /// Re-run step 5 (e.g. after a failed comparison or a changed image).
-  Future<void> retryComparison() async {
-    cancelRequested = false;
-    await planComparison();
   }
 
   /// Environment of the current selection (asset env or library env, with a
@@ -1164,15 +1202,6 @@ class AppState extends ChangeNotifier {
     if (planProblem != null) {
       throw UpdateFlowException('radio settings: $planProblem');
     }
-    final diff = remoteDiff;
-    if (resume == null) {
-      if (diff == null) {
-        throw UpdateFlowException('compare the firmware with the node first');
-      }
-      if (diff.upToDate) {
-        throw UpdateFlowException('this node already runs that image');
-      }
-    }
     // The node's own target id is the authority when the handshake answered;
     // a custom build has no catalog environment to derive one from. A resumed
     // session carries the id it was armed with.
@@ -1188,13 +1217,15 @@ class AppState extends ChangeNotifier {
     // staging session behind. Off-mesh modes are zero-hop by definition.
     final route = radioPlan.requiresZeroHop ? OtaRoute.zeroHop() : _routeFor(t);
     updatePhase =
-        resume == null ? UpdatePhase.staging : UpdatePhase.transferring;
+        resume == null ? UpdatePhase.comparing : UpdatePhase.transferring;
     log_(resume == null
-        ? 'arming: ${image.length} bytes, version $version'
+        ? 'preparing ${image.length} bytes on the selected channel, version $version'
         : 'resuming update at op ${resume.nextExpected}/${resume.plan.frames.length}');
     notifyListeners();
 
+    RemoteDiffResult? diff;
     _radioMoved = false;
+    _compareCancelled = false;
     tempRadioRenewal.clear();
     try {
       if (radioPlan.requiresZeroHop) {
@@ -1202,6 +1233,20 @@ class AppState extends ChangeNotifier {
         if (radioPlan.mode == RadioMode.tempRadio) {
           tempRadioRenewal.arm();
         }
+      }
+      // Compare *after* arming: the many hash queries then travel on the
+      // channel the operator chose, not on the live mesh. A stop or a failed
+      // comparison is unwound by this method's finally block.
+      if (resume == null) {
+        diff = await _compareWhileArmed(t, image);
+        if (diff.upToDate) {
+          updatePhase = UpdatePhase.upToDate;
+          log_('this node already runs exactly this image');
+          notifyListeners();
+          return;
+        }
+        updatePhase = UpdatePhase.staging;
+        notifyListeners();
       }
       // Prove the REQ/RESPONSE route is live on the chosen path before arming:
       // a dead path would otherwise leave an armed session nobody can feed.
@@ -1362,6 +1407,12 @@ class AppState extends ChangeNotifier {
       updatePhase = UpdatePhase.readyToApply;
       log_('staged and verified — ready to apply');
       notifyListeners();
+    } on UpdateComparisonCancelledException catch (_) {
+      // Nothing was staged, so there is no resumable upload to keep.
+      updatePhase = UpdatePhase.idle;
+      log_('comparison stopped — nothing was staged');
+      notifyListeners();
+      rethrow;
     } catch (e) {
       // Stage/arm/verification failures land here. The transfer path already
       // sets failed (or idle on cancel) before rethrowing — keep those — but

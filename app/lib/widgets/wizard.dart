@@ -20,7 +20,6 @@ class WizardBar extends StatelessWidget implements PreferredSizeWidget {
     'Repeater',
     'Sign in',
     'Firmware',
-    'Compare',
     'Radio',
     'Review',
     'Transfer',

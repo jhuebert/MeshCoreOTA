@@ -76,7 +76,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const WizardBar(step: 9, label: 'Verify'),
+          const WizardBar(step: 8, label: 'Verify'),
           const SizedBox(height: 18),
           if (phase == UpdatePhase.applying || phase == UpdatePhase.verifying)
             const Column(

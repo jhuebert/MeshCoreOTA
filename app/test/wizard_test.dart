@@ -16,12 +16,12 @@ void main() {
       ),
     ));
 
-    expect(find.text('Step 2 of 9'), findsOneWidget);
+    expect(find.text('Step 2 of 8'), findsOneWidget);
     expect(find.text('Pick the repeater'), findsOneWidget);
     final bar = tester.widget<LinearProgressIndicator>(
       find.byType(LinearProgressIndicator),
     );
-    expect(bar.value, closeTo(2 / 9, 0.001));
+    expect(bar.value, closeTo(2 / 8, 0.001));
   });
 
   testWidgets('tabbed steps put progress above the tabs under the title',
@@ -67,7 +67,7 @@ void main() {
     await tester.pumpWidget(const MaterialApp(
       home: Scaffold(body: WizardBar(step: 99, label: 'Done')),
     ));
-    expect(find.text('Step 9 of 9'), findsOneWidget);
+    expect(find.text('Step 8 of 8'), findsOneWidget);
   });
 
   testWidgets('the footer explains a locked step and fires the action',
@@ -104,11 +104,10 @@ void main() {
   });
 
   testWidgets('the step list is the whole path', (tester) async {
-    expect(WizardBar.steps.length, 9);
+    expect(WizardBar.steps.length, 8);
     expect(WizardBar.steps.first, 'Connect');
-    expect(WizardBar.steps[4], 'Compare');
-    expect(WizardBar.steps[5], 'Radio');
-    expect(WizardBar.steps[6], 'Review');
+    expect(WizardBar.steps[4], 'Radio');
+    expect(WizardBar.steps[5], 'Review');
     expect(WizardBar.steps.last, 'Verify');
   });
 }
