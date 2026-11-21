@@ -401,6 +401,23 @@ void main() {
       expect(queued, isEmpty);
     });
 
+    test('hands drained frames to a caller before dropping them', () async {
+      final target = _repeater();
+      final queued = [cliMessageFrame(target, 'late ack')];
+      link.frameHandler = (frame) {
+        if (frame[0] != cmdSyncNextMessage) return;
+        if (queued.isNotEmpty) {
+          link.simulatePush(queued.removeAt(0));
+        } else {
+          link.simulatePush(Uint8List.fromList([respCodeNoMoreMessages]));
+        }
+      };
+      final seen = <Uint8List>[];
+      expect(await client.drainMessages(onFrame: seen.add), 1);
+      expect(seen, hasLength(1));
+      expect(seen.single[0], respCodeContactMsgRecvV3);
+    });
+
     test('reports zero on an empty queue', () async {
       link.frameHandler = (frame) {
         if (frame[0] != cmdSyncNextMessage) return;

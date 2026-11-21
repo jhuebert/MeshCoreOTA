@@ -313,11 +313,15 @@ class CompanionClient {
   Future<int> drainMessages({
     Duration perMessageTimeout = const Duration(seconds: 2),
     int maxMessages = 64,
+    void Function(Uint8List frame)? onFrame,
   }) async {
     var drained = 0;
     while (drained < maxMessages) {
       final response = await _syncNext(perMessageTimeout);
       if (response.isEmpty || response[0] == respCodeNoMoreMessages) break;
+      // A late fleet ACK must be handed to the ACK collector before it is
+      // dropped; the rest of the stale queue needs no interpretation.
+      onFrame?.call(response);
       drained++;
     }
     return drained;

@@ -11,7 +11,7 @@ import 'package:mesh_protocol/mesh_protocol.dart';
 import 'package:ota_core/ota_core.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'services/ble_device_link.dart';
+import 'controllers/connection_controller.dart';
 import 'services/firmware_library.dart';
 import 'services/github_source.dart';
 import 'services/literal_compression.dart';
@@ -23,7 +23,7 @@ import 'services/resume_store.dart';
 import 'services/temp_radio_renewal.dart';
 import 'services/update_flow.dart';
 
-enum ConnectionPhase { disconnected, connecting, connected }
+export 'controllers/connection_controller.dart';
 
 /// Which release channel the firmware picker is showing. Both are sorted
 /// newest-first; dev builds are their own tab rather than a switch buried
@@ -74,27 +74,45 @@ enum UpdatePhase {
 /// is the right shape. Navigation is a step flow (connect → target →
 /// firmware → review → transfer → verify).
 class AppState extends ChangeNotifier {
-  AppState();
+  AppState() {
+    connection.addListener(notifyListeners);
+    connection.onAdopt = _adoptLink;
+    connection.onLost = _clearNodeFacts;
+    connection.onUnexpectedMessage = log_;
+  }
 
   // ---------------- transport ----------------
 
-  /// 'ble' or 'tcp': the bench-validation path is TCP to 127.0.0.1.
-  String transportKind = 'ble';
-  String tcpHost = '127.0.0.1';
-  int tcpPort = defaultCompanionPort;
+  /// The link is owned above the shell. These forwarders keep existing screens
+  /// and tests on the same names while the connection survives navigation.
+  final ConnectionController connection = ConnectionController();
 
-  ConnectionPhase connectionPhase = ConnectionPhase.disconnected;
-  String? connectError;
-  String companionName = '';
-  String? _bleDeviceId;
+  String get transportKind => connection.transportKind;
+  set transportKind(String value) => connection.transportKind = value;
+  String get tcpHost => connection.tcpHost;
+  set tcpHost(String value) => connection.tcpHost = value;
+  int get tcpPort => connection.tcpPort;
+  set tcpPort(int value) => connection.tcpPort = value;
+  ConnectionPhase get connectionPhase => connection.phase;
+  set connectionPhase(ConnectionPhase value) => connection.phase = value;
+  String? get connectError => connection.connectError;
+  set connectError(String? value) => connection.connectError = value;
+  String get companionName => connection.companionName;
+  set companionName(String value) => connection.companionName = value;
 
   /// Test seam: overrides the TCP link built by [connectTcp] (the screen
   /// cannot inject one). Null in production, where a real TcpDeviceLink is
   /// built.
-  RadioLink Function(String host, int port)? tcpLinkFactory;
+  RadioLink Function(String host, int port)? get tcpLinkFactory =>
+      connection.tcpLinkFactory;
+  set tcpLinkFactory(RadioLink Function(String host, int port)? value) =>
+      connection.tcpLinkFactory = value;
 
   /// Test seam for the companion client; production builds a real one.
-  CompanionClient Function(RadioLink link)? clientFactory;
+  CompanionClient Function(RadioLink link)? get clientFactory =>
+      connection.clientFactory;
+  set clientFactory(CompanionClient Function(RadioLink link)? value) =>
+      connection.clientFactory = value;
 
   /// Test seam for the node-side comparison; production hashes the repeater.
   Future<RemoteDiffResult> Function(Uint8List image)? comparisonFactory;
@@ -102,12 +120,10 @@ class AppState extends ChangeNotifier {
   /// Test seam for the recovery probe; production builds a real controller.
   ResumeController Function(ResumePlan plan)? resumeControllerFactory;
 
-  RadioLink? _link;
-  CompanionClient? _client;
   UpdateFlow? _flow;
 
-  RadioLink? get link => _link;
-  CompanionClient? get client => _client;
+  RadioLink? get link => connection.link;
+  CompanionClient? get client => connection.client;
   UpdateFlow? get flow => _flow;
 
   // ---------------- target ----------------
@@ -342,56 +358,21 @@ class AppState extends ChangeNotifier {
 
   // ---------------- connection ----------------
 
-  Future<void> connectBle(BluetoothDevice device) async {
-    await _disposeLink();
-    connectionPhase = ConnectionPhase.connecting;
-    connectError = null;
-    transportKind = 'ble';
-    _bleDeviceId = device.remoteId.str;
-    notifyListeners();
-    try {
-      final ble = BleDeviceLink(device: device);
-      await ble.connect();
-      await _adoptLink(ble);
-    } catch (e) {
-      connectionPhase = ConnectionPhase.disconnected;
-      connectError = 'BLE connect failed: $e';
-      notifyListeners();
-    }
-  }
+  Future<void> connectBle(BluetoothDevice device) =>
+      connection.connectBle(device);
 
   Future<void> connectTcp({
     required String host,
     required int port,
-  }) async {
-    await _disposeLink();
-    connectionPhase = ConnectionPhase.connecting;
-    connectError = null;
-    transportKind = 'tcp';
-    tcpHost = host;
-    tcpPort = port;
-    notifyListeners();
-    try {
-      final tcp = tcpLinkFactory?.call(host, port) ??
-          TcpDeviceLink(host: host, port: port);
-      await tcp.connect();
-      await _adoptLink(tcp);
-    } catch (e) {
-      connectionPhase = ConnectionPhase.disconnected;
-      connectError = 'TCP connect failed: $e';
-      notifyListeners();
-    }
-  }
+  }) =>
+      connection.connectTcp(host: host, port: port);
 
+  Future<void> reconnect() => connection.reconnect();
+
+  /// Called by the controller once a new link is adopted. The controller owns
+  /// the phase; this rebuilds the update flow and the companion facts.
   Future<void> _adoptLink(RadioLink link) async {
-    _link = link;
-    final factory = clientFactory;
-    _client = factory != null
-        ? factory(link)
-        : CompanionClient(link, onUnexpectedMessage: (m) {
-            log_('unrelated msg from ${bytesToHex(m.senderPrefix)}: ${m.text}');
-          });
-    _flow = UpdateFlow(client: _client!, link: link, onLog: log_);
+    _flow = UpdateFlow(client: connection.client!, link: link, onLog: log_);
     try {
       final info = await link.selfInfo();
       companionName = info.nodeName;
@@ -405,23 +386,16 @@ class AppState extends ChangeNotifier {
       companionName = '';
     }
     await _refreshContacts();
-    connectionPhase = ConnectionPhase.connected;
+    // Stale replies from before this connection must not answer a fresh
+    // management command. Frames are dropped; fleet ACK recovery lands in E3.
+    await connection.drainAfterLogin();
     notifyListeners();
   }
 
-  Future<void> disconnect() async {
-    await _disposeLink();
-    notifyListeners();
-  }
+  Future<void> disconnect() => connection.disconnect();
 
-  Future<void> _disposeLink() async {
-    try {
-      await _link?.disconnect();
-    } catch (_) {}
-    _link = null;
-    _client = null;
+  Future<void> _clearNodeFacts() async {
     _flow = null;
-    connectionPhase = ConnectionPhase.disconnected;
     contacts = const [];
     target = null;
     nodeStatus = null;
@@ -437,7 +411,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> _refreshContacts() async {
     try {
-      contacts = await _client?.listContacts() ?? const [];
+      contacts = await connection.client?.listContacts() ?? const [];
     } catch (e) {
       contacts = const [];
       log_('contacts list failed: $e');
@@ -944,7 +918,7 @@ class AppState extends ChangeNotifier {
   /// runUpdate's finally block.
   Future<RemoteDiffResult> _compareWhileArmed(
       Contact t, Uint8List image) async {
-    final link = _link;
+    final link = connection.link;
     if (link == null) throw StateError('no link for the comparison');
     final factory = comparisonFactory;
     if (factory != null) {
@@ -1150,7 +1124,7 @@ class AppState extends ChangeNotifier {
   /// null when the radio parameters are unavailable.
   Future<int?> estimateTransferSeconds() async {
     final image = _selectedImage;
-    final link = _link;
+    final link = connection.link;
     if (image == null || link == null) return null;
     try {
       final preset = radioPlan.usesRadio && radioPlan.preset != null
@@ -1463,7 +1437,7 @@ class AppState extends ChangeNotifier {
         transportKind: transportKind,
         tcpHost: tcpHost,
         tcpPort: tcpPort,
-        bleDeviceId: _bleDeviceId,
+        bleDeviceId: connection.bleDeviceId,
         nextExpected: nextExpected,
         // A pause or the post-transfer save keeps the id already on the plan;
         // the first save of a fresh update has no OP_START yet, so no id.
@@ -1526,7 +1500,7 @@ class AppState extends ChangeNotifier {
   /// proves the saved frame stream still lines up with the node's flash.
   Future<String?> verifyStagedPrefix(Contact t, int written) async {
     final image = _selectedImage;
-    final link = _link;
+    final link = connection.link;
     if (image == null || link == null || written > image.length) {
       return 'The saved firmware could not be checked against the repeater.';
     }
@@ -1640,13 +1614,13 @@ class AppState extends ChangeNotifier {
               },
               findContact: (pub) => _contactFor(pub),
               login: (t, pw) async {
-                final result = await _client!.login(t, pw);
+                final result = await connection.client!.login(t, pw);
                 return (ok: result.ok, admin: result.isAdmin);
               },
               restoreSelection: restoreResumeSelection,
               nodeInfo: (t) async {
                 try {
-                  final info = await queryNodeInfo(_link!, t,
+                  final info = await queryNodeInfo(connection.link!, t,
                       timeout: const Duration(seconds: 5));
                   nodeInfo = info;
                   return info;
@@ -1722,7 +1696,7 @@ class AppState extends ChangeNotifier {
   /// Move the repeater and/or the companion onto the transfer preset. Both
   /// firmware CLIs defer the retune for ~2 s so their reply leaves first.
   Future<void> _applyRadioPlan(Contact t) async {
-    final link = _link;
+    final link = connection.link;
     final flow = _flow;
     final preset = radioPlan.preset;
     if (link == null || flow == null || preset == null) {
@@ -1761,7 +1735,7 @@ class AppState extends ChangeNotifier {
   /// failed, and a radio that stays off-mesh for a few minutes reverts by
   /// itself (the temporary presets are time-boxed on both ends).
   Future<void> _restoreRadioPlan(Contact t) async {
-    final link = _link;
+    final link = connection.link;
     final live = _restorePreset ?? companionPreset;
     try {
       if (_enabledRadio2ForUpdate) {
