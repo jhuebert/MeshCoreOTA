@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -59,6 +60,41 @@ void main() {
     expect(store.entries(repeaterKeyHex: 'AA' * 32).map((e) => e.family),
         ['access', 'radio']);
     expect(store.entries(limit: 1).single.family, 'access');
+  });
+
+  test('entries survive a reload and export as redacted JSON', () async {
+    await store.record('set guest.password hunter2',
+        repeaterKeyHex: 'dd' * 32,
+        family: 'access',
+        replyKind: 'rebootNeeded',
+        outcome: AuditOutcome.rebootNeeded);
+    final reopened = ManagementAuditStore(File('${dir.path}/audit.json'));
+    await reopened.load();
+    expect(reopened.entries().single.command, 'set guest.password [redacted]');
+
+    final decoded = jsonDecode(reopened.export()) as List;
+    expect(decoded, hasLength(1));
+    expect(decoded.single['outcome'], 'rebootNeeded');
+    expect(reopened.export(), isNot(contains('hunter2')));
+  });
+
+  test('bare password and wifi keys are redacted too', () async {
+    expect(ManagementAuditStore.redactCommand('password hunter2'),
+        'password [redacted]');
+    expect(ManagementAuditStore.redactCommand('set wifi.pwd abc'),
+        'set wifi.pwd [redacted]');
+    // Ordinary settings are never masked.
+    expect(ManagementAuditStore.redactCommand('set tx 20'), 'set tx 20');
+  });
+
+  test('clear empties the log', () async {
+    await store.record('set tx 20',
+        repeaterKeyHex: 'ee' * 32,
+        family: 'settings',
+        replyKind: 'ok',
+        outcome: AuditOutcome.ok);
+    await store.clear();
+    expect(store.entries(), isEmpty);
   });
 
   test('keeps only the most recent 1000 entries', () async {
