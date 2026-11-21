@@ -3,7 +3,8 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:provider/provider.dart';
 
 import 'app_state.dart';
-import 'screens/connect_screen.dart';
+import 'shell/app_shell.dart';
+import 'shell/routes.dart';
 import 'theme.dart';
 
 /// Entry point. The update pipeline is long-running (minutes over LoRa), so
@@ -48,7 +49,8 @@ class MeshCoreRepeaterManagerApp extends StatelessWidget {
       title: 'MeshCoreRepeaterManager',
       debugShowCheckedModeBanner: false,
       theme: OtaTheme.dark,
-      home: const ConnectScreen(),
+      home: const AppShell(),
+      onGenerateRoute: generateRoute,
     );
   }
 }

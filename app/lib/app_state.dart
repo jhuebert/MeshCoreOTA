@@ -10,12 +10,17 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:mesh_protocol/mesh_protocol.dart';
 import 'package:ota_core/ota_core.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:repeater_core/repeater_core.dart';
 
 import 'controllers/connection_controller.dart';
+import 'services/capability_service.dart';
+import 'services/cli_service.dart';
 import 'services/firmware_library.dart';
+import 'services/management_audit_store.dart';
 import 'services/github_source.dart';
 import 'services/literal_compression.dart';
 import 'services/radio_plan.dart';
+import 'services/repeater_directory.dart';
 import 'services/resume_controller.dart';
 
 export 'services/resume_controller.dart' show ResumeCheck;
@@ -156,6 +161,17 @@ class AppState extends ChangeNotifier {
   String? probeError;
 
   bool get otaSupported => nodeStatus != null;
+
+  // ---------------- management ----------------
+
+  /// What the last read-only probe set found on this repeater. Null means
+  /// "not identified yet", never "unsupported".
+  RepeaterCapabilities? capabilities;
+  String? capabilityError;
+  bool identifying = false;
+
+  RepeaterDirectory? directory;
+  ManagementAuditStore? auditStore;
 
   // ---------------- firmware selection ----------------
 
@@ -332,6 +348,11 @@ class AppState extends ChangeNotifier {
         final decoded = jsonDecode(await _settingsFile!.readAsString());
         if (decoded is Map && decoded['offline'] == true) offlineMode = true;
       }
+      directory = RepeaterDirectory(Directory('${support.path}/repeaters'));
+      await directory!.load();
+      auditStore =
+          ManagementAuditStore(File('${support.path}/management_audit.json'));
+      await auditStore!.load();
     } catch (_) {
       // Settings are a convenience; a read failure must not stop the app.
     }
@@ -347,8 +368,8 @@ class AppState extends ChangeNotifier {
     try {
       final file = _settingsFile;
       if (file != null) {
-        await file.writeAsString(jsonEncode({'offline': offlineMode}),
-            flush: true);
+        await file.writeAsString(
+            jsonEncode({'schema': 2, 'offline': offlineMode}), flush: true);
       }
     } catch (_) {
       // Best effort: the switch still works for this session.
@@ -421,6 +442,52 @@ class AppState extends ChangeNotifier {
 
   Future<void> refreshContacts() => _refreshContacts();
 
+  /// Identify the connected repeater from cached, read-only probes. The OTA
+  /// handshake, when it answered, is decisive for the OTA capability.
+  Future<void> identifyCapabilities({bool force = false}) async {
+    final t = target;
+    final link = connection.link;
+    final client = connection.client;
+    if (t == null || link == null || client == null) return;
+    identifying = true;
+    capabilityError = null;
+    notifyListeners();
+    try {
+      final service = CapabilityService(
+        CliService(
+          exchange: client.remoteCli,
+          binary: RepeaterReqClient(link).request,
+          audit: auditStore,
+          repeaterKeyHex: t.publicKeyHex,
+        ),
+        cacheFor: (contact) => directory?.cacheFor(contact.publicKeyHex),
+      );
+      capabilities = await service.identify(
+        t,
+        force: force,
+        otaConfirmed: nodeStatus != null,
+      );
+      await directory?.upsert(RepeaterProfile(
+        publicKeyHex: t.publicKeyHex,
+        name: t.name,
+        lastSeen: DateTime.now(),
+        capabilities: capabilities,
+      ));
+    } catch (e) {
+      capabilityError = '$e';
+    } finally {
+      identifying = false;
+      notifyListeners();
+    }
+  }
+
+  /// A verified apply or rollback changed the running firmware: its cached
+  /// settings and capabilities are no longer trustworthy.
+  Future<void> _invalidateManagementCache(String publicKeyHex) async {
+    await directory?.cacheFor(publicKeyHex).invalidateAll();
+    capabilities = null;
+  }
+
   // ---------------- target selection ----------------
 
   /// Optional comma-separated DIRECT path hashes entered on the review screen
@@ -453,6 +520,7 @@ class AppState extends ChangeNotifier {
         publicKey: hexToBytes(hex), name: name, advType: advTypeRepeater);
     target = contact;
     _resetNodeFacts();
+    capabilities = directory?.get(contact.publicKeyHex)?.capabilities;
     notifyListeners();
     return contact;
   }
@@ -477,6 +545,7 @@ class AppState extends ChangeNotifier {
   void selectTarget(Contact contact) {
     target = contact;
     _resetNodeFacts();
+    capabilities = directory?.get(contact.publicKeyHex)?.capabilities;
     notifyListeners();
   }
 
@@ -1869,6 +1938,7 @@ class AppState extends ChangeNotifier {
       if (outcome == ApplyOutcome.verified) {
         verifyMatched = true;
         updatePhase = UpdatePhase.done;
+        await _invalidateManagementCache(t.publicKeyHex);
         await _discardResumeRecord();
         notifyListeners();
         return;
@@ -1904,6 +1974,7 @@ class AppState extends ChangeNotifier {
     final ok = await flow.awaitVersion(t, adminPassword, '');
     verifyMatched = ok;
     rolledBack = ok;
+    if (ok) await _invalidateManagementCache(t.publicKeyHex);
     updatePhase = ok ? UpdatePhase.done : UpdatePhase.failed;
     notifyListeners();
   }

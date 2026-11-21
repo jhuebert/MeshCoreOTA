@@ -1,5 +1,3 @@
-import 'dart:io' show Platform;
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
@@ -7,7 +5,7 @@ import 'package:meshcore_repeater_manager/app_state.dart';
 import 'package:meshcore_repeater_manager/main.dart';
 
 void main() {
-  testWidgets('connect screen renders the app shell',
+  testWidgets('the app opens on the hub with a connection indicator',
       (WidgetTester tester) async {
     await tester.pumpWidget(
       ChangeNotifierProvider(
@@ -15,17 +13,36 @@ void main() {
         child: const MeshCoreRepeaterManagerApp(),
       ),
     );
-    expect(find.text('Repeater Manager'), findsWidgets);
-    // TCP transport is offered everywhere; Bluetooth is Android/iOS only.
-    if (Platform.isAndroid || Platform.isIOS) {
-      expect(find.text('Bluetooth'), findsOneWidget);
-      expect(find.text('TCP / Wi-Fi'), findsOneWidget);
-      expect(find.text('Scan'), findsOneWidget);
-    } else {
-      expect(find.textContaining('TCP'), findsWidgets);
-      expect(find.text('Scan'), findsNothing);
-    }
-    // The library is reachable before a companion is ever connected.
-    expect(find.text('Firmware library'), findsOneWidget);
+    expect(find.text('Hub'), findsWidgets);
+    expect(find.text('No companion connected'), findsOneWidget);
+    expect(find.text('Offline'), findsOneWidget);
+  });
+
+  testWidgets('the connection sheet offers the shared connection form',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => AppState(),
+        child: const MeshCoreRepeaterManagerApp(),
+      ),
+    );
+    await tester.tap(find.text('Connection'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('TCP companion'), findsOneWidget);
+    expect(find.text('Connect'), findsOneWidget);
+  });
+
+  testWidgets('the library is a shell destination', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => AppState(),
+        child: const MeshCoreRepeaterManagerApp(),
+      ),
+    );
+    await tester.tap(find.text('Library'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.textContaining('Firmware'), findsWidgets);
   });
 }

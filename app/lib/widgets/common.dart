@@ -12,6 +12,11 @@ const IconData playIcon = Icons.play_arrow;
 const IconData pauseIcon = Icons.pause;
 const IconData stopIcon = Icons.stop;
 const IconData backIcon = Icons.arrow_back;
+const IconData updateIcon = Icons.system_update;
+const IconData settingsIcon = Icons.tune;
+const IconData repeaterIcon = Icons.cell_tower;
+const IconData fleetIcon = Icons.groups_outlined;
+const IconData libraryIcon = Icons.inventory_2_outlined;
 
 /// One size format everywhere in the app.
 String formatBytes(int bytes) => bytes >= 1024 * 1024
@@ -108,6 +113,73 @@ class ErrorBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One relative-age label for every cached value in the app.
+String formatAge(DateTime at, {DateTime? now}) {
+  final seconds = (now ?? DateTime.now()).difference(at).inSeconds;
+  if (seconds < 45) return 'just now';
+  if (seconds < 3600) return '${seconds ~/ 60} min ago';
+  if (seconds < 86400) return '${seconds ~/ 3600} h ago';
+  return '${seconds ~/ 86400} d ago';
+}
+
+class LastKnownLabel extends StatelessWidget {
+  const LastKnownLabel(this.fetchedAt, {super.key, this.prefix = 'Last known'});
+
+  final DateTime fetchedAt;
+  final String prefix;
+
+  @override
+  Widget build(BuildContext context) => Text(
+        '$prefix ${formatAge(fetchedAt)}',
+        style: const TextStyle(color: OtaTheme.textMuted, fontSize: 11),
+      );
+}
+
+/// Every activity tile on the hub and in management screens uses this shape.
+class ActivityTile extends StatelessWidget {
+  const ActivityTile({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.onTap,
+    this.badge,
+    this.locked = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback? onTap;
+  final String? badge;
+  final bool locked;
+
+  @override
+  Widget build(BuildContext context) => Card(
+        child: ListTile(
+          leading: Icon(locked ? Icons.lock_outline : icon,
+              color: locked ? OtaTheme.textMuted : OtaTheme.accent),
+          title: Text(title),
+          subtitle: Text(subtitle,
+              style: const TextStyle(
+                  color: OtaTheme.textMuted, fontSize: 12, height: 1.3)),
+          trailing: badge == null
+              ? const Icon(Icons.chevron_right, color: OtaTheme.textMuted)
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    StatusPill(badge!,
+                        color: locked ? OtaTheme.textMuted : OtaTheme.ok),
+                    const Icon(Icons.chevron_right,
+                        color: OtaTheme.textMuted, size: 18),
+                  ],
+                ),
+          onTap: onTap,
+        ),
+      );
 }
 
 class StatusPill extends StatelessWidget {
