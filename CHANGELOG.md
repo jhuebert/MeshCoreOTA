@@ -8,6 +8,11 @@ All notable changes to MeshCoreRepeaterManager are documented here. The format f
 
 ### Added
 
+- **A Repeater Hub is now the app's home.** The companion connection is a global indicator in the top bar with a connection sheet, so navigating never drops the link. Firmware updates are a dedicated activity that keeps the same eight steps. The hub shows the selected repeater, its firmware and detected capabilities; fork-only activities stay locked until read-only probes confirm them.
+- **Repeater facts are cached locally and labelled last known.** Opening a screen sends no mesh traffic; each section asks for its own refresh. A verified apply or rollback invalidates that repeater's settings and capabilities, and the next open re-identifies the node.
+- **Management writes go to a local audit log.** Commands, reply classifications and outcomes are stored with secrets removed, keeping the most recent 1000 entries. Reads and refreshes are not recorded.
+- **Firmware has a `repeater_core` package.** CLI reply taxonomy, capability detection, the binary status report, the settings registry and the tagged REQ client are shared, pure-Dart modules.
+
 - **The temporary channel renews itself.** The repeater arms `tempradio` in
   15-minute chunks and the app renews it automatically at a transfer window
   boundary after 10 minutes, so there is no duration to set and no window to

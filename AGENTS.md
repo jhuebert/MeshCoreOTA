@@ -34,7 +34,9 @@ accurate.
 ## Repository layout
 
 - `app/` — Flutter UI, screens, orchestration, theme, app icon and desktop
-  runners (Android, Linux, Windows, macOS).
+  runners (Android, Linux, Windows, macOS). `lib/shell/` owns the hub, the
+  connection indicator/sheet and the repeater picker; `lib/controllers/` owns
+  the connection lifecycle shared by every screen.
 - `app/test/` — widget and pure-Dart app tests. `support.dart` has the shared
   fixtures (`FakeLibrary`, `Catalog`, `OtaStatus`/`OtaNodeInfo`); use it for
   every screen test instead of touching platform plugins.
@@ -47,6 +49,9 @@ accurate.
 - `packages/device_link/` — pure-Dart `RadioLink` SPI, TCP/BLE/fake transports,
   binary requests (MeshChameleon subtree).
 - `packages/companion_client/` — contacts, login, `remoteCli`, message pump.
+- `packages/repeater_core/` — pure-Dart management domain: CLI reply taxonomy,
+  read-only capability detection, the 56-byte binary status report, the
+  settings registry and tagged binary REQ client. Original work, MIT.
 - `packages/test_support/` — dev-only framed TCP client and test plumbing
   (MeshChameleon subtree).
 - `bench/` — hardware harness (never run in CI):
@@ -55,6 +60,12 @@ accurate.
   adds the coverage gate; `scripts/build.sh` injects build metadata.
 - `.github/workflows/ci.yml` — the gate plus platform builds;
   `release.yml` — the manual signed release.
+
+Per-repeater management data lives under the application support directory:
+`repeaters/index.json` and `repeaters/<id>/{profile,cache}.json`, plus
+`management_audit.json`. Every store is schema-versioned and migrates old
+shapes; the cache and audit log never hold secrets. `ota_settings.json` now
+writes `schema: 2` alongside the existing `offline` flag.
 
 Keep protocol/core packages free of Flutter or platform imports. Platform code
 belongs in `app/`.

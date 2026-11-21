@@ -50,6 +50,19 @@ the project's app key, so upgrading an existing install keeps your data.
 - The firmware file you want to install. The app can download the fork's
   releases for you, or you can pick a `.bin` file: including your own build.
 
+## The Repeater Hub
+
+The app opens on a hub rather than a wizard. The dot in the top right shows
+whether a companion is connected; tap it for connection details and controls.
+The connection survives navigation, so switching screens never drops the link.
+
+Pick a repeater from the hub, then **Update firmware** opens the update
+activity. It keeps the eight steps below. The hub also shows what the app
+learned about the repeater from read-only checks. A value marked "last known"
+came from the local cache; opening a screen never sends mesh traffic, and each
+section asks for its own refresh. Management writes are recorded locally with
+secrets removed. Firmware updates invalidate that repeater's cached facts.
+
 ## Getting started
 
 The app walks you through eight steps. You can go back at any point; nothing

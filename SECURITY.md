@@ -75,6 +75,26 @@ code with no new guarantee at the arm/SHA/apply gates.
 - **Companion connection** — BLE pairing is handled by the OS; the app never
   sees or stores pairing keys.
 
+## Management data
+
+Repeater management adds three kinds of local data, all on the device only:
+
+- **Settings and status cache** (`repeaters/<id>/cache.json`) holds last-known
+  values with their fetch time and source. It never holds the admin password,
+  guest password, private keys, fleet PSK or MQTT credentials. MQTT secrets are
+  write-only and excluded from reads, cache and diagnostics.
+- **Management audit log** (`management_audit.json`) records writes only: the
+  command family, the command text with credential values redacted, the reply
+  classification and the outcome. A lost reply is recorded as unknown, never
+  as success. The most recent 1000 entries are kept and can be exported.
+- **Capability probes** are strictly read-only. An unanswered probe means "not
+  confirmed", not "unsupported", and nothing is inferred from a single reply
+  without the full probe set agreeing.
+
+The settings file, audit log and repeater index are schema-versioned. A file
+from a newer schema is reported, not overwritten, and migrations keep the
+offline flag, firmware images and saved updates intact.
+
 ## What the app never does
 
 - No telemetry, no analytics, no crash reporting, no network access except
