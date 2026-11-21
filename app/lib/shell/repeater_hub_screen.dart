@@ -129,26 +129,49 @@ class RepeaterHubScreen extends StatelessWidget {
     );
   }
 
+  static String _label(String value) =>
+      value.isEmpty ? value : value[0].toUpperCase() + value.substring(1);
+
   List<Widget> _activityTiles(
       BuildContext context, AppState app, RepeaterCapabilities? caps) {
     final fork = caps?.firmwareKind == FirmwareKind.fork;
     final confirmed = caps?.confidence == CapabilityConfidence.confirmed;
     final tiles = <(IconData, String, String, bool, String)>[
-      (Icons.monitor_heart_outlined, 'Status',
-          'Battery, uptime and packet counters from one status request.', true,
-          'Available now'),
-      (settingsIcon, 'Settings',
-          'Read and change the repeater settings.', fork && confirmed,
-          'Update-enabled fork'),
-      (Icons.filter_alt_outlined, 'Filter',
-          'Build and check packet rules before sending them.', fork && confirmed,
-          'Update-enabled fork'),
-      (fleetIcon, 'Fleet',
-          'Send one job to a group of repeaters and collect replies.',
-          fork && confirmed, 'Update-enabled fork'),
-      (Icons.terminal, 'Command line',
-          'Run a raw command for anything without a dedicated screen.', true,
-          'Available now'),
+      (
+        Icons.monitor_heart_outlined,
+        'Status',
+        'Battery, uptime and packet counters from one status request.',
+        true,
+        'Available now'
+      ),
+      (
+        settingsIcon,
+        'Settings',
+        'Read and change the repeater settings.',
+        fork && confirmed,
+        'Update-enabled fork'
+      ),
+      (
+        Icons.filter_alt_outlined,
+        'Filter',
+        'Build and check packet rules before sending them.',
+        fork && confirmed,
+        'Update-enabled fork'
+      ),
+      (
+        fleetIcon,
+        'Fleet',
+        'Send one job to a group of repeaters and collect replies.',
+        fork && confirmed,
+        'Update-enabled fork'
+      ),
+      (
+        Icons.terminal,
+        'Command line',
+        'Run a raw command for anything without a dedicated screen.',
+        true,
+        'Available now'
+      ),
     ];
     return [
       Padding(
@@ -180,8 +203,8 @@ class RepeaterHubScreen extends StatelessWidget {
           child: Wrap(
             spacing: 6,
             children: [
-              StatusPill(caps.firmwareKind.name),
-              StatusPill(caps.confidence.name,
+              StatusPill(_label(caps.firmwareKind.name)),
+              StatusPill(_label(caps.confidence.name),
                   color: confirmed ? OtaTheme.ok : OtaTheme.warn),
               if (caps.ota) const StatusPill('OTA', color: OtaTheme.ok),
               if (caps.filter) const StatusPill('Filter', color: OtaTheme.ok),

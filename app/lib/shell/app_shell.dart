@@ -64,8 +64,8 @@ class _AppShellState extends State<AppShell> {
               selectedIndex: selected,
               onDestinationSelected: (i) => setState(() => _index = i),
               destinations: _destinations
-                  .map((d) => NavigationDestination(
-                      icon: Icon(d.$1), label: d.$2))
+                  .map((d) =>
+                      NavigationDestination(icon: Icon(d.$1), label: d.$2))
                   .toList(),
             ),
     );

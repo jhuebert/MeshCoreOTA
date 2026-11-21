@@ -10,7 +10,8 @@ class AppRoutes {
   static const library = '/library';
 }
 
-Route<dynamic>? generateRoute(RouteSettings settings) => switch (settings.name) {
+Route<dynamic>? generateRoute(RouteSettings settings) =>
+    switch (settings.name) {
       AppRoutes.update => MaterialPageRoute(
           builder: (_) => const ConnectScreen(), settings: settings),
       AppRoutes.library => MaterialPageRoute(

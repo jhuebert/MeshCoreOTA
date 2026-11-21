@@ -33,7 +33,8 @@ void main() {
     expect(find.text('Connect'), findsOneWidget);
   });
 
-  testWidgets('the library is a shell destination', (WidgetTester tester) async {
+  testWidgets('the library is a shell destination',
+      (WidgetTester tester) async {
     await tester.pumpWidget(
       ChangeNotifierProvider(
         create: (_) => AppState(),

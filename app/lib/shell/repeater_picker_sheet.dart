@@ -50,7 +50,8 @@ class _RepeaterPickerSheetState extends State<RepeaterPickerSheet> {
               const SizedBox(width: 10),
               const Expanded(
                 child: Text('Choose a repeater',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               ),
               IconButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -75,8 +76,8 @@ class _RepeaterPickerSheetState extends State<RepeaterPickerSheet> {
                   ? contact.publicKeyHex.substring(0, 12)
                   : contact.name),
               subtitle: Text(contact.publicKeyHex.substring(0, 12),
-                  style: const TextStyle(
-                      color: OtaTheme.textMuted, fontSize: 11)),
+                  style:
+                      const TextStyle(color: OtaTheme.textMuted, fontSize: 11)),
               onTap: () {
                 app.selectTarget(contact);
                 Navigator.of(context).pop();

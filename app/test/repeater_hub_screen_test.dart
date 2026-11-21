@@ -28,8 +28,8 @@ void main() {
     await tester.pumpWidget(wrap(app, const RepeaterHubScreen()));
 
     expect(find.text('Roof'), findsOneWidget);
-    expect(find.text('fork'), findsOneWidget);
-    expect(find.text('confirmed'), findsOneWidget);
+    expect(find.text('Fork'), findsOneWidget);
+    expect(find.text('Confirmed'), findsOneWidget);
     expect(find.text('Ready'), findsWidgets);
     expect(find.text('Identify firmware'), findsOneWidget);
   });
@@ -38,8 +38,7 @@ void main() {
       (tester) async {
     final app = connectedApp();
     await tester.pumpWidget(wrap(app, const RepeaterHubScreen()));
-    expect(
-        find.textContaining('Firmware has not been identified yet'),
+    expect(find.textContaining('Firmware has not been identified yet'),
         findsOneWidget);
   });
 
@@ -50,7 +49,7 @@ void main() {
         confidence: CapabilityConfidence.confirmed,
       );
     await tester.pumpWidget(wrap(app, const RepeaterHubScreen()));
-    expect(find.text('stock'), findsOneWidget);
+    expect(find.text('Stock'), findsOneWidget);
     await tester.drag(find.byType(ListView), const Offset(0, -400));
     await tester.pump();
     expect(find.text('Locked'), findsWidgets);

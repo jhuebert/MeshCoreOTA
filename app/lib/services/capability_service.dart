@@ -36,14 +36,13 @@ class CapabilityService {
     for (final probe in coreProbes) {
       replies[probe] = await _probe(target, probe);
     }
-    var result = detectCapabilities(
-        replies: replies, otaConfirmed: otaConfirmed);
+    var result =
+        detectCapabilities(replies: replies, otaConfirmed: otaConfirmed);
     if (result.firmwareKind == FirmwareKind.fork) {
       for (final probe in extraProbes) {
         replies[probe] = await _probe(target, probe);
       }
-      result =
-          detectCapabilities(replies: replies, otaConfirmed: otaConfirmed);
+      result = detectCapabilities(replies: replies, otaConfirmed: otaConfirmed);
     }
     await cache?.write(_cacheKey, result.toJson());
     return result;

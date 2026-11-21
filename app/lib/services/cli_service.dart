@@ -115,8 +115,9 @@ class CliService {
   }) async {
     final results = <String, CliReply>{};
     for (final entry in values.entries) {
-      results[entry.key] =
-          await write(target, 'set ${entry.key} ${entry.value}', family: family);
+      results[entry.key] = await write(
+          target, 'set ${entry.key} ${entry.value}',
+          family: family);
     }
     return results;
   }

@@ -28,7 +28,8 @@ class ConnectionSheet extends StatelessWidget {
               const SizedBox(width: 10),
               const Expanded(
                 child: Text('Connection',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               ),
               IconButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -41,7 +42,9 @@ class ConnectionSheet extends StatelessWidget {
           if (app.connectionPhase == ConnectionPhase.connected) ...[
             InfoRow(
                 label: 'Companion',
-                value: app.companionName.isEmpty ? 'Companion' : app.companionName),
+                value: app.companionName.isEmpty
+                    ? 'Companion'
+                    : app.companionName),
             InfoRow(
                 label: 'Transport',
                 value: app.connection.lastEndpoint ?? app.transportKind),

@@ -369,7 +369,8 @@ class AppState extends ChangeNotifier {
       final file = _settingsFile;
       if (file != null) {
         await file.writeAsString(
-            jsonEncode({'schema': 2, 'offline': offlineMode}), flush: true);
+            jsonEncode({'schema': 2, 'offline': offlineMode}),
+            flush: true);
       }
     } catch (_) {
       // Best effort: the switch still works for this session.

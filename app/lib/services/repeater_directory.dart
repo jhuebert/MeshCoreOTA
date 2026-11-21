@@ -133,7 +133,7 @@ class RepeaterDirectory {
       RepeaterCacheStore(File('${folderFor(publicKeyHex).path}/cache.json'));
 
   Directory folderFor(String publicKeyHex) =>
-      Directory('${root.path}/repeaters/${_idFor(publicKeyHex)}');
+      Directory('${root.path}/${_idFor(publicKeyHex)}');
 
   File _profileFile(String publicKeyHex) =>
       File('${folderFor(publicKeyHex).path}/profile.json');
@@ -160,8 +160,8 @@ class RepeaterDirectory {
       _profiles.removeWhere((p) => p.publicKeyHex == profile.publicKeyHex);
       _profiles.add(moved);
       await folderFor(newHex).create(recursive: true);
-      await _profileFile(newHex).writeAsString(jsonEncode(moved.toJson()),
-          flush: true);
+      await _profileFile(newHex)
+          .writeAsString(jsonEncode(moved.toJson()), flush: true);
     }
     _extra.remove('pendingIdentity');
     await _persist();
@@ -197,8 +197,8 @@ class RepeaterDirectory {
     return {
       'profiles': list
           .whereType<Map>()
-          .map((e) => RepeaterProfile.fromJson(Map<String, dynamic>.from(e))
-              .toJson())
+          .map((e) =>
+              RepeaterProfile.fromJson(Map<String, dynamic>.from(e)).toJson())
           .toList(),
     };
   }

@@ -69,8 +69,7 @@ void main() {
     await old.load();
     expect(old.read('radio')!.value, '915,250,10,5');
     expect(old.read('name')!.source, CacheSource.remote);
-    expect(old.read('name')!.fetchedAt,
-        DateTime.fromMillisecondsSinceEpoch(0));
+    expect(old.read('name')!.fetchedAt, DateTime.fromMillisecondsSinceEpoch(0));
     await old.write('tx', 20);
     expect(jsonDecode(await file.readAsString())['schema'], 1);
     expect(jsonDecode(await file.readAsString())['values']['radio']['value'],

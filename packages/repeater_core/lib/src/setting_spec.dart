@@ -45,7 +45,8 @@ class SettingSpec {
         if (max != null && number > max!) return 'Must be at most $max';
         return null;
       case SettingInput.choice:
-        return choices != null && choices!.contains(text)
+        if (choices == null || choices!.isEmpty) return null;
+        return choices!.contains(text)
             ? null
             : 'Choose one of ${choices!.join(', ')}';
       case SettingInput.preset:
@@ -65,10 +66,7 @@ class SettingSpec {
 /// firmware handler (`radio.fem.*`) are deliberately absent.
 const stockSettings = <SettingSpec>[
   SettingSpec(
-      key: 'name',
-      label: 'Name',
-      section: 'Basic',
-      input: SettingInput.text),
+      key: 'name', label: 'Name', section: 'Basic', input: SettingInput.text),
   SettingSpec(
       key: 'lat',
       label: 'Latitude',

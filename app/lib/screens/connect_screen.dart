@@ -72,7 +72,8 @@ class ConnectScreen extends StatelessWidget {
                   if (!context.mounted) return;
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                        builder: (_) => const FirmwareScreen(updateMode: false)),
+                        builder: (_) =>
+                            const FirmwareScreen(updateMode: false)),
                   );
                 },
               ),

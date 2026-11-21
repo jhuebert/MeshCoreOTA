@@ -12,8 +12,7 @@ void main() {
 
     test('fork positive signatures', () {
       expect(
-          classifyProbe(
-              'ota status', 'running=v1.2 sha=deadbeef state=idle'),
+          classifyProbe('ota status', 'running=v1.2 sha=deadbeef state=idle'),
           ProbeVerdict.forkPositive);
       expect(classifyProbe('filter', 'Err - usage: on|off|add'),
           ProbeVerdict.forkPositive);

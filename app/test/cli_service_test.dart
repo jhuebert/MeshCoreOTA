@@ -9,7 +9,8 @@ import 'package:meshcore_repeater_manager/services/cli_service.dart';
 import 'package:meshcore_repeater_manager/services/management_audit_store.dart';
 import 'package:repeater_core/repeater_core.dart';
 
-Contact _contact() => Contact(publicKey: Uint8List.fromList(List.filled(32, 7)));
+Contact _contact() =>
+    Contact(publicKey: Uint8List.fromList(List.filled(32, 7)));
 
 Uint8List _statusReport() {
   final b = ByteData(RepeaterStatus.reportLength);
@@ -24,7 +25,8 @@ void main() {
       final gate = Completer<void>();
       final started = <String>[];
       final service = CliService(
-        exchange: (target, command, {timeout = const Duration(seconds: 45)}) async {
+        exchange: (target, command,
+            {timeout = const Duration(seconds: 45)}) async {
           expect(busy, isFalse, reason: '$command overlapped another exchange');
           busy = true;
           started.add(command);
@@ -35,7 +37,10 @@ void main() {
             busy = false;
           }
         },
-        binary: (_, __, {data = const [], required exactLength, timeout = const Duration(seconds: 10)}) async {
+        binary: (_, __,
+            {data = const [],
+            required exactLength,
+            timeout = const Duration(seconds: 10)}) async {
           throw StateError('not used');
         },
       );
@@ -55,7 +60,10 @@ void main() {
           calls++;
           throw CompanionTimeoutException('no answer');
         },
-        binary: (_, __, {data = const [], required exactLength, timeout = const Duration(seconds: 10)}) async {
+        binary: (_, __,
+            {data = const [],
+            required exactLength,
+            timeout = const Duration(seconds: 10)}) async {
           throw StateError('not used');
         },
       );
@@ -65,8 +73,7 @@ void main() {
     });
 
     test('writes are not retried and are audited with their outcome', () async {
-      final dir =
-          Directory.systemTemp.createTempSync('cli_service_audit_test');
+      final dir = Directory.systemTemp.createTempSync('cli_service_audit_test');
       addTearDown(() => dir.deleteSync(recursive: true));
       final audit = ManagementAuditStore(File('${dir.path}/audit.json'));
       await audit.load();
@@ -76,7 +83,10 @@ void main() {
           calls++;
           throw CompanionTimeoutException('no answer');
         },
-        binary: (_, __, {data = const [], required exactLength, timeout = const Duration(seconds: 10)}) async {
+        binary: (_, __,
+            {data = const [],
+            required exactLength,
+            timeout = const Duration(seconds: 10)}) async {
           throw StateError('not used');
         },
         audit: audit,
@@ -95,7 +105,10 @@ void main() {
       final service = CliService(
         exchange: (_, command, {timeout = const Duration(seconds: 45)}) async =>
             command.contains('flood.max') ? 'Err - bad value' : '> ok',
-        binary: (_, __, {data = const [], required exactLength, timeout = const Duration(seconds: 10)}) async {
+        binary: (_, __,
+            {data = const [],
+            required exactLength,
+            timeout = const Duration(seconds: 10)}) async {
           throw StateError('not used');
         },
       );
@@ -112,7 +125,10 @@ void main() {
         exchange: (_, __, {timeout = const Duration(seconds: 45)}) async {
           throw StateError('not used');
         },
-        binary: (_, type, {data = const [], required exactLength, timeout = const Duration(seconds: 10)}) async {
+        binary: (_, type,
+            {data = const [],
+            required exactLength,
+            timeout = const Duration(seconds: 10)}) async {
           expect(type, reqTypeGetStatus);
           expect(exactLength, RepeaterStatus.reportLength);
           return _statusReport();
@@ -127,7 +143,10 @@ void main() {
         exchange: (_, __, {timeout = const Duration(seconds: 45)}) async {
           throw StateError('not used');
         },
-        binary: (_, __, {data = const [], required exactLength, timeout = const Duration(seconds: 10)}) async {
+        binary: (_, __,
+            {data = const [],
+            required exactLength,
+            timeout = const Duration(seconds: 10)}) async {
           throw const RepeaterRequestException('no reply');
         },
       );

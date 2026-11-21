@@ -5,7 +5,8 @@ import 'package:mesh_protocol/mesh_protocol.dart';
 import 'package:repeater_core/repeater_core.dart';
 import 'package:test/test.dart';
 
-Contact _contact() => Contact(publicKey: Uint8List.fromList(List.generate(32, (i) => i + 1)));
+Contact _contact() =>
+    Contact(publicKey: Uint8List.fromList(List.generate(32, (i) => i + 1)));
 
 Uint8List _response(int tag, Uint8List report, {List<int>? prefix}) =>
     Uint8List.fromList([
@@ -36,7 +37,8 @@ void main() {
 
     test('accepts the tag-first layout', () {
       final frame = _response(0x1234, report);
-      expect(binaryResponsePayload(frame, contact.publicKey,
+      expect(
+          binaryResponsePayload(frame, contact.publicKey,
               askTag: 0x1234, exactLength: 56),
           hasLength(56));
     });
@@ -51,15 +53,21 @@ void main() {
     });
 
     test('rejects a wrong tag, prefix or response code', () {
-      final good = _response(1, report, prefix: contact.publicKey.sublist(0, 6));
-      expect(binaryResponsePayload(good, contact.publicKey,
-          askTag: 2, exactLength: 56), isNull);
+      final good =
+          _response(1, report, prefix: contact.publicKey.sublist(0, 6));
+      expect(
+          binaryResponsePayload(good, contact.publicKey,
+              askTag: 2, exactLength: 56),
+          isNull);
       final wrongPrefix = _response(1, report, prefix: List.filled(6, 9));
-      expect(binaryResponsePayload(wrongPrefix, contact.publicKey,
-          askTag: 1, exactLength: 56), isNull);
+      expect(
+          binaryResponsePayload(wrongPrefix, contact.publicKey,
+              askTag: 1, exactLength: 56),
+          isNull);
       final notBinary = Uint8List.fromList([0x01, ...good.skip(1)]);
-      expect(binaryResponsePayload(notBinary, contact.publicKey,
-          exactLength: 56), isNull);
+      expect(
+          binaryResponsePayload(notBinary, contact.publicKey, exactLength: 56),
+          isNull);
     });
   });
 

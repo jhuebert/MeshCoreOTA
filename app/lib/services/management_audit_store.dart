@@ -39,8 +39,8 @@ class AuditEntry {
         family: json['family'] as String? ?? '',
         command: json['command'] as String? ?? '',
         kind: json['kind'] as String? ?? '',
-        outcome: AuditOutcome.values.byName(
-            json['outcome'] as String? ?? 'unknown'),
+        outcome:
+            AuditOutcome.values.byName(json['outcome'] as String? ?? 'unknown'),
       );
 }
 
@@ -72,9 +72,7 @@ class ManagementAuditStore {
     var out = _entries.reversed.toList();
     if (repeaterKeyHex != null) {
       final key = repeaterKeyHex.toLowerCase();
-      out = out
-          .where((e) => e.repeaterKeyHex.toLowerCase() == key)
-          .toList();
+      out = out.where((e) => e.repeaterKeyHex.toLowerCase() == key).toList();
     }
     return limit == null ? out : out.take(limit).toList();
   }

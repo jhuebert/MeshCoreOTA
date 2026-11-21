@@ -108,8 +108,10 @@ class _ConnectionFormState extends State<ConnectionForm> {
             onSelectionChanged: (s) => setState(() => _tcpMode = s.first),
           ),
         ),
-        if (!connected) ...(_tcpMode ? _tcpCard(app, busy) : _bleCard(app, busy)),
-        if (!connected) ..._connectedOrError(app),
+        if (!connected)
+          ...(_tcpMode ? _tcpCard(app, busy) : _bleCard(app, busy)),
+        if (!connected && app.connectError != null)
+          ErrorBanner(_friendlyError(app)),
         if (connected) ..._connectedCard(app),
       ],
     );
@@ -125,10 +127,6 @@ class _ConnectionFormState extends State<ConnectionForm> {
     }
     return raw;
   }
-
-  List<Widget> _connectedOrError(AppState app) => app.connectError == null
-      ? const []
-      : [ErrorBanner(_friendlyError(app))];
 
   List<Widget> _tcpCard(AppState app, bool busy) => [
         Padding(
@@ -194,8 +192,7 @@ class _ConnectionFormState extends State<ConnectionForm> {
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Color(0xFF1A1203)),
+                                strokeWidth: 2, color: Color(0xFF1A1203)),
                           )
                         : const Icon(playIcon),
                     label: Text(busy ? 'Connecting…' : 'Connect'),
@@ -236,7 +233,8 @@ class _ConnectionFormState extends State<ConnectionForm> {
                   const SizedBox(height: 10),
                   if (_scanError != null) ...[
                     Text(_scanError!,
-                        style: const TextStyle(color: OtaTheme.bad, fontSize: 12)),
+                        style:
+                            const TextStyle(color: OtaTheme.bad, fontSize: 12)),
                     const SizedBox(height: 8),
                   ],
                   if (_results.isEmpty && !_scanning)
@@ -246,7 +244,9 @@ class _ConnectionFormState extends State<ConnectionForm> {
                         'Nothing found yet. Tap Scan. The companion must be '
                         'powered and nearby.',
                         style: TextStyle(
-                            color: OtaTheme.textMuted, fontSize: 12, height: 1.4),
+                            color: OtaTheme.textMuted,
+                            fontSize: 12,
+                            height: 1.4),
                       ),
                     ),
                   for (final result in _results)
@@ -261,8 +261,8 @@ class _ConnectionFormState extends State<ConnectionForm> {
                       subtitle: Text(result.device.remoteId.toString(),
                           style: const TextStyle(
                               color: OtaTheme.textMuted, fontSize: 11)),
-                      trailing: const Icon(Icons.link,
-                          color: OtaTheme.textMuted),
+                      trailing:
+                          const Icon(Icons.link, color: OtaTheme.textMuted),
                       onTap: busy
                           ? null
                           : () {

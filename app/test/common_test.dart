@@ -7,24 +7,23 @@ void main() {
   test('formatAge uses one phrasing for every cached value', () {
     final now = DateTime.utc(2026, 11, 20, 12);
     expect(formatAge(now, now: now), 'just now');
-    expect(
-        formatAge(now.subtract(const Duration(minutes: 5)), now: now),
+    expect(formatAge(now.subtract(const Duration(minutes: 5)), now: now),
         '5 min ago');
     expect(
-        formatAge(now.subtract(const Duration(hours: 3)), now: now),
-        '3 h ago');
+        formatAge(now.subtract(const Duration(hours: 3)), now: now), '3 h ago');
     expect(
         formatAge(now.subtract(const Duration(days: 2)), now: now), '2 d ago');
   });
 
   testWidgets('LastKnownLabel shows the age of a cached value', (tester) async {
     final at = DateTime.now().subtract(const Duration(minutes: 2));
-    await tester.pumpWidget(MaterialApp(
-        theme: OtaTheme.dark, home: LastKnownLabel(at)));
+    await tester.pumpWidget(
+        MaterialApp(theme: OtaTheme.dark, home: LastKnownLabel(at)));
     expect(find.textContaining('Last known 2 min ago'), findsOneWidget);
   });
 
-  testWidgets('ActivityTile shows one shape for every activity', (tester) async {
+  testWidgets('ActivityTile shows one shape for every activity',
+      (tester) async {
     var taps = 0;
     await tester.pumpWidget(MaterialApp(
       theme: OtaTheme.dark,

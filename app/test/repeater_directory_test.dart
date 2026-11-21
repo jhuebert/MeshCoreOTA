@@ -42,8 +42,8 @@ void main() {
     final folder = directory.folderFor(hex).path;
     expect(folder, isNot(contains(hex)));
     await directory.upsert(profile(hex, 'Roof'));
-    expect(File('${directory.folderFor(hex).path}/profile.json')
-        .existsSync(), isTrue);
+    expect(File('${directory.folderFor(hex).path}/profile.json').existsSync(),
+        isTrue);
   });
 
   test('each repeater gets its own cache store', () async {
@@ -83,7 +83,9 @@ void main() {
     await old.load();
     expect(old.profiles.single.name, 'Old');
     await old.upsert(old.profiles.single);
-    expect(jsonDecode(await File('${dir.path}/index.json').readAsString())[
-        'schema'], 1);
+    expect(
+        jsonDecode(
+            await File('${dir.path}/index.json').readAsString())['schema'],
+        1);
   });
 }

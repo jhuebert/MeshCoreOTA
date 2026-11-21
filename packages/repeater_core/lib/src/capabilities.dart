@@ -42,20 +42,19 @@ ProbeVerdict classifyProbe(String probe, String reply) {
     'ota status' => lower.contains('running=') && lower.contains('sha='),
     'filter' => lower.contains('usage') || lower.contains('on|off'),
     'fleet' => lower.contains('usage') || lower.contains('chan'),
-    'radio2 status' =>
-      lower.startsWith('on') ||
-          lower.startsWith('off') ||
-          lower.contains('preset='),
+    'radio2 status' => lower.startsWith('on') ||
+        lower.startsWith('off') ||
+        lower.contains('preset='),
     'get mqtt.status' => lower.contains('wifi:') || lower.contains('mqtt '),
     'battery' => lower.contains('batt') || lower.contains('gate'),
-    'clock mesh' =>
-      lower.contains('slots') ||
-          lower.contains('samples') ||
-          lower.startsWith('on') ||
-          lower.startsWith('off'),
+    'clock mesh' => lower.contains('slots') ||
+        lower.contains('samples') ||
+        lower.startsWith('on') ||
+        lower.startsWith('off'),
     'bot' => lower.startsWith('bot'),
     'get cpu.freq' => lower.contains('mhz') || lower.contains('default'),
-    'get radio.rxps' => lower.contains('desired') || lower.contains('effective'),
+    'get radio.rxps' =>
+      lower.contains('desired') || lower.contains('effective'),
     _ => false,
   };
   return positive ? ProbeVerdict.forkPositive : ProbeVerdict.unknown;
@@ -123,7 +122,8 @@ class RepeaterCapabilities {
         _ => false,
       };
 
-  RepeaterCapabilities copyWithOtaFeatures(int features) => RepeaterCapabilities(
+  RepeaterCapabilities copyWithOtaFeatures(int features) =>
+      RepeaterCapabilities(
         firmwareKind: firmwareKind,
         confidence: confidence,
         ota: ota,
@@ -168,10 +168,10 @@ class RepeaterCapabilities {
 
   factory RepeaterCapabilities.fromJson(Map<String, dynamic> json) =>
       RepeaterCapabilities(
-        firmwareKind: FirmwareKind.values.byName(
-            json['firmwareKind'] as String? ?? 'unknown'),
-        confidence: CapabilityConfidence.values.byName(
-            json['confidence'] as String? ?? 'unknown'),
+        firmwareKind: FirmwareKind.values
+            .byName(json['firmwareKind'] as String? ?? 'unknown'),
+        confidence: CapabilityConfidence.values
+            .byName(json['confidence'] as String? ?? 'unknown'),
         ota: json['ota'] as bool? ?? false,
         otaFeatures: json['otaFeatures'] as int? ?? 0,
         filter: json['filter'] as bool? ?? false,

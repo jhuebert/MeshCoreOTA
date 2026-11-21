@@ -52,9 +52,8 @@ class ConnectionController extends ChangeNotifier {
   bool get isConnected => _phase == ConnectionPhase.connected;
 
   /// The last endpoint, for reconnect after a transport drop.
-  String? get lastEndpoint => transportKind == 'tcp'
-      ? '$tcpHost:$tcpPort'
-      : _bleDeviceId;
+  String? get lastEndpoint =>
+      transportKind == 'tcp' ? '$tcpHost:$tcpPort' : _bleDeviceId;
 
   set phase(ConnectionPhase value) {
     if (_phase == value) return;

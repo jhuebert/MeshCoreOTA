@@ -11,7 +11,8 @@ import 'package:provider/provider.dart';
 
 import 'support.dart';
 
-Widget _host(Widget child, [AppState? app]) => ChangeNotifierProvider<AppState>.value(
+Widget _host(Widget child, [AppState? app]) =>
+    ChangeNotifierProvider<AppState>.value(
       value: app ?? AppState(),
       child: MaterialApp(
         home: Scaffold(
@@ -119,8 +120,7 @@ void main() {
     await _openSheet(tester);
     expect(find.text('Roof'), findsOneWidget);
 
-    await tester.enterText(
-        find.byType(TextField), 'not a public key');
+    await tester.enterText(find.byType(TextField), 'not a public key');
     await tester.tap(find.text('Use key'));
     await tester.pump();
     expect(find.text('Enter the 64-character public key.'), findsOneWidget);

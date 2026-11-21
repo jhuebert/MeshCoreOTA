@@ -48,7 +48,8 @@ class AppSettingsScreen extends StatelessWidget {
           child: Text(
             'The admin password is never saved. Firmware images and the '
             'offline setting stay on this device.',
-            style: TextStyle(color: OtaTheme.textMuted, fontSize: 12, height: 1.4),
+            style:
+                TextStyle(color: OtaTheme.textMuted, fontSize: 12, height: 1.4),
           ),
         ),
       ],

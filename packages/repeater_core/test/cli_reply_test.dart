@@ -17,8 +17,8 @@ void main() {
     });
 
     test('reboot notices are distinct from plain ok', () {
-      expect(classifyCliReply('OK, reboot required'),
-          CliReplyKind.rebootNeeded);
+      expect(
+          classifyCliReply('OK, reboot required'), CliReplyKind.rebootNeeded);
       expect(classifyCliReply('> on (reboot to apply)'),
           CliReplyKind.rebootNeeded);
     });

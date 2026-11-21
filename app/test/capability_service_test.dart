@@ -9,7 +9,8 @@ import 'package:meshcore_repeater_manager/services/cli_service.dart';
 import 'package:meshcore_repeater_manager/services/repeater_cache_store.dart';
 import 'package:repeater_core/repeater_core.dart';
 
-Contact _contact() => Contact(publicKey: Uint8List.fromList(List.filled(32, 3)));
+Contact _contact() =>
+    Contact(publicKey: Uint8List.fromList(List.filled(32, 3)));
 
 Map<String, String> _forkReplies() => {
       'ota status': 'running=v1 sha=aa state=idle',
@@ -34,7 +35,10 @@ void main() {
           seen.add(command);
           return replies[command] ?? 'Unknown command';
         },
-        binary: (_, __, {data = const [], required exactLength, timeout = const Duration(seconds: 10)}) async {
+        binary: (_, __,
+            {data = const [],
+            required exactLength,
+            timeout = const Duration(seconds: 10)}) async {
           throw const RepeaterRequestException('not used');
         },
       );
@@ -55,7 +59,10 @@ void main() {
           seen.add(command);
           return 'Unknown command';
         },
-        binary: (_, __, {data = const [], required exactLength, timeout = const Duration(seconds: 10)}) async {
+        binary: (_, __,
+            {data = const [],
+            required exactLength,
+            timeout = const Duration(seconds: 10)}) async {
           throw const RepeaterRequestException('not used');
         },
       );
@@ -76,7 +83,10 @@ void main() {
           calls++;
           return _forkReplies()[command] ?? 'Unknown command';
         },
-        binary: (_, __, {data = const [], required exactLength, timeout = const Duration(seconds: 10)}) async {
+        binary: (_, __,
+            {data = const [],
+            required exactLength,
+            timeout = const Duration(seconds: 10)}) async {
           throw const RepeaterRequestException('not used');
         },
       );

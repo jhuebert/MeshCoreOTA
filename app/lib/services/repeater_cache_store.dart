@@ -131,9 +131,8 @@ class RepeaterCacheStore {
     await _persist();
   }
 
-  List<MetricSample> samples(String metric) => _samples
-      .where((s) => s.metric == metric)
-      .toList()
+  List<MetricSample> samples(String metric) =>
+      _samples.where((s) => s.metric == metric).toList()
         ..sort((a, b) => a.at.compareTo(b.at));
 
   Future<void> addSample(
