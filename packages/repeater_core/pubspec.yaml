@@ -1,0 +1,19 @@
+name: repeater_core
+description: >-
+  Pure-Dart repeater management domain: CLI reply taxonomy, capability
+  detection, binary status reports, settings specs and tagged REQ clients.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  mesh_protocol:
+    path: ../mesh_protocol
+  device_link:
+    path: ../device_link
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^6.0.0
