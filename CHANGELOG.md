@@ -6,6 +6,10 @@ All notable changes to MeshCoreRepeaterManager are documented here. The format f
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-21
+
+Later
+
 ### Added
 
 - **The temporary channel renews itself.** The repeater arms `tempradio` in
