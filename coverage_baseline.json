@@ -6,8 +6,8 @@
       "total": 898
     },
     "app/lib/controllers/connection_controller.dart": {
-      "covered": 56,
-      "total": 67
+      "covered": 55,
+      "total": 66
     },
     "app/lib/main.dart": {
       "covered": 4,
@@ -86,20 +86,20 @@
       "total": 35
     },
     "app/lib/services/management_audit_store.dart": {
-      "covered": 55,
-      "total": 57
+      "covered": 53,
+      "total": 55
     },
     "app/lib/services/radio_plan.dart": {
       "covered": 72,
       "total": 73
     },
     "app/lib/services/repeater_cache_store.dart": {
-      "covered": 73,
-      "total": 80
+      "covered": 72,
+      "total": 79
     },
     "app/lib/services/repeater_directory.dart": {
-      "covered": 99,
-      "total": 111
+      "covered": 100,
+      "total": 112
     },
     "app/lib/services/resume_controller.dart": {
       "covered": 42,
@@ -126,24 +126,24 @@
       "total": 13
     },
     "app/lib/shell/connection_form.dart": {
-      "covered": 102,
-      "total": 126
+      "covered": 101,
+      "total": 125
     },
     "app/lib/shell/connection_sheet.dart": {
-      "covered": 25,
-      "total": 27
+      "covered": 26,
+      "total": 28
     },
     "app/lib/shell/repeater_hub_screen.dart": {
-      "covered": 76,
-      "total": 88
+      "covered": 78,
+      "total": 90
     },
     "app/lib/shell/repeater_picker_sheet.dart": {
       "covered": 34,
       "total": 40
     },
     "app/lib/shell/routes.dart": {
-      "covered": 5,
-      "total": 5
+      "covered": 6,
+      "total": 6
     },
     "app/lib/theme.dart": {
       "covered": 6,
@@ -294,16 +294,16 @@
       "total": 33
     },
     "packages/repeater_core/lib/src/capabilities.dart": {
-      "covered": 111,
-      "total": 128
+      "covered": 110,
+      "total": 126
     },
     "packages/repeater_core/lib/src/cli_reply.dart": {
       "covered": 13,
       "total": 13
     },
     "packages/repeater_core/lib/src/setting_spec.dart": {
-      "covered": 22,
-      "total": 25
+      "covered": 26,
+      "total": 26
     },
     "packages/repeater_core/lib/src/status.dart": {
       "covered": 75,

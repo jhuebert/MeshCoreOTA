@@ -19,6 +19,26 @@ void main() {
     expect(settingFor('tx')!.validate('high'), contains('number'));
   });
 
+  test('choice and text specs validate without assuming a registry entry', () {
+    final choice = SettingSpec(
+        key: 'mode',
+        label: 'Mode',
+        section: 'Advanced',
+        input: SettingInput.choice,
+        choices: const ['a', 'b']);
+    expect(choice.validate('a'), isNull);
+    expect(choice.validate('c'), contains('Choose one of'));
+    final openChoice = SettingSpec(
+        key: 'mode',
+        label: 'Mode',
+        section: 'Advanced',
+        input: SettingInput.choice);
+    expect(openChoice.validate('anything'), isNull);
+    final text = SettingSpec(
+        key: 'note', label: 'Note', section: 'Basic', input: SettingInput.text);
+    expect(text.validate('hello'), isNull);
+  });
+
   test('toggle, choice and preset keys validate their shape', () {
     expect(settingFor('repeat')!.validate('on'), isNull);
     expect(settingFor('repeat')!.validate('yes'), contains('on or off'));
